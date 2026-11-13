@@ -131,6 +131,10 @@ pw_add_library(pw_thread_zephyr.thread_creation INTERFACE
   PUBLIC_DEPS
     pw_thread_zephyr.config
 )
+pw_zephyrize_libraries_ifdef(
+  CONFIG_PIGWEED_THREAD
+  pw_thread_zephyr.thread_creation
+)
 
 pw_add_library(pw_thread_zephyr.thread_iteration STATIC
   PUBLIC_INCLUDES

@@ -79,12 +79,25 @@ pw_add_library(pw_log_zephyr.tokenized_handler STATIC
     pw_sync.interrupt_spin_lock
 )
 
-pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_LOG_TOKENIZED
+# Each of these sets pw_log_tokenized as pw_log's backend (zephyr/backends.cmake),
+# CONFIG_PIGWEED_SYSTEM_LOG_BACKEND also when CONFIG_PIGWEED_LOG_TOKENIZED_RPC
+# doesn't select it. The tokenized options' overrides are zephyrized above,
+# with CONFIG_PIGWEED_LOG_PIGWEED_OVERRIDES.
+if(CONFIG_PIGWEED_LOG_TOKENIZED OR CONFIG_PIGWEED_LOG_TOKENIZED_LIB OR
+   CONFIG_PIGWEED_SYSTEM_LOG_BACKEND)
+  set(pw_log_zephyr_tokenized ON)
+  if(CONFIG_PIGWEED_LOG_TOKENIZED_HANDLER_ZEPHYR)
+    set(pw_log_zephyr_tokenized_handler ON)
+  endif()
+endif()
+pw_zephyrize_libraries_ifdef(pw_log_zephyr_tokenized
     pw_log.facade
     pw_log_tokenized
-    pw_log_zephyr.pigweed_overrides
+)
+pw_zephyrize_libraries_ifdef(pw_log_zephyr_tokenized_handler
     pw_log_zephyr.tokenized_handler
 )
+
 pw_add_library(pw_log_zephyr.tokenized_rpc_handler INTERFACE
   PUBLIC_DEPS
     pw_checksum

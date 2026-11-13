@@ -74,7 +74,7 @@ menuconfig PIGWEED_LOG_TOKENIZED
       :ref:`module-pw_log_tokenized` target as the logging backend in order to
       automatically tokenize all the logging strings. This means that Pigweed
       will also tokenize all of Zephyr's logging statements. Also requires
-      pw_sync.interrupt_spin_lock, pw_sys_io, and a
+      pw_sync.interrupt_spin_lock and a
       pw_log_tokenized.handler backend (see PIGWEED_LOG_TOKENIZED_HANDLER_BACKEND
       below) -- CMake will fail the build naming any of these that aren't
       configured.
@@ -88,12 +88,6 @@ config PIGWEED_LOG_TOKENIZED_LIB
       pw_log_tokenized_HandleLog. This gives you flexiblity to access handlers
       outside of pigweed.
 
-config PIGWEED_LOG_NONE
-    bool "Do not use pigweed logging"
-    help
-      Pigweed log macros will not work unless the application manually
-      configures the logging backend.
-
 menuconfig PIGWEED_LOG_TOKENIZED_RPC
     bool "Enables RPC tokenized logging"
     select PIGWEED_SYSTEM_LOG_BACKEND
@@ -105,9 +99,9 @@ menuconfig PIGWEED_LOG_TOKENIZED_RPC
       Enable tokenized logging over RPC by using the system log backend.
       Also requires pw_sync.interrupt_spin_lock, pw_sync.thread_notification,
       pw_sync.timed_thread_notification, pw_system.rpc_server,
-      pw_system.target_hooks, pw_thread.thread, pw_thread.thread_iteration,
-      and a pw_log_tokenized.handler backend -- CMake will fail the build
-      naming any of these that aren't configured.
+      pw_system.target_hooks, pw_sys_io, pw_thread.thread,
+      pw_thread.thread_iteration, and a pw_log_tokenized.handler backend --
+      CMake will fail the build naming any of these that aren't configured.
 
 endchoice
 
@@ -187,8 +181,8 @@ config PIGWEED_LOG_LEVEL
 
 endif # !PIGWEED_LOG_NONE
 
-if PIGWEED_LOG_TOKENIZED
+if PIGWEED_LOG_TOKENIZED || PIGWEED_LOG_TOKENIZED_LIB || PIGWEED_LOG_TOKENIZED_RPC || PIGWEED_SYSTEM_LOG_BACKEND
 rsource "Kconfig.tokenized"
-endif # PIGWEED_LOG_TOKENIZED
+endif # PIGWEED_LOG_TOKENIZED || PIGWEED_LOG_TOKENIZED_LIB || PIGWEED_LOG_TOKENIZED_RPC || PIGWEED_SYSTEM_LOG_BACKEND
 
 endmenu

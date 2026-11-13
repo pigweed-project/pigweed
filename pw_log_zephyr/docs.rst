@@ -9,16 +9,16 @@ pw_log_zephyr
 --------
 Overview
 --------
-This interrupt backend implements the ``pw_log`` facade. Currently, two
-separate Pigweed backends are implemented. One that uses the plain Zephyr
-logging framework and routes Pigweed's logs to Zephyr. While another maps
-the Zephyr logging macros to Pigweed's tokenized logging.
+This module implements the ``pw_log`` facade for Zephyr in two ways. One
+routes Pigweed's logs to Zephyr's logging framework. The other maps Zephyr's
+logging macros to Pigweed's logging, tokenized or as strings
+(``CONFIG_PIGWEED_LOG_STRING``).
 
 Using Zephyr logging
 --------------------
 To enable, set ``CONFIG_PIGWEED_LOG_ZEPHYR=y``. After that, logging can be
 controlled via the standard `Kconfig options`_. All logs made through
-`PW_LOG_*` are logged to the Zephyr logging module ``pigweed``. In this
+``PW_LOG_*`` are logged to the Zephyr logging module ``pigweed``. In this
 model, the Zephyr logging is set as ``pw_log``'s backend.
 
 Using Pigweed tokenized logging
@@ -31,24 +31,24 @@ are also tokenized.
 
 When enabled, a few extra configurations are available to control the tokenized
 metadata bits such as log level bits, line number bits, custom flag bits, and
-module string bits.
-The log format string may also be modified by defining your own ``PW_LOG_TOKENIZED_FORMAT_STRING``.
-This can be done in your cmake by including your own header that defines it.
+module string bits. The log format string may also be modified by defining
+your own ``PW_LOG_TOKENIZED_FORMAT_STRING``, in a header your CMake includes:
 
-.. code-block::
+.. code-block:: cmake
 
    add_library(log_tokenized_config INTERFACE)
-   target_compile_options(log_tokenized_config INTERFACE -include header_file_that_sets_that_macro.h)
+   target_compile_options(log_tokenized_config
+     INTERFACE -include header_file_that_sets_that_macro.h)
    pw_set_module_config(pw_log_tokenized_CONFIG log_tokenized_config)
 
 Where tokenized log bytes go
------------------------------
-Enabling tokenized logging (``CONFIG_PIGWEED_LOG_TOKENIZED`` or
-``CONFIG_PIGWEED_LOG_TOKENIZED_RPC``) only decides that log messages get
-tokenized -- a separate facade, ``pw_log_tokenized.handler``, decides where
-the resulting bytes actually go. It's controlled by its own ``choice
-PIGWEED_LOG_TOKENIZED_HANDLER_BACKEND`` (see :ref:`zephyr-backend-selection`
-for the general pattern):
+----------------------------
+Enabling tokenized logging (``CONFIG_PIGWEED_LOG_TOKENIZED``,
+``CONFIG_PIGWEED_LOG_TOKENIZED_LIB`` or ``CONFIG_PIGWEED_LOG_TOKENIZED_RPC``)
+only decides that log messages get tokenized -- a separate facade,
+``pw_log_tokenized.handler``, decides where the resulting bytes actually go.
+It's controlled by its own ``choice PIGWEED_LOG_TOKENIZED_HANDLER_BACKEND``
+(see :ref:`zephyr-backend-selection` for the general pattern):
 
 * ``CONFIG_PIGWEED_LOG_TOKENIZED_HANDLER_ZEPHYR`` -- route tokenized bytes
   into Zephyr's own log subsystem.

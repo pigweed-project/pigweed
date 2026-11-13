@@ -16,9 +16,9 @@ Thread Creation
 ---------------
 Controlled by ``choice PIGWEED_THREAD_BACKEND``:
 
-* ``CONFIG_PIGWEED_THREAD=y`` -- link Pigweed's Zephyr backend for both
-  ``pw_thread.thread`` and ``pw_thread.id``. ``pw_thread_zephyr`` fully
-  supports the thread creation API; see the
+* ``CONFIG_PIGWEED_THREAD=y`` -- link Pigweed's Zephyr backend for
+  ``pw_thread.thread``, ``pw_thread.thread_creation`` and ``pw_thread.id``.
+  ``pw_thread_zephyr`` fully supports the thread creation API; see the
   :ref:`Thread creation section <module-pw_thread-thread-creation>` for
   details on the API itself. Also requires a ``pw_interrupt.context``
   backend (see :ref:`module-pw_interrupt_zephyr`).

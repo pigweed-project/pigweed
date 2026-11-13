@@ -17,9 +17,9 @@ message to the Zephyr assert subsystem. Failed asserts will call:
 
 This backend is enabled by default: ``pw_assert.assert`` and
 ``pw_assert.check`` are controlled by ``choice PIGWEED_ASSERT_BACKEND``,
-which defaults to ``CONFIG_PIGWEED_ASSERT_ZEPHYR=y``. The two members are
-mutually exclusive -- at most one can be enabled at a time, so there's no
-ambiguity about which backend actually gets linked in. After enabling it,
+which defaults to ``CONFIG_PIGWEED_ASSERT_ZEPHYR=y``. Its other members are
+``CONFIG_PIGWEED_ASSERT_TOKENIZED`` and ``CONFIG_PIGWEED_ASSERT_NONE`` (to
+provide your own backend). Only one can be enabled at a time. After enabling it,
 Zephyr's assert configs can be used to control the behavior via CONFIG_ASSERT_
 and CONFIG_ASSERT_LEVEL_.
 

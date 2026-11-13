@@ -15,9 +15,10 @@
 menu "pw_allocator"
 
 config PIGWEED_ALLOCATOR
-  bool "Link the pw_allocator_zephyr module"
+  bool "Use the pw_allocator_zephyr module"
   help
-    Link the library that provides Zephyr-backed allocator implementations
-    for pw_allocator.
+    Zephyr-backed allocator implementations for pw_allocator. This doesn't
+    link them: link pw_allocator_zephyr.system_heap_allocator or
+    pw_allocator_zephyr.synchronized_heap_allocator to the code that uses it.
 
 endmenu

@@ -45,6 +45,8 @@ pw_set_zephyr_backend_ifdef(CONFIG_PIGWEED_LOG_TOKENIZED_HANDLER_ZEPHYR
     pw_log_tokenized.handler pw_log_zephyr.tokenized_handler ${ZEPHYR_PIGWEED_MODULE_DIR}/pw_log_tokenized/backend.cmake)
 pw_set_zephyr_backend_ifdef(CONFIG_PIGWEED_LOG_TOKENIZED
     pw_log pw_log_tokenized ${ZEPHYR_PIGWEED_MODULE_DIR}/pw_log/backend.cmake)
+pw_set_zephyr_backend_ifdef(CONFIG_PIGWEED_LOG_TOKENIZED_LIB
+    pw_log pw_log_tokenized ${ZEPHYR_PIGWEED_MODULE_DIR}/pw_log/backend.cmake)
 # pw_system.log_backend isn't a pw_log backend: pw_log uses pw_log_tokenized,
 # and the tokenized handler below routes messages to pw_system.
 pw_set_zephyr_backend_ifdef(CONFIG_PIGWEED_SYSTEM_LOG_BACKEND

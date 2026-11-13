@@ -14,7 +14,7 @@ two independent facades, each controlled by its own Kconfig ``choice`` that
 defaults to Pigweed's Zephyr backend (see :ref:`zephyr-backend-selection`).
 
 pw_chrono.system_clock
------------------------
+----------------------
 Controlled by ``choice PIGWEED_CHRONO_SYSTEM_CLOCK_BACKEND``:
 
 * ``CONFIG_PIGWEED_CHRONO_SYSTEM_CLOCK=y`` -- link Pigweed's Zephyr
@@ -24,7 +24,7 @@ Controlled by ``choice PIGWEED_CHRONO_SYSTEM_CLOCK_BACKEND``:
   you're supplying your own.
 
 pw_chrono.system_timer
------------------------
+----------------------
 Controlled by ``choice PIGWEED_CHRONO_SYSTEM_TIMER_BACKEND``:
 
 * ``CONFIG_PIGWEED_CHRONO_SYSTEM_TIMER=y`` -- link Pigweed's Zephyr

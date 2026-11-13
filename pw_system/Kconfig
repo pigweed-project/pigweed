@@ -17,7 +17,9 @@ menu "pw_system"
 config PIGWEED_SYSTEM_LOG_BACKEND
     bool "Use pw_system.log_backend as the logging backend"
     help
-      See :ref:`module-pw_log` for logging module details.
+      See :ref:`module-pw_log` for logging module details. Sets pw_log's
+      backend, so without PIGWEED_LOG_TOKENIZED_RPC (which selects this),
+      also choose PIGWEED_LOG_NONE.
 
 choice PIGWEED_SYSTEM_TARGET_HOOKS_BACKEND
     prompt "pw_system.target_hooks backend used"

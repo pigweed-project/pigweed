@@ -27,6 +27,14 @@ For the responder API, also enable:
 
    CONFIG_PIGWEED_I2C_RESPONDER=y
 
+Then link the libraries to your application target in ``CMakeLists.txt``:
+
+.. code-block:: cmake
+
+   target_link_libraries(app PRIVATE pw_i2c_zephyr)
+   # For the responder API:
+   target_link_libraries(app PRIVATE pw_i2c_zephyr.responder)
+
 Unlike the facades documented in :ref:`zephyr-backend-selection`,
 ``pw_i2c_zephyr`` doesn't have alternate backends to choose between, so
 these are plain enable flags rather than a ``choice``. It also needs

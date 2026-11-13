@@ -121,7 +121,7 @@ harmless static-library cycles (such as ``pw_rpc`` and ``pw_log``) into
 "multiple definition" link errors.
 
 Use ``zephyr_append_cmake_library()`` only for code that no application
-target can depend on. Pigweed does this for two libraries:
+target can depend on. Pigweed does this for three libraries:
 
 * ``pw_sys_io_zephyr``, which registers itself with ``SYS_INIT`` and has no
   callers.
@@ -129,6 +129,10 @@ target can depend on. Pigweed does this for two libraries:
   Pigweed (for example with ``CONFIG_PIGWEED_LOG_STRING``). Zephyr's own code
   then logs through ``pw_log``, so this library links ``pw_log``, with its
   backend, and ``pw_hex_dump.log_bytes``.
+* ``pw_assert_zephyr.pigweed_overrides``, when Zephyr's assert macros are
+  mapped to Pigweed (with ``CONFIG_PIGWEED_ASSERT_TOKENIZED``). Zephyr's own
+  asserts then call ``PW_CHECK()``, so this library links ``pw_assert.check``
+  and ``pw_assert.assert``, with their backends.
 
 Migrating from Kconfig-linked libraries
 =======================================
@@ -143,6 +147,11 @@ references to Pigweed symbols, link the libraries your code uses:
 
 To find the target for a ``CONFIG_PIGWEED_*`` option, look in
 ``zephyr/CMakeLists.txt`` and ``zephyr/backends.cmake``, or in the module's
-own ``CMakeLists.txt``. ``CONFIG_PIGWEED_ALLOCATOR`` provides
+own ``CMakeLists.txt``. ``CONFIG_PIGWEED_ALLOCATOR`` no longer adds
 ``pw_allocator_zephyr.system_heap_allocator`` and
-``pw_allocator_zephyr.synchronized_heap_allocator``.
+``pw_allocator_zephyr.synchronized_heap_allocator`` to the build; link the one
+you use:
+
+.. code-block:: cmake
+
+   target_link_libraries(app PRIVATE pw_allocator_zephyr.system_heap_allocator)

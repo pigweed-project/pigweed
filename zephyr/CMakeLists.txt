@@ -14,7 +14,7 @@
 
 include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
 
-# Add library linkage for Zephyr
+# Zephyrize Pigweed libraries (compile flags and includes without linking)
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_BASE64                  pw_base64)
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_BYTES                   pw_bytes)
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_CHECKSUM                pw_checksum)
@@ -54,6 +54,15 @@ pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_RPC_CLIENT_SERVER       pw_rpc.clien
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_RPC_CLIENT              pw_rpc.client)
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_RPC_SERVER              pw_rpc.server)
 pw_zephyrize_libraries_ifdef(CONFIG_PIGWEED_RPC_COMMON              pw_rpc.common)
+# The tokenized log handler with CONFIG_PIGWEED_SYSTEM_LOG_BACKEND or
+# CONFIG_PIGWEED_LOG_TOKENIZED_HANDLER_SYSTEM, which backends.cmake sets as
+# pw_log_tokenized.handler's backend. It's here because pw_system is added
+# after pw_log_zephyr, which zephyrizes the rest.
+if(CONFIG_PIGWEED_SYSTEM_LOG_BACKEND OR
+   CONFIG_PIGWEED_LOG_TOKENIZED_HANDLER_SYSTEM)
+  set(pw_zephyr_system_log_backend ON)
+endif()
+pw_zephyrize_libraries_ifdef(pw_zephyr_system_log_backend           pw_system.log_backend)
 
 # Set Pigweed configs from Kconfig
 pw_set_config_from_zephyr(CONFIG_PIGWEED_MULTISINK_LOCK_INTERRUPT_SAFE PW_MULTISINK_CONFIG_LOCK_INTERRUPT_SAFE)

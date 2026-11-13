@@ -434,7 +434,9 @@ function(pw_add_library_generic NAME TYPE)
     # but also its TARGET_OBJECTS.
     add_library("${NAME}._pw_object" OBJECT EXCLUDE_FROM_ALL)
     target_sources("${NAME}._pw_object" PRIVATE ${arg_SOURCES})
-    apply_library_config("${NAME}._pw_object" PRIVATE PUBLIC)
+    # PUBLIC, so that $<COMPILE_ONLY:${NAME}._pw_object> (see
+    # pw_zephyrize_libraries_ifdef) carries the library's public includes.
+    apply_library_config("${NAME}._pw_object" PUBLIC PUBLIC)
     apply_library_config("${NAME}._pw_object" PRIVATE PRIVATE)
     if(sandbox_enabled)
       target_compile_options("${NAME}._pw_object" PRIVATE ${sources_prefix_maps})
@@ -463,14 +465,39 @@ function(pw_add_library_generic NAME TYPE)
 
   # Zephyr 4.4+ generates headers (e.g. heap_constants.h) at build time; make
   # sure they exist before compiling anything that may include Zephyr headers.
+  # Zephyr before 4.4 creates zephyr_generated_headers after its modules, and
+  # some Zephyr builds never do, so the dependency is added at the end of
+  # configure, if the target exists.
   if(Zephyr_FOUND)
     if(("${TYPE}" STREQUAL "STATIC") OR ("${TYPE}" STREQUAL "SHARED"))
-      add_dependencies("${NAME}" zephyr_generated_headers)
+      set(compiled "${NAME}")
     elseif("${TYPE}" STREQUAL "OBJECT")
-      add_dependencies("${NAME}._pw_object" zephyr_generated_headers)
+      set(compiled "${NAME}._pw_object")
+    endif()
+    if(DEFINED compiled)
+      set_property(GLOBAL APPEND PROPERTY _PW_ZEPHYR_GENERATED_HEADERS_USERS
+                   "${compiled}")
+      get_property(deferred GLOBAL PROPERTY
+                   _PW_ZEPHYR_GENERATED_HEADERS_DEFERRED)
+      if(NOT deferred)
+        set_property(GLOBAL PROPERTY _PW_ZEPHYR_GENERATED_HEADERS_DEFERRED TRUE)
+        cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}"
+                       CALL _pw_add_zephyr_generated_headers_deps)
+      endif()
     endif()
   endif()
 endfunction(pw_add_library_generic)
+
+# Makes the libraries pw_add_library_generic() recorded build after
+# zephyr_generated_headers, if the Zephyr build has it.
+function(_pw_add_zephyr_generated_headers_deps)
+  if(TARGET zephyr_generated_headers)
+    get_property(users GLOBAL PROPERTY _PW_ZEPHYR_GENERATED_HEADERS_USERS)
+    foreach(user IN LISTS users)
+      add_dependencies("${user}" zephyr_generated_headers)
+    endforeach()
+  endif()
+endfunction()
 
 # Checks that the library's name is prefixed by the relative path with dot
 # separators instead of forward slashes. Ignores paths not under the root
@@ -875,10 +902,10 @@ function(pw_set_zephyr_backend FACADE BACKEND BACKEND_DECL)
         "selects '${BACKEND}'. Make these Kconfig options mutually "
         "exclusive, e.g. members of one 'choice'.")
   endif()
+  include("${backend_decl_path}")
   set_property(GLOBAL PROPERTY "_PW_ZEPHYR_BACKEND_SITE_${FACADE}" "${here}")
   set_property(GLOBAL PROPERTY "_PW_ZEPHYR_BACKEND_VALUE_${FACADE}" "${BACKEND}")
 
-  include("${backend_decl_path}")
   pw_set_backend("${FACADE}" "${BACKEND}")
 endfunction()
 
@@ -907,8 +934,26 @@ function(pw_zephyrize_libraries_ifdef COND)
       endif()
       foreach(lib ${ARGN})
         if(TARGET ${lib})
+          # INTERFACE gives Zephyr's flags to the library's users, PRIVATE to
+          # its own sources (an OBJECT library's are in ${lib}._pw_object).
           target_link_libraries(${lib} INTERFACE zephyr_interface)
-          target_link_libraries(zephyr_interface INTERFACE $<COMPILE_ONLY:${lib}>)
+          get_target_property(lib_type ${lib} TYPE)
+          get_target_property(lib_imported ${lib} IMPORTED)
+          if(NOT lib_type STREQUAL "INTERFACE_LIBRARY" AND NOT lib_imported)
+            target_link_libraries(${lib} PRIVATE zephyr_interface)
+          elseif(TARGET ${lib}._pw_object)
+            target_link_libraries(${lib}._pw_object PRIVATE zephyr_interface)
+          endif()
+          # An OBJECT library's ${lib} has $<TARGET_OBJECTS:${lib}._pw_object>
+          # in its link libraries, a cycle with the PRIVATE link above: use
+          # the object library, which has the public includes and flags too.
+          if(TARGET ${lib}._pw_object)
+            target_link_libraries(zephyr_interface INTERFACE
+                $<COMPILE_ONLY:${lib}._pw_object>)
+          else()
+            target_link_libraries(zephyr_interface INTERFACE
+                $<COMPILE_ONLY:${lib}>)
+          endif()
         endif()
       endforeach()
     endif()

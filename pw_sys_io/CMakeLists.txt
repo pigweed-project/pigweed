@@ -27,12 +27,9 @@ pw_add_facade(pw_sys_io INTERFACE
     pw_status
 )
 
-pw_add_library(pw_sys_io.default_putget_bytes STATIC
+pw_add_library(pw_sys_io.default_putget_bytes OBJECT
   SOURCES
     sys_io.cc
   PUBLIC_DEPS
     pw_sys_io.facade
-  PRIVATE_DEPS
-    # sys_io.cc calls the backend's ReadByte()/WriteByte().
-    pw_sys_io
 )
