@@ -575,6 +575,11 @@
 /// @defgroup pw_rpc_config Configuration
 /// @ingroup pw_rpc
 
+/// @defgroup pw_rpc_pwpb pw_protobuf RPC
+/// @ingroup pw_rpc
+/// @brief Call objects for `pw_protobuf`-backed RPC clients and servers
+/// @details Learn more: [C++ with pw_protobuf](../../pw_rpc/pwpb/docs.html)
+
 /// @defgroup pw_rpc2_client Client
 /// @ingroup pw_rpc2
 /// @brief Connect to an RPC server and invoke RPC methods

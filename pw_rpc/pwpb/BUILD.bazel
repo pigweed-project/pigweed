@@ -394,6 +394,14 @@ pw_cc_test(
     ],
 )
 
+filegroup(
+    name = "doxygen",
+    srcs = [
+        "public/pw_rpc/pwpb/client_reader_writer.h",
+        "public/pw_rpc/pwpb/server_reader_writer.h",
+    ],
+)
+
 sphinx_docs_library(
     name = "docs",
     srcs = [

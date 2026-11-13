@@ -212,17 +212,30 @@ class BasePwpbServerReader : public PwpbServerCall {
 
 }  // namespace internal
 
-// The PwpbServerReaderWriter is used to send and receive typed messages in a
-// pw_protobuf bidirectional streaming RPC.
-//
-// These classes use private inheritance to hide the internal::Call API while
-// allow direct use of its public and protected functions.
+/// @submodule{pw_rpc,pwpb}
+
+/// @brief Sends `pw_protobuf` responses and receives `pw_protobuf` requests for
+/// a bidirectional streaming RPC on a server.
+///
+/// @tparam Request The generated `pw_protobuf` request message struct type.
+/// @tparam Response The generated `pw_protobuf` response message struct type.
 template <typename Request, typename Response>
 class PwpbServerReaderWriter : private internal::BasePwpbServerReader<Request> {
  public:
-  // Creates a PwpbServerReaderWriter that is ready to send responses for a
-  // particular RPC. This can be used for testing or to send responses to an RPC
-  // that has not been started by a client.
+  /// @brief Creates a `PwpbServerReaderWriter` that is ready to send responses
+  /// for a particular RPC.
+  ///
+  /// This can be used for testing or to send responses to an RPC that has not
+  /// been started by a client.
+  ///
+  /// @tparam kMethod Pointer to the generated service method.
+  /// @tparam ServiceImpl The service implementation class.
+  /// @param[in,out] server The RPC `Server` on which to open the call.
+  /// @param[in] channel_id The ID of the channel on which to send responses.
+  /// @param[in,out] service The registered service instance handling the RPC.
+  ///
+  /// @returns An active `PwpbServerReaderWriter` bound to the specified channel
+  ///   and method.
   template <auto kMethod, typename ServiceImpl>
   [[nodiscard]] static PwpbServerReaderWriter Open(Server& server,
                                                    uint32_t channel_id,
@@ -244,8 +257,8 @@ class PwpbServerReaderWriter : private internal::BasePwpbServerReader<Request> {
                                               MethodInfo::kMethodId>());
   }
 
-  // Allow default construction so that users can declare a variable into
-  // which to move server reader/writers from RPC calls.
+  /// @brief Creates an inactive `PwpbServerReaderWriter` into which an active
+  /// call can be moved.
   constexpr PwpbServerReaderWriter() = default;
 
   PwpbServerReaderWriter(PwpbServerReaderWriter&&) = default;
@@ -261,22 +274,45 @@ class PwpbServerReaderWriter : private internal::BasePwpbServerReader<Request> {
   using internal::ServerCall::set_on_completion_requested;
   using internal::ServerCall::set_on_completion_requested_if_enabled;
 
-  // Writes a response. Returns the following Status codes:
-  //
-  //   OK - the response was successfully sent
-  //   FAILED_PRECONDITION - the writer is closed
-  //   INTERNAL - pw_rpc was unable to encode the pw_protobuf message
-  //   other errors - the ChannelOutput failed to send the packet; the error
-  //       codes are determined by the ChannelOutput implementation
-  //
+  /// @brief Encodes and sends a streamed `Response` message to the client.
+  ///
+  /// @param[in] response The `Response` message struct to encode and send.
+  ///
+  /// @returns
+  /// * @OK: The response was successfully sent.
+  /// * @FAILED_PRECONDITION: The writer is closed.
+  /// * @INTERNAL: `pw_rpc` was unable to encode the `pw_protobuf` message.
+  /// * Other error codes from the `ChannelOutput` implementation if sending the
+  ///   packet failed.
   Status Write(const Response& response) {
     return internal::PwpbServerCall::SendStreamResponse(response);
   }
 
+  /// @brief Closes the RPC and sends the final status to the client.
+  ///
+  /// @param[in] status The overall status of the RPC to send to the client.
+  ///
+  /// @returns
+  /// * @OK: The final packet was successfully sent.
+  /// * @FAILED_PRECONDITION: The writer is closed.
+  /// * Other error codes from the `ChannelOutput` implementation if sending the
+  ///   packet failed.
   Status Finish(Status status = OkStatus()) {
     return internal::Call::CloseAndSendResponse(status);
   }
 
+  /// @brief Attempts to close the RPC and send the final status to the client.
+  ///
+  /// Unlike `Finish()`, the call remains open if sending the final packet
+  /// fails, allowing the caller to retry.
+  ///
+  /// @param[in] status The overall status of the RPC to send to the client.
+  ///
+  /// @returns
+  /// * @OK: The final packet was successfully sent and the call was closed.
+  /// * @FAILED_PRECONDITION: The writer is closed.
+  /// * Other error codes from the `ChannelOutput` implementation if sending the
+  ///   packet failed (the call remains active).
   Status TryFinish(Status status = OkStatus()) {
     return internal::Call::TryCloseAndSendResponse(status);
   }
@@ -295,17 +331,28 @@ class PwpbServerReaderWriter : private internal::BasePwpbServerReader<Request> {
       : internal::BasePwpbServerReader<Request>(context, type) {}
 };
 
-// The PwpbServerReader is used to receive typed messages and send a typed
-// response in a pw_protobuf client streaming RPC.
-//
-// These classes use private inheritance to hide the internal::Call API while
-// allow direct use of its public and protected functions.
+/// @brief Receives `pw_protobuf` requests and sends the final `pw_protobuf`
+/// response for a client streaming RPC on a server.
+///
+/// @tparam Request The generated `pw_protobuf` request message struct type.
+/// @tparam Response The generated `pw_protobuf` response message struct type.
 template <typename Request, typename Response>
 class PwpbServerReader : private internal::BasePwpbServerReader<Request> {
  public:
-  // Creates a PwpbServerReader that is ready to send a response to a particular
-  // RPC. This can be used for testing or to finish an RPC that has not been
-  // started by the client.
+  /// @brief Creates a `PwpbServerReader` that is ready to send a response to a
+  /// particular RPC.
+  ///
+  /// This can be used for testing or to finish an RPC that has not been started
+  /// by a client.
+  ///
+  /// @tparam kMethod Pointer to the generated service method.
+  /// @tparam ServiceImpl The service implementation class.
+  /// @param[in,out] server The RPC `Server` on which to open the call.
+  /// @param[in] channel_id The ID of the channel on which to send the response.
+  /// @param[in,out] service The registered service instance handling the RPC.
+  ///
+  /// @returns An active `PwpbServerReader` bound to the specified channel and
+  ///   method.
   template <auto kMethod, typename ServiceImpl>
   [[nodiscard]] static PwpbServerReader Open(Server& server,
                                              uint32_t channel_id,
@@ -326,8 +373,8 @@ class PwpbServerReader : private internal::BasePwpbServerReader<Request> {
                                                   MethodInfo::kMethodId>());
   }
 
-  // Allow default construction so that users can declare a variable into
-  // which to move server reader/writers from RPC calls.
+  /// @brief Creates an inactive `PwpbServerReader` into which an active call
+  /// can be moved.
   constexpr PwpbServerReader() = default;
 
   PwpbServerReader(PwpbServerReader&&) = default;
@@ -343,18 +390,36 @@ class PwpbServerReader : private internal::BasePwpbServerReader<Request> {
   using internal::ServerCall::set_on_completion_requested;
   using internal::ServerCall::set_on_completion_requested_if_enabled;
 
-  // Sends the response. Returns the following Status codes:
-  //
-  //   OK - the response was successfully sent
-  //   FAILED_PRECONDITION - the writer is closed
-  //   INTERNAL - pw_rpc was unable to encode the pw_protobuf message
-  //   other errors - the ChannelOutput failed to send the packet; the error
-  //       codes are determined by the ChannelOutput implementation
-  //
+  /// @brief Closes the RPC and sends the final `Response` message and status.
+  ///
+  /// @param[in] response The `Response` message struct to encode and send.
+  /// @param[in] status The overall status of the RPC to send to the client.
+  ///
+  /// @returns
+  /// * @OK: The response was successfully sent.
+  /// * @FAILED_PRECONDITION: The responder is closed.
+  /// * @INTERNAL: `pw_rpc` was unable to encode the `pw_protobuf` message.
+  /// * Other error codes from the `ChannelOutput` implementation if sending the
+  ///   packet failed.
   Status Finish(const Response& response, Status status = OkStatus()) {
     return internal::PwpbServerCall::SendUnaryResponse(response, status);
   }
 
+  /// @brief Attempts to close the RPC and send the final `Response` message and
+  /// status to the client.
+  ///
+  /// Unlike `Finish()`, the call remains open if sending the packet fails,
+  /// allowing the caller to retry.
+  ///
+  /// @param[in] response The `Response` message struct to encode and send.
+  /// @param[in] status The overall status of the RPC to send to the client.
+  ///
+  /// @returns
+  /// * @OK: The response was successfully sent and the call was closed.
+  /// * @FAILED_PRECONDITION: The responder is closed.
+  /// * @INTERNAL: `pw_rpc` was unable to encode the `pw_protobuf` message.
+  /// * Other error codes from the `ChannelOutput` implementation if sending the
+  ///   packet failed (the call remains active).
   Status TryFinish(const Response& response, Status status = OkStatus()) {
     return internal::PwpbServerCall::TrySendUnaryResponse(response, status);
   }
@@ -373,17 +438,27 @@ class PwpbServerReader : private internal::BasePwpbServerReader<Request> {
                                                 MethodType::kClientStreaming) {}
 };
 
-// The PwpbServerWriter is used to send typed responses in a pw_protobuf server
-// streaming RPC.
-//
-// These classes use private inheritance to hide the internal::Call API while
-// allow direct use of its public and protected functions.
+/// @brief Sends streamed `pw_protobuf` responses for a server streaming RPC on
+/// a server.
+///
+/// @tparam Response The generated `pw_protobuf` response message struct type.
 template <typename Response>
 class PwpbServerWriter : private internal::PwpbServerCall {
  public:
-  // Creates a PwpbServerWriter that is ready to send responses for a particular
-  // RPC. This can be used for testing or to send responses to an RPC that has
-  // not been started by a client.
+  /// @brief Creates a `PwpbServerWriter` that is ready to send responses for a
+  /// particular RPC.
+  ///
+  /// This can be used for testing or to send responses to an RPC that has not
+  /// been started by a client.
+  ///
+  /// @tparam kMethod Pointer to the generated service method.
+  /// @tparam ServiceImpl The service implementation class.
+  /// @param[in,out] server The RPC `Server` on which to open the call.
+  /// @param[in] channel_id The ID of the channel on which to send responses.
+  /// @param[in,out] service The registered service instance handling the RPC.
+  ///
+  /// @returns An active `PwpbServerWriter` bound to the specified channel and
+  ///   method.
   template <auto kMethod, typename ServiceImpl>
   [[nodiscard]] static PwpbServerWriter Open(Server& server,
                                              uint32_t channel_id,
@@ -401,8 +476,8 @@ class PwpbServerWriter : private internal::PwpbServerCall {
                                                   MethodInfo::kMethodId>());
   }
 
-  // Allow default construction so that users can declare a variable into
-  // which to move server reader/writers from RPC calls.
+  /// @brief Creates an inactive `PwpbServerWriter` into which an active call
+  /// can be moved.
   constexpr PwpbServerWriter() = default;
 
   PwpbServerWriter(PwpbServerWriter&&) = default;
@@ -417,22 +492,45 @@ class PwpbServerWriter : private internal::PwpbServerCall {
   using internal::ServerCall::set_on_completion_requested;
   using internal::ServerCall::set_on_completion_requested_if_enabled;
 
-  // Writes a response. Returns the following Status codes:
-  //
-  //   OK - the response was successfully sent
-  //   FAILED_PRECONDITION - the writer is closed
-  //   INTERNAL - pw_rpc was unable to encode the pw_protobuf message
-  //   other errors - the ChannelOutput failed to send the packet; the error
-  //       codes are determined by the ChannelOutput implementation
-  //
+  /// @brief Encodes and sends a streamed `Response` message to the client.
+  ///
+  /// @param[in] response The `Response` message struct to encode and send.
+  ///
+  /// @returns
+  /// * @OK: The response was successfully sent.
+  /// * @FAILED_PRECONDITION: The writer is closed.
+  /// * @INTERNAL: `pw_rpc` was unable to encode the `pw_protobuf` message.
+  /// * Other error codes from the `ChannelOutput` implementation if sending the
+  ///   packet failed.
   Status Write(const Response& response) {
     return internal::PwpbServerCall::SendStreamResponse(response);
   }
 
+  /// @brief Closes the RPC and sends the final status to the client.
+  ///
+  /// @param[in] status The overall status of the RPC to send to the client.
+  ///
+  /// @returns
+  /// * @OK: The final packet was successfully sent.
+  /// * @FAILED_PRECONDITION: The writer is closed.
+  /// * Other error codes from the `ChannelOutput` implementation if sending the
+  ///   packet failed.
   Status Finish(Status status = OkStatus()) {
     return internal::Call::CloseAndSendResponse(status);
   }
 
+  /// @brief Attempts to close the RPC and send the final status to the client.
+  ///
+  /// Unlike `Finish()`, the call remains open if sending the final packet
+  /// fails, allowing the caller to retry.
+  ///
+  /// @param[in] status The overall status of the RPC to send to the client.
+  ///
+  /// @returns
+  /// * @OK: The final packet was successfully sent and the call was closed.
+  /// * @FAILED_PRECONDITION: The writer is closed.
+  /// * Other error codes from the `ChannelOutput` implementation if sending the
+  ///   packet failed (the call remains active).
   Status TryFinish(Status status = OkStatus()) {
     return internal::Call::TryCloseAndSendResponse(status);
   }
@@ -450,17 +548,27 @@ class PwpbServerWriter : private internal::PwpbServerCall {
       : internal::PwpbServerCall(context, MethodType::kServerStreaming) {}
 };
 
-// The PwpbUnaryResponder is used to send a typed response in a pw_protobuf
-// unary RPC.
-//
-// These classes use private inheritance to hide the internal::Call API while
-// allow direct use of its public and protected functions.
+/// @brief Sends the `pw_protobuf` response for an asynchronous unary RPC on a
+/// server.
+///
+/// @tparam Response The generated `pw_protobuf` response message struct type.
 template <typename Response>
 class PwpbUnaryResponder : private internal::PwpbServerCall {
  public:
-  // Creates a PwpbUnaryResponder that is ready to send responses for a
-  // particular RPC. This can be used for testing or to send responses to an
-  // RPC that has not been started by a client.
+  /// @brief Creates a `PwpbUnaryResponder` that is ready to send responses for
+  /// a particular RPC.
+  ///
+  /// This can be used for testing or to send responses to an RPC that has not
+  /// been started by a client.
+  ///
+  /// @tparam kMethod Pointer to the generated service method.
+  /// @tparam ServiceImpl The service implementation class.
+  /// @param[in,out] server The RPC `Server` on which to open the call.
+  /// @param[in] channel_id The ID of the channel on which to send the response.
+  /// @param[in,out] service The registered service instance handling the RPC.
+  ///
+  /// @returns An active `PwpbUnaryResponder` bound to the specified channel and
+  ///   method.
   template <auto kMethod, typename ServiceImpl>
   [[nodiscard]] static PwpbUnaryResponder Open(Server& server,
                                                uint32_t channel_id,
@@ -478,8 +586,8 @@ class PwpbUnaryResponder : private internal::PwpbServerCall {
                                                   MethodInfo::kMethodId>());
   }
 
-  // Allow default construction so that users can declare a variable into
-  // which to move server reader/writers from RPC calls.
+  /// @brief Creates an inactive `PwpbUnaryResponder` into which an active call
+  /// can be moved.
   constexpr PwpbUnaryResponder() = default;
 
   PwpbUnaryResponder(PwpbUnaryResponder&&) = default;
@@ -492,18 +600,36 @@ class PwpbUnaryResponder : private internal::PwpbServerCall {
   // Functions for setting RPC event callbacks.
   using internal::Call::set_on_error;
 
-  // Sends the response. Returns the following Status codes:
-  //
-  //   OK - the response was successfully sent
-  //   FAILED_PRECONDITION - the writer is closed
-  //   INTERNAL - pw_rpc was unable to encode the pw_protobuf message
-  //   other errors - the ChannelOutput failed to send the packet; the error
-  //       codes are determined by the ChannelOutput implementation
-  //
+  /// @brief Sends the unary `Response` message and status, closing the RPC.
+  ///
+  /// @param[in] response The `Response` message struct to encode and send.
+  /// @param[in] status The overall status of the RPC to send to the client.
+  ///
+  /// @returns
+  /// * @OK: The response was successfully sent.
+  /// * @FAILED_PRECONDITION: The responder is closed.
+  /// * @INTERNAL: `pw_rpc` was unable to encode the `pw_protobuf` message.
+  /// * Other error codes from the `ChannelOutput` implementation if sending the
+  ///   packet failed.
   Status Finish(const Response& response, Status status = OkStatus()) {
     return internal::PwpbServerCall::SendUnaryResponse(response, status);
   }
 
+  /// @brief Attempts to close the RPC and send the unary `Response` message and
+  /// status to the client.
+  ///
+  /// Unlike `Finish()`, the call remains open if sending the packet fails,
+  /// allowing the caller to retry.
+  ///
+  /// @param[in] response The `Response` message struct to encode and send.
+  /// @param[in] status The overall status of the RPC to send to the client.
+  ///
+  /// @returns
+  /// * @OK: The response was successfully sent and the call was closed.
+  /// * @FAILED_PRECONDITION: The responder is closed.
+  /// * @INTERNAL: `pw_rpc` was unable to encode the `pw_protobuf` message.
+  /// * Other error codes from the `ChannelOutput` implementation if sending the
+  ///   packet failed (the call remains active).
   Status TryFinish(const Response& response, Status status = OkStatus()) {
     return internal::PwpbServerCall::TrySendUnaryResponse(response, status);
   }
@@ -520,5 +646,7 @@ class PwpbUnaryResponder : private internal::PwpbServerCall {
       PW_EXCLUSIVE_LOCKS_REQUIRED(internal::rpc_lock())
       : internal::PwpbServerCall(context, MethodType::kUnary) {}
 };
+
+/// @endsubmodule
 
 }  // namespace pw::rpc

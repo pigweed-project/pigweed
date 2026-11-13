@@ -923,6 +923,7 @@ filegroup(
         "public/pw_rpc/thread_testing.h",
         "public/pw_rpc/writer.h",
         "//pw_rpc/examples:doxygen",
+        "//pw_rpc/pwpb:doxygen",
     ],
 )
 

@@ -371,17 +371,19 @@ class PwpbStreamResponseClientCall : public StreamResponseClientCall {
 
 }  // namespace internal
 
-// The PwpbClientReaderWriter is used to send and receive typed messages in a
-// pw_protobuf bidirectional streaming RPC.
-//
-// These classes use private inheritance to hide the internal::Call API while
-// allow direct use of its public and protected functions.
+/// @submodule{pw_rpc,pwpb}
+
+/// @brief Sends `pw_protobuf` requests and receives `pw_protobuf` responses for
+/// a bidirectional streaming RPC on a client.
+///
+/// @tparam Request The generated `pw_protobuf` request message struct type.
+/// @tparam Response The generated `pw_protobuf` response message struct type.
 template <typename Request, typename Response>
 class PwpbClientReaderWriter
     : private internal::PwpbStreamResponseClientCall<Response> {
  public:
-  // Allow default construction so that users can declare a variable into
-  // which to move client reader/writers from RPC calls.
+  /// @brief Creates an inactive `PwpbClientReaderWriter` into which an active
+  /// call can be moved.
   constexpr PwpbClientReaderWriter() = default;
 
   PwpbClientReaderWriter(PwpbClientReaderWriter&&) = default;
@@ -391,14 +393,16 @@ class PwpbClientReaderWriter
   using internal::Call::channel_id;
   using internal::Call::MaxWriteSizeBytes;
 
-  // Writes a request. Returns the following Status codes:
-  //
-  //   OK - the request was successfully sent
-  //   FAILED_PRECONDITION - the writer is closed
-  //   INTERNAL - pw_rpc was unable to encode the pw_protobuf message
-  //   other errors - the ChannelOutput failed to send the packet; the error
-  //       codes are determined by the ChannelOutput implementation
-  //
+  /// @brief Encodes and sends a streamed `Request` message to the server.
+  ///
+  /// @param[in] request The `Request` message struct to encode and send.
+  ///
+  /// @returns
+  /// * @OK: The request was successfully sent.
+  /// * @FAILED_PRECONDITION: The writer is closed.
+  /// * @INTERNAL: `pw_rpc` was unable to encode the `pw_protobuf` message.
+  /// * Other error codes from the `ChannelOutput` implementation if sending the
+  ///   packet failed.
   Status Write(const Request& request) {
     return internal::PwpbStreamResponseClientCall<Response>::SendStreamRequest(
         request);
@@ -448,17 +452,16 @@ class PwpbClientReaderWriter
             serde) {}
 };
 
-// The PwpbClientReader is used to receive typed messages and send a typed
-// response in a pw_protobuf client streaming RPC.
-//
-// These classes use private inheritance to hide the internal::Call API while
-// allow direct use of its public and protected functions.
+/// @brief Receives `pw_protobuf` responses from the server in a server
+/// streaming RPC on a client.
+///
+/// @tparam Response The generated `pw_protobuf` response message struct type.
 template <typename Response>
 class PwpbClientReader
     : private internal::PwpbStreamResponseClientCall<Response> {
  public:
-  // Allow default construction so that users can declare a variable into
-  // which to move client reader/writers from RPC calls.
+  /// @brief Creates an inactive `PwpbClientReader` into which an active call
+  /// can be moved.
   constexpr PwpbClientReader() = default;
 
   PwpbClientReader(PwpbClientReader&&) = default;
@@ -497,17 +500,17 @@ class PwpbClientReader
             serde) {}
 };
 
-// The PwpbClientWriter is used to send typed responses in a pw_protobuf server
-// streaming RPC.
-//
-// These classes use private inheritance to hide the internal::Call API while
-// allow direct use of its public and protected functions.
+/// @brief Sends `pw_protobuf` requests and receives the final `pw_protobuf`
+/// response in a client streaming RPC on a client.
+///
+/// @tparam Request The generated `pw_protobuf` request message struct type.
+/// @tparam Response The generated `pw_protobuf` response message struct type.
 template <typename Request, typename Response>
 class PwpbClientWriter
     : private internal::PwpbUnaryResponseClientCall<Response> {
  public:
-  // Allow default construction so that users can declare a variable into
-  // which to move client reader/writers from RPC calls.
+  /// @brief Creates an inactive `PwpbClientWriter` into which an active call
+  /// can be moved.
   constexpr PwpbClientWriter() = default;
 
   PwpbClientWriter(PwpbClientWriter&&) = default;
@@ -517,14 +520,16 @@ class PwpbClientWriter
   using internal::UnaryResponseClientCall::channel_id;
   using internal::UnaryResponseClientCall::MaxWriteSizeBytes;
 
-  // Writes a request. Returns the following Status codes:
-  //
-  //   OK - the request was successfully sent
-  //   FAILED_PRECONDITION - the writer is closed
-  //   INTERNAL - pw_rpc was unable to encode the pw_protobuf message
-  //   other errors - the ChannelOutput failed to send the packet; the error
-  //       codes are determined by the ChannelOutput implementation
-  //
+  /// @brief Encodes and sends a streamed `Request` message to the server.
+  ///
+  /// @param[in] request The `Request` message struct to encode and send.
+  ///
+  /// @returns
+  /// * @OK: The request was successfully sent.
+  /// * @FAILED_PRECONDITION: The writer is closed.
+  /// * @INTERNAL: `pw_rpc` was unable to encode the `pw_protobuf` message.
+  /// * Other error codes from the `ChannelOutput` implementation if sending the
+  ///   packet failed.
   Status Write(const Request& request) {
     return internal::PwpbUnaryResponseClientCall<Response>::SendStreamRequest(
         request);
@@ -559,17 +564,15 @@ class PwpbClientWriter
             serde) {}
 };
 
-// The PwpbUnaryReceiver is used to handle a typed response to a pw_protobuf
-// unary RPC.
-//
-// These classes use private inheritance to hide the internal::Call API while
-// allow direct use of its public and protected functions.
+/// @brief Receives the `pw_protobuf` response in a unary RPC on a client.
+///
+/// @tparam Response The generated `pw_protobuf` response message struct type.
 template <typename Response>
 class PwpbUnaryReceiver
     : private internal::PwpbUnaryResponseClientCall<Response> {
  public:
-  // Allow default construction so that users can declare a variable into
-  // which to move client reader/writers from RPC calls.
+  /// @brief Creates an inactive `PwpbUnaryReceiver` into which an active call
+  /// can be moved.
   constexpr PwpbUnaryReceiver() = default;
 
   PwpbUnaryReceiver(PwpbUnaryReceiver&&) = default;
@@ -604,5 +607,7 @@ class PwpbUnaryReceiver
                                                         MethodType::kUnary,
                                                         serde) {}
 };
+
+/// @endsubmodule
 
 }  // namespace pw::rpc

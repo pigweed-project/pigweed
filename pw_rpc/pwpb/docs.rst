@@ -64,19 +64,15 @@ service's methods. The base class is templated on the derived class.
    :start-after: [pw_rpc-pwpb-service-impl]
    :end-before: [pw_rpc-pwpb-service-impl]
 
-The writer and reader helper APIs provide methods to stream and finish calls:
+The writer and reader helper APIs (see :cc:`pw_protobuf RPC <pw_rpc_pwpb>`)
+provide methods to stream and finish calls:
 
-.. cpp:function:: Status PwpbServerWriter::Write(const Response::Message& response)
-
-  Writes a single response message to the stream. The returned status indicates
-  whether the write was successful.
-
-.. cpp:function:: Status PwpbServerWriter::Finish(Status status = OkStatus())
-
-  Closes the stream and sends back the RPC's overall status to the client.
-
-.. cpp:function:: Status PwpbServerWriter::TryFinish(Status status = OkStatus())
-
+* :cc:`PwpbServerWriter::Write <pw::rpc::PwpbServerWriter::Write>`: Writes a
+  single response message to the stream. The returned :cc:`pw::Status`
+  indicates whether the write was successful.
+* :cc:`PwpbServerWriter::Finish <pw::rpc::PwpbServerWriter::Finish>`: Closes
+  the stream and sends back the RPC's overall status to the client.
+* :cc:`PwpbServerWriter::TryFinish <pw::rpc::PwpbServerWriter::TryFinish>`:
   Closes the stream and sends back the RPC's overall status to the client only
   if the final packet is successfully sent.
 
