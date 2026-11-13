@@ -204,6 +204,25 @@ class ModuleMetadataTocTest(unittest.TestCase):
                 module_metadata.should_add_doxygen_link('pw_other', tmp)
             )
 
+    def test_get_status_from_docs_subdir(self) -> None:
+        """Loads metadata from `<module>/docs/module.toml` when isolated."""
+        with tempfile.TemporaryDirectory() as tmp:
+            docs_dir = Path(tmp) / 'pw_sub_mod' / 'docs'
+            docs_dir.mkdir(parents=True)
+            (docs_dir / 'module.toml').write_text(
+                'status = "experimental"\n'
+                'tagline = "Subdir metadata"\n'
+                '[category]\nid = "fuchsia"\ntoctree = "Sub"\n',
+                encoding='utf-8',
+            )
+            self.assertEqual(
+                module_metadata.get_status('pw_sub_mod', tmp), 'experimental'
+            )
+            self.assertEqual(
+                module_metadata.get_tagline('pw_sub_mod', tmp),
+                'Subdir metadata',
+            )
+
 
 class ToctreeRewriteTest(unittest.TestCase):
     """Tests for `toctree.rewrite_relative_links` HTML post-processing."""

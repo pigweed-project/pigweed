@@ -18,9 +18,7 @@ load(
     "fuchsia_cc_test",
     "fuchsia_unittest_package",
 )
-load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_bluetooth_sapphire/fuchsia:fuchsia_api_level.bzl", "FUCHSIA_API_LEVEL")
-load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -124,14 +122,4 @@ fuchsia_unittest_package(
     fuchsia_api_level = FUCHSIA_API_LEVEL,
     tags = ["manual"],
     unit_tests = [":pw_async_fuchsia_test"],
-)
-
-sphinx_docs_library(
-    name = "docs",
-    srcs = [
-        "docs.rst",
-        "module.toml",
-    ],
-    prefix = "pw_async_fuchsia/",
-    target_compatible_with = incompatible_with_mcu(),
 )

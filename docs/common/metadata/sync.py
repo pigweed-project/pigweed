@@ -286,6 +286,9 @@ class Metadata:
         modules_data: dict[str, dict[str, Any]],
         categories_schema: dict[str, Any],
         module_schema: dict[str, Any],
+        *,
+        module_toml_labels: dict[str, str] | None = None,
+        load_issues: list[str] | None = None,
     ):
         self.pigweed_modules = pigweed_modules
         # Category ID -> Category, in the order that categories are displayed.
@@ -306,6 +309,11 @@ class Metadata:
         self._modules_data = modules_data
         self._categories_schema = categories_schema
         self._module_schema = module_schema
+        self._module_toml_labels = module_toml_labels or {}
+        self._load_issues = list(load_issues or ())
+
+    def _module_label(self, name: str) -> str:
+        return self._module_toml_labels.get(name, f"//{name}/module.toml")
 
     @classmethod
     def load(cls, root: Path, metadata_dir: Path | None = None) -> Metadata:
@@ -327,9 +335,23 @@ class Metadata:
             (metadata_dir / "module_schema.json").read_text(encoding="utf-8")
         )
         modules_data: dict[str, dict[str, Any]] = {}
+        module_toml_labels: dict[str, str] = {}
+        load_issues: list[str] = []
         for name in pigweed_modules:
-            toml_path = root / name / "module.toml"
-            if toml_path.is_file():
+            candidates = [
+                rel
+                for rel in ("module.toml", "docs/module.toml")
+                if (root / name / rel).is_file()
+            ]
+            if len(candidates) > 1:
+                load_issues.append(
+                    f"Both //{name}/module.toml and "
+                    f"//{name}/docs/module.toml exist; keep only one."
+                )
+            if candidates:
+                rel = candidates[0]
+                toml_path = root / name / rel
+                module_toml_labels[name] = f"//{name}/{rel}"
                 modules_data[name] = tomllib.loads(
                     toml_path.read_text(encoding="utf-8")
                 )
@@ -339,6 +361,8 @@ class Metadata:
             modules_data=modules_data,
             categories_schema=categories_schema,
             module_schema=module_schema,
+            module_toml_labels=module_toml_labels,
+            load_issues=load_issues,
         )
 
     def validate(self) -> list[str]:
@@ -353,7 +377,7 @@ class Metadata:
                 f"{CATEGORIES_SCHEMA_LABEL}{at_loc}: {exc.message}"
             ]
 
-        issues: list[str] = []
+        issues: list[str] = list(self._load_issues)
         missing = sorted(set(self.pigweed_modules) - set(self._modules_data))
         for name in missing:
             issues.append(
@@ -363,7 +387,7 @@ class Metadata:
         extra = sorted(set(self._modules_data) - set(self.pigweed_modules))
         for name in extra:
             issues.append(
-                f"//{name}/module.toml exists, but '{name}' is not in "
+                f"{self._module_label(name)} exists, but '{name}' is not in "
                 "//PIGWEED_MODULES."
             )
 
@@ -375,7 +399,7 @@ class Metadata:
                 location = "/".join(str(key) for key in exc.absolute_path)
                 at_loc = f" at '{location}'" if location else ""
                 schema_issues.append(
-                    f"//{name}/module.toml does not match "
+                    f"{self._module_label(name)} does not match "
                     f"{MODULE_SCHEMA_LABEL}{at_loc}: {exc.message}"
                 )
         if schema_issues:
@@ -389,22 +413,23 @@ class Metadata:
         """Validates module categories and facade/backend relationships."""
         issues: list[str] = []
         for name, module in self.modules.items():
+            label = self._module_label(name)
             category_id = module.category.id if module.category else None
             if category_id and category_id not in self.categories:
                 issues.append(
-                    f"//{name}/module.toml lists category '{category_id}', "
+                    f"{label} lists category '{category_id}', "
                     f"which is not defined in {CATEGORIES_TOML_LABEL}."
                 )
             if module.facade is not None:
                 facade = module.facade.module
                 if facade not in self.modules:
                     issues.append(
-                        f"//{name}/module.toml lists facade '{facade}', "
+                        f"{label} lists facade '{facade}', "
                         "which is not defined in //PIGWEED_MODULES."
                     )
                 elif self.modules[facade].facade is not None:
                     issues.append(
-                        f"//{name}/module.toml lists facade '{facade}', "
+                        f"{label} lists facade '{facade}', "
                         "which is itself a backend."
                     )
                 else:
@@ -416,7 +441,7 @@ class Metadata:
                     )
                     if category_id and category_id == facade_category:
                         issues.append(
-                            f"//{name}/module.toml lists category "
+                            f"{label} lists category "
                             f"'{category_id}', which is already on its facade "
                             f"'{facade}'."
                         )

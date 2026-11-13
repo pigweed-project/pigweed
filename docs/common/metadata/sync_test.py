@@ -232,6 +232,64 @@ class MetadataValidationTest(unittest.TestCase):
         self.assertTrue(any("pw_gamma" in issue for issue in issues))
         self.assertTrue(any("pw_beta" in issue for issue in issues))
 
+    def test_load_module_toml_from_docs_subdir(self) -> None:
+        """Loads //<module>/docs/module.toml and rejects duplicates."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            metadata_dir = root / "docs" / "common" / "metadata"
+            metadata_dir.mkdir(parents=True)
+            (root / "PIGWEED_MODULES").write_text(
+                "pw_alpha\npw_beta\n", encoding="utf-8"
+            )
+            (metadata_dir / "categories.toml").write_text(
+                "[core]\n"
+                'title = "Core"\n'
+                'icon = "gear"\n'
+                'description = "Core desc"\n'
+                'homepage = "//docs/sphinx/core/index.rst"\n',
+                encoding="utf-8",
+            )
+            import json  # pylint: disable=import-outside-toplevel
+
+            (metadata_dir / "categories_schema.json").write_text(
+                json.dumps(_TEST_CATEGORIES_SCHEMA), encoding="utf-8"
+            )
+            (metadata_dir / "module_schema.json").write_text(
+                json.dumps(_TEST_MODULE_SCHEMA), encoding="utf-8"
+            )
+            (root / "pw_alpha").mkdir()
+            (root / "pw_alpha" / "module.toml").write_text(
+                'status = "stable"\n'
+                '[category]\nid = "core"\ntoctree = "Alpha"\n',
+                encoding="utf-8",
+            )
+            (root / "pw_beta" / "docs").mkdir(parents=True)
+            (root / "pw_beta" / "docs" / "module.toml").write_text(
+                'status = "experimental"\n'
+                '[category]\nid = "core"\ntoctree = "Beta"\n',
+                encoding="utf-8",
+            )
+            meta = sync.Metadata.load(root)
+            self.assertEqual(meta.validate(), [])
+            self.assertEqual(
+                meta.category_modules("core"), ["pw_alpha", "pw_beta"]
+            )
+
+            # Having both module.toml and docs/module.toml fails validation.
+            (root / "pw_beta" / "module.toml").write_text(
+                'status = "stable"\n'
+                '[category]\nid = "core"\ntoctree = "Beta"\n',
+                encoding="utf-8",
+            )
+            dup_meta = sync.Metadata.load(root)
+            self.assertTrue(
+                any(
+                    "Both //pw_beta/module.toml and //pw_beta/docs/module.toml"
+                    in issue
+                    for issue in dup_meta.validate()
+                )
+            )
+
     def test_facade_validation(self) -> None:
         """Tests validation of the 'facade' field on backend modules."""
         data = copy.deepcopy(_SAMPLE_DATA)

@@ -257,7 +257,6 @@ sphinx_docs_library(
         "//pw_async:docs",
         "//pw_async2:docs",
         "//pw_async_basic:docs",
-        "//pw_async_fuchsia:docs",
         "//pw_atomic:docs",
         "//pw_base64:docs",
         "//pw_bloat:docs",
@@ -371,7 +370,6 @@ sphinx_docs_library(
         "//pw_protobuf:docs",
         "//pw_protobuf_compiler:docs",
         "//pw_random:docs",
-        "//pw_random_fuchsia:docs",
         "//pw_result:docs",
         "//pw_ring_buffer:docs",
         "//pw_router:docs",
@@ -446,6 +444,15 @@ sphinx_docs_library(
     ],
     target_compatible_with = incompatible_with_mcu(),
     visibility = ["//visibility:private"],
+    # `sphinx_docs_library` targets in `<module>/docs/` subpackages must go in
+    # `deps` rather than `srcs`: `srcs` reads raw `DefaultInfo` file paths and
+    # ignores `SphinxDocsLibraryInfo`, which would leave files at
+    # `<module>/docs/docs.rst` instead of stripping `<module>/docs/` and
+    # applying `prefix = "<module>/"`.
+    deps = [
+        "//pw_async_fuchsia/docs",
+        "//pw_random_fuchsia/docs",
+    ],
 )
 
 sphinx_build_binary(

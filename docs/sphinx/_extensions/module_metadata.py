@@ -105,9 +105,17 @@ _default_srcdir: list[str] = []
 @functools.lru_cache(maxsize=None)
 def _load_module_metadata(module_name: str, root_dir: str) -> dict[str, Any]:
     """Loads and validates //<module_name>/module.toml from root_dir."""
+    metadata_label = f'//{module_name}/module.toml'
     metadata_file = os.path.join(root_dir, module_name, 'module.toml')
     if not os.path.isfile(metadata_file):
-        raise SphinxError(f'//{module_name}/module.toml not found')
+        docs_metadata_file = os.path.join(
+            root_dir, module_name, 'docs', 'module.toml'
+        )
+        if os.path.isfile(docs_metadata_file):
+            metadata_file = docs_metadata_file
+            metadata_label = f'//{module_name}/docs/module.toml'
+        else:
+            raise SphinxError(f'{metadata_label} not found')
     with open(metadata_file, 'rb') as metadata_f:
         raw_metadata = tomllib.load(metadata_f)
     if jsonschema_enabled:
@@ -117,7 +125,7 @@ def _load_module_metadata(module_name: str, root_dir: str) -> dict[str, Any]:
             location = '/'.join(str(key) for key in exc.absolute_path)
             at_loc = f" at '{location}'" if location else ''
             raise SphinxError(
-                f'//{module_name}/module.toml does not match '
+                f'{metadata_label} does not match '
                 f'//docs/common/metadata/module_schema.json{at_loc}: '
                 f'{exc.message}. See '
                 'https://pigweed.dev/contributing/docs/website.html'
