@@ -26,12 +26,11 @@ from helpers import (
 _SITEMAP_NS = "http://www.sitemaps.org/schemas/sitemap/0.9"
 _BASE_URL = "https://pigweed.dev/"
 
-# Utility and source files that exist in the HTML output directory but are
-# intentionally excluded from sitemap.xml.
+# Utility files that exist in the HTML output directory but are intentionally
+# excluded from sitemap.xml.
 _EXCLUDED_REL_FILES = {
     "rustdoc/help.html",
     "rustdoc/settings.html",
-    "search.html",
 }
 
 
@@ -247,7 +246,6 @@ class SitemapTest(unittest.TestCase):
             # Rustdoc macro redirect stub
             "https://pigweed.dev/rustdoc/pw_assert/macro.assert!.html",
             # Utility / non-content pages
-            "https://pigweed.dev/search.html",
             "https://pigweed.dev/rustdoc/help.html",
             "https://pigweed.dev/rustdoc/settings.html",
             "https://pigweed.dev/_static/webpack-macros.html",

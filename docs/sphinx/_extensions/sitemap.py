@@ -18,7 +18,6 @@ from pathlib import Path
 
 # Directories excluded from the sitemap.
 _EXCLUDE_DIRS = {
-    '_sources',  # Raw reST source files
     '_sphinx_design_static',  # sphinx-design static assets
     '_static',  # Sphinx static assets
     'search',  # Pagefind search index assets
@@ -34,7 +33,6 @@ _EXCLUDE_PATTERNS = {
 _EXCLUDE_FILES = {
     'rustdoc/help.html',  # Rustdoc keyboard shortcuts help UI
     'rustdoc/settings.html',  # Rustdoc settings UI
-    'search.html',  # Unused legacy Sphinx search page
 }
 
 

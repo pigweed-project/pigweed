@@ -21,6 +21,10 @@ from pathlib import Path
 import sys
 
 
+from sphinx.application import Sphinx
+from sphinx.builders.html import StandaloneHTMLBuilder
+from sphinx.domains.std import StandardDomain
+
 from pw_console.pigweed_code_style import PigweedCodeStyle
 from pw_console.pigweed_code_style import PigweedCodeLightStyle
 
@@ -116,7 +120,8 @@ html_logo = 'https://www.gstatic.com/pigweed/pw_logo.svg'
 # If false, no index is generated.
 html_use_index = False
 
-# If true, links to the reST sources are added to the pages.
+# Do not copy raw reST sources into _build/html/_sources/ or link to them.
+html_copy_source = False
 html_show_sourcelink = False
 
 # If true, "Created using Sphinx" is shown in the HTML footer. Default is True.
@@ -268,6 +273,48 @@ def env_get_outdated(app, env, added, changed, removed):
     return ['index']
 
 
-def setup(app):
+class _HtmlBuilder(StandaloneHTMLBuilder):
+    """HTML builder with Sphinx's built-in search disabled.
+
+    pigweed.dev indexes assembled HTML with Pagefind (//docs/common/search.py),
+    so Sphinx's Snowball-stemmer search index (searchindex.js) and search.html
+    are unused.
+    """
+
+    search = False
+
+
+def _remove_disabled_virtual_labels(app: Sphinx) -> None:
+    """Drop StandardDomain virtual labels for disabled HTML pages.
+
+    Prevents objects.inv from advertising nonexistent search.html,
+    genindex.html, or py-modindex.html targets and prevents :ref: links to
+    them from silently resolving to 404s.
+    """
+    if not isinstance(app.builder, StandaloneHTMLBuilder):
+        return
+    std = app.env.get_domain('std')
+    if not isinstance(std, StandardDomain):
+        return
+    domain_indices = app.config.html_domain_indices
+    modindex_enabled = (
+        domain_indices
+        if isinstance(domain_indices, bool)
+        else 'py-modindex' in domain_indices
+    )
+    disabled = (
+        ('search', 'search', not app.builder.search),
+        ('genindex', 'genindex', not app.builder.use_index),
+        ('modindex', 'py-modindex', not modindex_enabled),
+    )
+    for label, docname, is_disabled in disabled:
+        if is_disabled and docname not in app.env.found_docs:
+            std.labels.pop(label, None)
+            std.anonlabels.pop(label, None)
+
+
+def setup(app: Sphinx) -> None:
+    app.add_builder(_HtmlBuilder, override=True)
+    app.connect('builder-inited', _remove_disabled_virtual_labels)
     app.connect('env-get-outdated', env_get_outdated)
     app.connect('autodoc-skip-member', do_not_skip_init)
