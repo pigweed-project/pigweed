@@ -41,6 +41,7 @@ pw_source_set("pw_tls_client_mbedtls") {
     "$dir_pw_assert",
     "$dir_pw_log",
     "$dir_pw_stream",
+    "$dir_pw_string:string",
     "$dir_pw_tls_client:tls_entropy",
     "$pw_external_mbedtls:mbedtls",
   ]

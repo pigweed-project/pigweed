@@ -243,6 +243,13 @@ if (dir_pw_third_party_mbedtls != "") {
       "-Wno-unused-parameter",
       "-Wno-unused-variable",
     ]
+    if (defined(pw_toolchain_SCOPE.cc) &&
+        get_path_info(pw_toolchain_SCOPE.cc, "file") == "clang") {
+      cflags += [
+        "-Wno-unknown-warning-option",
+        "-Wno-uninitialized-const-pointer",
+      ]
+    }
     cflags_c = [ "-Wno-strict-prototypes" ]
     config_header_file = rebase_path(pw_third_party_mbedtls_CONFIG_HEADER,
                                      get_label_info(":mbedtls", "dir"))

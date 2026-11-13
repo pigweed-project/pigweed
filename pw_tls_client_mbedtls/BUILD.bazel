@@ -33,13 +33,23 @@ cc_library(
         "public",
         "public_overrides",
     ],
-    # TODO: b/258068735 - Get this target to build. Requires adding mbedtls
-    # build targets.
-    tags = ["manual"],
     deps = [
         "//pw_log",
+        "//pw_preprocessor",
+        "//pw_status",
+        "//pw_string:string",
+        "//pw_tls_client:entropy",
         "//pw_tls_client:pw_tls_client.facade",
+        "@mbedtls",
     ],
+)
+
+config_setting(
+    name = "_is_active_backend",
+    flag_values = {
+        "//pw_tls_client:backend": ":pw_tls_client_mbedtls",
+    },
+    visibility = ["//visibility:private"],
 )
 
 pw_cc_test(
@@ -47,11 +57,14 @@ pw_cc_test(
     srcs = [
         "tls_client_mbedtls_test.cc",
     ],
-    # TODO: b/258068735 - Get this target to build. Requires adding mbedtls
-    # build targets.
-    tags = ["manual"],
+    target_compatible_with = select({
+        ":_is_active_backend": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
-        ":pw_tls_client_mbedtls",
+        "//pw_status",
+        "//pw_stream",
+        "//pw_tls_client",
     ],
 )
 

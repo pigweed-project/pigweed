@@ -12,8 +12,11 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <string_view>
+
 #include "pw_assert/check.h"
 #include "pw_log/log.h"
+#include "pw_string/string.h"
 #include "pw_tls_client/entropy.h"
 #include "pw_tls_client/session.h"
 #include "pw_tls_client_mbedtls/backend_types.h"
@@ -157,8 +160,19 @@ Status SessionImplementation::Setup() {
   // The API does not fail.
   mbedtls_ssl_set_bio(&ssl_ctx_, this, MbedTlsWrite, MbedTlsRead, nullptr);
 
-  ret = mbedtls_ssl_set_hostname(&ssl_ctx_,
-                                 session_options_.server_name().data());
+  const char* hostname_ptr = nullptr;
+  pw::InlineString<MBEDTLS_SSL_MAX_HOST_NAME_LEN> hostname;
+  const std::string_view server_name = session_options_.server_name();
+  if (server_name.data() != nullptr) {
+    if (server_name.size() > hostname.max_size() ||
+        server_name.find('\0') != std::string_view::npos) {
+      return Status::Internal();
+    }
+    hostname = server_name;
+    hostname_ptr = hostname.c_str();
+  }
+
+  ret = mbedtls_ssl_set_hostname(&ssl_ctx_, hostname_ptr);
   if (ret) {
     return Status::Internal();
   }

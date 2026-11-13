@@ -37,18 +37,29 @@ cc_library(
     deps = [
         "//pw_tls_client:pw_tls_client.facade",
         "//third_party/boringssl:sysdeps",
+        "@boringssl//:ssl",
     ],
 )
 
+config_setting(
+    name = "_is_active_backend",
+    flag_values = {
+        "//pw_tls_client:backend": ":pw_tls_client_boringssl",
+    },
+    visibility = ["//visibility:private"],
+)
+
 pw_cc_test(
-    name = "tls_boringssl_client_test",
+    name = "tls_client_boringssl_test",
     srcs = [
         "tls_client_boringssl_test.cc",
     ],
-    #TODO: b/257529537 - Get this to build.
-    tags = ["manual"],
+    target_compatible_with = select({
+        ":_is_active_backend": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
-        ":pw_tls_client_boringssl",
+        "//pw_tls_client",
     ],
 )
 

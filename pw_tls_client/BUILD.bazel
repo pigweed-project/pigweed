@@ -29,7 +29,7 @@ pw_facade(
         "public/pw_tls_client/session.h",
         "public/pw_tls_client/status.h",
     ],
-    backend = ":pw_tls_client_backend",
+    backend = ":backend",
     strip_include_prefix = "public",
     tags = ["noclangtidy"],
     deps = [
@@ -44,10 +44,8 @@ pw_facade(
 )
 
 label_flag(
-    name = "pw_tls_client_backend",
-    # TODO(zyecheng): Add a "backend_multiplexer" target once BoringSSL/MbedTLS
-    # is ready.
-    build_setting_default = "@rules_cc//:empty_lib",
+    name = "backend",
+    build_setting_default = "//pw_build:unspecified_backend",
 )
 
 pw_facade(
@@ -65,9 +63,7 @@ pw_facade(
 
 label_flag(
     name = "entropy_backend",
-    # TODO(zyecheng): Add a "backend_multiplexer" target once BoringSSL/MbedTLS
-    # is ready.
-    build_setting_default = "@rules_cc//:empty_lib",
+    build_setting_default = "//pw_build:unspecified_backend",
 )
 
 cc_library(
