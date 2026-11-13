@@ -354,6 +354,7 @@ pw_add_test(pw_rpc2.cpp.rpc_reader_writer_test
     rpc_reader_writer_test.cc
   PRIVATE_DEPS
     pw_allocator.testing
+    pw_async2
     pw_async2.testing
     pw_bytes
     pw_rpc2.cpp

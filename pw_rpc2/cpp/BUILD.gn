@@ -364,6 +364,7 @@ pw_test("rpc_reader_writer_test") {
     "$dir_pw_allocator:testing",
     "$dir_pw_async2:testing",
     "$dir_pw_transport/cpp:socket",
+    dir_pw_async2,
     dir_pw_bytes,
   ]
   sources = [ "rpc_reader_writer_test.cc" ]

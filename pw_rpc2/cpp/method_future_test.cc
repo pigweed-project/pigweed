@@ -18,11 +18,11 @@
 #include <utility>
 
 #include "pw_allocator/testing.h"
-#include "pw_async2/await.h"
+#include "pw_async2/context.h"
 #include "pw_async2/dispatcher_for_test.h"
 #include "pw_async2/future.h"
+#include "pw_async2/future_task.h"
 #include "pw_async2/poll.h"
-#include "pw_async2/task.h"
 #include "pw_preprocessor/compiler.h"
 #include "pw_unit_test/framework.h"
 
@@ -85,24 +85,6 @@ class MockFuture {
   int* destruction_counter_ = nullptr;
 };
 
-class DriverTask : public async2::Task {
- public:
-  explicit DriverTask(BoxedMethodFuture future)
-      : Task(PW_ASYNC_TASK_NAME("DriverTask")), future_(std::move(future)) {}
-
-  bool completed() const { return completed_; }
-
- private:
-  async2::Poll<> DoPend(async2::Context& cx) override {
-    PW_AWAIT(future_, cx);
-    completed_ = true;
-    return async2::Ready();
-  }
-
-  BoxedMethodFuture future_;
-  bool completed_ = false;
-};
-
 TEST(MethodFutureTest, DefaultConstructedIsEmpty) {
   BoxedMethodFuture future;
   EXPECT_FALSE(future.is_pendable());
@@ -121,11 +103,11 @@ TEST(MethodFutureTest, ImmediateCompletion) {
   EXPECT_EQ(dtor_count, 0);
 
   async2::DispatcherForTest dispatcher;
-  DriverTask task(std::move(future));
+  async2::FutureTask task(std::move(future));
   dispatcher.Post(task);
   dispatcher.RunToCompletion();
 
-  EXPECT_TRUE(task.completed());
+  EXPECT_TRUE(task.is_complete());
   // The future was destroyed in-place upon completion.
   EXPECT_EQ(dtor_count, 1);
 }
@@ -138,11 +120,11 @@ TEST(MethodFutureTest, MultiStepCompletion) {
       storage, [&] { return MockFuture(3, &dtor_count); });
 
   async2::DispatcherForTest dispatcher;
-  DriverTask task(std::move(future));
+  async2::FutureTask task(std::move(future));
   dispatcher.Post(task);
   dispatcher.RunToCompletion();
 
-  EXPECT_TRUE(task.completed());
+  EXPECT_TRUE(task.is_complete());
   EXPECT_EQ(dtor_count, 1);
 }
 
@@ -245,11 +227,11 @@ TEST(MethodFutureTest, MoveTransfersOwnership) {
   EXPECT_EQ(dtor_count, 0);
 
   async2::DispatcherForTest dispatcher;
-  DriverTask task(std::move(future3));
+  async2::FutureTask task(std::move(future3));
   dispatcher.Post(task);
   dispatcher.RunToCompletion();
 
-  EXPECT_TRUE(task.completed());
+  EXPECT_TRUE(task.is_complete());
   EXPECT_EQ(dtor_count, 1);
 }
 
@@ -285,11 +267,11 @@ TEST(CoroFutureTest, ImmediateCoroCompletesAndDeallocates) {
   EXPECT_FALSE(future.is_complete());
 
   async2::DispatcherForTest dispatcher;
-  DriverTask task(std::move(future));
+  async2::FutureTask task(std::move(future));
   dispatcher.Post(task);
   dispatcher.RunToCompletion();
 
-  EXPECT_TRUE(task.completed());
+  EXPECT_TRUE(task.is_complete());
   // Verify coroutine frame was deallocated
   auto allocated_bytes = alloc.GetAllocatedBytes();
   ASSERT_TRUE(allocated_bytes.has_value());
@@ -309,11 +291,11 @@ TEST(CoroFutureTest, AwaitingCoroCompletesAndDestructsLocals) {
       });
 
   async2::DispatcherForTest dispatcher;
-  DriverTask task(std::move(future));
+  async2::FutureTask task(std::move(future));
   dispatcher.Post(task);
   dispatcher.RunToCompletion();
 
-  EXPECT_TRUE(task.completed());
+  EXPECT_TRUE(task.is_complete());
   EXPECT_EQ(dtor_count, 1);
   auto allocated_bytes = alloc.GetAllocatedBytes();
   ASSERT_TRUE(allocated_bytes.has_value());

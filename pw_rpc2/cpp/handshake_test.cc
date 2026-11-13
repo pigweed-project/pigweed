@@ -16,13 +16,12 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <utility>
 
 #include "pw_allocator/testing.h"
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/future_task.h"
 #include "pw_async2/poll.h"
-#include "pw_async2/task.h"
 #include "pw_bytes/endian.h"
 #include "pw_rpc2/internal/packet.h"
 #include "pw_rpc2/internal/test_utils.h"
@@ -33,34 +32,6 @@
 
 namespace pw::rpc2::internal {
 namespace {
-
-template <typename FutureType>
-class HandshakeTestTask : public async2::Task {
- public:
-  explicit HandshakeTestTask(FutureType fut) : fut_(std::move(fut)) {}
-  ~HandshakeTestTask() override { Deregister(); }
-
-  async2::Poll<> DoPend(async2::Context& cx) override {
-    auto poll = fut_.Pend(cx);
-    if (poll.IsPending()) {
-      return async2::Pending();
-    }
-    result_ = std::move(*poll);
-    return async2::Ready();
-  }
-
-  const std::optional<RpcResult<EstablishedConnection>>& result() const {
-    return result_;
-  }
-  FutureType& future() { return fut_; }
-
- private:
-  FutureType fut_;
-  std::optional<RpcResult<EstablishedConnection>> result_;
-};
-
-template <typename FutureType>
-HandshakeTestTask(FutureType) -> HandshakeTestTask<FutureType>;
 
 // Encodes a handshake packet as a hypothetical newer protocol version might
 // send it: `extra_bytes` of trailing data and a non-zero reserved field, both
@@ -113,23 +84,23 @@ TEST(HandshakeTest, InitiatorAndResponderSuccessful3WayHandshake) {
 
   auto paired = transport::ForwardingSocketPair::Create(allocator);
 
-  HandshakeTestTask initiator_task(InitiatorHandshakeFuture(paired.first()));
-  HandshakeTestTask responder_task(ResponderHandshakeFuture(paired.second()));
+  async2::FutureTask initiator_task(InitiatorHandshakeFuture(paired.first()));
+  async2::FutureTask responder_task(ResponderHandshakeFuture(paired.second()));
 
   dispatcher.Post(initiator_task);
   dispatcher.Post(responder_task);
 
   dispatcher.RunUntilStalled();
 
-  ASSERT_TRUE(initiator_task.result().has_value());
-  ASSERT_TRUE(initiator_task.result()->ok());
-  EXPECT_EQ(initiator_task.result()->value().info.negotiated_version, 1u);
-  EXPECT_TRUE(initiator_task.result()->value().connection);
+  ASSERT_TRUE(initiator_task.has_value());
+  ASSERT_TRUE(initiator_task.value().ok());
+  EXPECT_EQ(initiator_task.value().value().info.negotiated_version, 1u);
+  EXPECT_TRUE(initiator_task.value().value().connection);
 
-  ASSERT_TRUE(responder_task.result().has_value());
-  ASSERT_TRUE(responder_task.result()->ok());
-  EXPECT_EQ(responder_task.result()->value().info.negotiated_version, 1u);
-  EXPECT_TRUE(responder_task.result()->value().connection);
+  ASSERT_TRUE(responder_task.has_value());
+  ASSERT_TRUE(responder_task.value().ok());
+  EXPECT_EQ(responder_task.value().value().info.negotiated_version, 1u);
+  EXPECT_TRUE(responder_task.value().value().connection);
 
   // The responder needed the initiator's SYN and ACK, and the initiator needed
   // the responder's SYN-ACK. Nothing is left unread, so neither side sent any
@@ -146,9 +117,9 @@ TEST(HandshakeTest, VersionNegotiationInitiatorHigher) {
 
   auto paired = transport::ForwardingSocketPair::Create(allocator);
 
-  HandshakeTestTask initiator_task(
+  async2::FutureTask initiator_task(
       InitiatorHandshakeFuture(paired.first(), HandshakeInfo{2}));
-  HandshakeTestTask responder_task(
+  async2::FutureTask responder_task(
       ResponderHandshakeFuture(paired.second(), HandshakeInfo{1}));
 
   dispatcher.Post(initiator_task);
@@ -156,15 +127,15 @@ TEST(HandshakeTest, VersionNegotiationInitiatorHigher) {
 
   dispatcher.RunUntilStalled();
 
-  ASSERT_TRUE(initiator_task.result().has_value());
-  ASSERT_TRUE(initiator_task.result()->ok());
-  EXPECT_EQ(initiator_task.result()->value().info.negotiated_version, 1u);
-  EXPECT_TRUE(initiator_task.result()->value().connection);
+  ASSERT_TRUE(initiator_task.has_value());
+  ASSERT_TRUE(initiator_task.value().ok());
+  EXPECT_EQ(initiator_task.value().value().info.negotiated_version, 1u);
+  EXPECT_TRUE(initiator_task.value().value().connection);
 
-  ASSERT_TRUE(responder_task.result().has_value());
-  ASSERT_TRUE(responder_task.result()->ok());
-  EXPECT_EQ(responder_task.result()->value().info.negotiated_version, 1u);
-  EXPECT_TRUE(responder_task.result()->value().connection);
+  ASSERT_TRUE(responder_task.has_value());
+  ASSERT_TRUE(responder_task.value().ok());
+  EXPECT_EQ(responder_task.value().value().info.negotiated_version, 1u);
+  EXPECT_TRUE(responder_task.value().value().connection);
 }
 
 TEST(HandshakeTest, VersionNegotiationResponderHigher) {
@@ -173,9 +144,9 @@ TEST(HandshakeTest, VersionNegotiationResponderHigher) {
 
   auto paired = transport::ForwardingSocketPair::Create(allocator);
 
-  HandshakeTestTask initiator_task(
+  async2::FutureTask initiator_task(
       InitiatorHandshakeFuture(paired.first(), HandshakeInfo{1}));
-  HandshakeTestTask responder_task(
+  async2::FutureTask responder_task(
       ResponderHandshakeFuture(paired.second(), HandshakeInfo{2}));
 
   dispatcher.Post(initiator_task);
@@ -183,15 +154,15 @@ TEST(HandshakeTest, VersionNegotiationResponderHigher) {
 
   dispatcher.RunUntilStalled();
 
-  ASSERT_TRUE(initiator_task.result().has_value());
-  ASSERT_TRUE(initiator_task.result()->ok());
-  EXPECT_EQ(initiator_task.result()->value().info.negotiated_version, 1u);
-  EXPECT_TRUE(initiator_task.result()->value().connection);
+  ASSERT_TRUE(initiator_task.has_value());
+  ASSERT_TRUE(initiator_task.value().ok());
+  EXPECT_EQ(initiator_task.value().value().info.negotiated_version, 1u);
+  EXPECT_TRUE(initiator_task.value().value().connection);
 
-  ASSERT_TRUE(responder_task.result().has_value());
-  ASSERT_TRUE(responder_task.result()->ok());
-  EXPECT_EQ(responder_task.result()->value().info.negotiated_version, 1u);
-  EXPECT_TRUE(responder_task.result()->value().connection);
+  ASSERT_TRUE(responder_task.has_value());
+  ASSERT_TRUE(responder_task.value().ok());
+  EXPECT_EQ(responder_task.value().value().info.negotiated_version, 1u);
+  EXPECT_TRUE(responder_task.value().value().connection);
 }
 
 TEST(HandshakeTest, StepByStepInitiatorAndResponder) {
@@ -201,8 +172,8 @@ TEST(HandshakeTest, StepByStepInitiatorAndResponder) {
   auto [client_conn, raw_client] = test::MakeMockConnection(allocator);
   auto [server_conn, raw_server] = test::MakeMockConnection(allocator);
 
-  HandshakeTestTask initiator_task(InitiatorHandshakeFuture{client_conn});
-  HandshakeTestTask responder_task(ResponderHandshakeFuture{server_conn});
+  async2::FutureTask initiator_task(InitiatorHandshakeFuture{client_conn});
+  async2::FutureTask responder_task(ResponderHandshakeFuture{server_conn});
 
   dispatcher.Post(initiator_task);
   dispatcher.Post(responder_task);
@@ -211,8 +182,8 @@ TEST(HandshakeTest, StepByStepInitiatorAndResponder) {
   dispatcher.RunUntilStalled();
   EXPECT_EQ(raw_client->commit_count(), 1u);
   EXPECT_EQ(raw_server->commit_count(), 0u);
-  EXPECT_FALSE(initiator_task.result().has_value());
-  EXPECT_FALSE(responder_task.result().has_value());
+  EXPECT_FALSE(initiator_task.has_value());
+  EXPECT_FALSE(responder_task.has_value());
 
   auto syn_pkt = HandshakePacket::Decode(raw_client->last_written_buf());
   ASSERT_TRUE(syn_pkt.has_value());
@@ -228,7 +199,7 @@ TEST(HandshakeTest, StepByStepInitiatorAndResponder) {
   // Poll 2: Responder processes SYN, sends SYN-ACK, awaits ACK
   dispatcher.RunUntilStalled();
   EXPECT_EQ(raw_server->commit_count(), 1u);
-  EXPECT_FALSE(responder_task.result().has_value());
+  EXPECT_FALSE(responder_task.has_value());
 
   auto syn_ack_pkt = HandshakePacket::Decode(raw_server->last_written_buf());
   ASSERT_TRUE(syn_ack_pkt.has_value());
@@ -244,11 +215,11 @@ TEST(HandshakeTest, StepByStepInitiatorAndResponder) {
   // Poll 3: Initiator processes SYN-ACK, sends ACK, completes!
   dispatcher.RunUntilStalled();
   EXPECT_EQ(raw_client->commit_count(), 2u);
-  ASSERT_TRUE(initiator_task.result().has_value());
-  ASSERT_TRUE(initiator_task.result()->ok());
-  EXPECT_EQ(initiator_task.result()->value().info.negotiated_version, 1u);
-  EXPECT_TRUE(initiator_task.result()->value().connection);
-  EXPECT_FALSE(responder_task.result().has_value());
+  ASSERT_TRUE(initiator_task.has_value());
+  ASSERT_TRUE(initiator_task.value().ok());
+  EXPECT_EQ(initiator_task.value().value().info.negotiated_version, 1u);
+  EXPECT_TRUE(initiator_task.value().value().connection);
+  EXPECT_FALSE(responder_task.has_value());
 
   auto ack_pkt = HandshakePacket::Decode(raw_client->last_written_buf());
   ASSERT_TRUE(ack_pkt.has_value());
@@ -263,10 +234,10 @@ TEST(HandshakeTest, StepByStepInitiatorAndResponder) {
 
   // Poll 4: Responder processes ACK, completes!
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(responder_task.result().has_value());
-  ASSERT_TRUE(responder_task.result()->ok());
-  EXPECT_EQ(responder_task.result()->value().info.negotiated_version, 1u);
-  EXPECT_TRUE(responder_task.result()->value().connection);
+  ASSERT_TRUE(responder_task.has_value());
+  ASSERT_TRUE(responder_task.value().ok());
+  EXPECT_EQ(responder_task.value().value().info.negotiated_version, 1u);
+  EXPECT_TRUE(responder_task.value().value().connection);
 }
 
 TEST(HandshakeTest, ResponderRejectsInvalidMagicInSyn) {
@@ -274,7 +245,7 @@ TEST(HandshakeTest, ResponderRejectsInvalidMagicInSyn) {
   async2::DispatcherForTest dispatcher;
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  HandshakeTestTask responder_task(ResponderHandshakeFuture{conn});
+  async2::FutureTask responder_task(ResponderHandshakeFuture{conn});
   dispatcher.Post(responder_task);
 
   dispatcher.RunUntilStalled();
@@ -287,8 +258,8 @@ TEST(HandshakeTest, ResponderRejectsInvalidMagicInSyn) {
   raw_conn->SetNextRead(std::move(bad_magic_buf));
 
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(responder_task.result().has_value());
-  EXPECT_EQ(responder_task.result()->status(), RpcStatus::ProtocolError());
+  ASSERT_TRUE(responder_task.has_value());
+  EXPECT_EQ(responder_task.value().status(), RpcStatus::ProtocolError());
 }
 
 TEST(HandshakeTest, InitiatorRejectsInvalidMagicInSynAck) {
@@ -296,7 +267,7 @@ TEST(HandshakeTest, InitiatorRejectsInvalidMagicInSynAck) {
   async2::DispatcherForTest dispatcher;
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  HandshakeTestTask initiator_task(InitiatorHandshakeFuture{conn});
+  async2::FutureTask initiator_task(InitiatorHandshakeFuture{conn});
   dispatcher.Post(initiator_task);
 
   dispatcher.RunUntilStalled();
@@ -310,8 +281,8 @@ TEST(HandshakeTest, InitiatorRejectsInvalidMagicInSynAck) {
   raw_conn->SetNextRead(std::move(bad_buf));
 
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(initiator_task.result().has_value());
-  EXPECT_EQ(initiator_task.result()->status(), RpcStatus::ProtocolError());
+  ASSERT_TRUE(initiator_task.has_value());
+  EXPECT_EQ(initiator_task.value().status(), RpcStatus::ProtocolError());
 }
 
 TEST(HandshakeTest, InitiatorRejectsHigherVersionInSynAck) {
@@ -319,7 +290,7 @@ TEST(HandshakeTest, InitiatorRejectsHigherVersionInSynAck) {
   async2::DispatcherForTest dispatcher;
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  HandshakeTestTask initiator_task(
+  async2::FutureTask initiator_task(
       InitiatorHandshakeFuture{conn, HandshakeInfo{1}});
   dispatcher.Post(initiator_task);
 
@@ -334,8 +305,8 @@ TEST(HandshakeTest, InitiatorRejectsHigherVersionInSynAck) {
   raw_conn->SetNextRead(std::move(syn_ack_buf));
 
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(initiator_task.result().has_value());
-  EXPECT_EQ(initiator_task.result()->status(), RpcStatus::ProtocolError());
+  ASSERT_TRUE(initiator_task.has_value());
+  EXPECT_EQ(initiator_task.value().status(), RpcStatus::ProtocolError());
 }
 
 TEST(HandshakeTest, InitiatorRejectsLoopbackSynInSynAckStage) {
@@ -343,7 +314,7 @@ TEST(HandshakeTest, InitiatorRejectsLoopbackSynInSynAckStage) {
   async2::DispatcherForTest dispatcher;
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  HandshakeTestTask initiator_task(InitiatorHandshakeFuture{conn});
+  async2::FutureTask initiator_task(InitiatorHandshakeFuture{conn});
   dispatcher.Post(initiator_task);
 
   dispatcher.RunUntilStalled();
@@ -357,8 +328,8 @@ TEST(HandshakeTest, InitiatorRejectsLoopbackSynInSynAckStage) {
   raw_conn->SetNextRead(std::move(enc_syn));
 
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(initiator_task.result().has_value());
-  EXPECT_EQ(initiator_task.result()->status(), RpcStatus::ProtocolError());
+  ASSERT_TRUE(initiator_task.has_value());
+  EXPECT_EQ(initiator_task.value().status(), RpcStatus::ProtocolError());
 }
 
 TEST(HandshakeTest, ResponderRejectsMismatchedVersionInAck) {
@@ -366,7 +337,7 @@ TEST(HandshakeTest, ResponderRejectsMismatchedVersionInAck) {
   async2::DispatcherForTest dispatcher;
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  HandshakeTestTask responder_task(ResponderHandshakeFuture{conn});
+  async2::FutureTask responder_task(ResponderHandshakeFuture{conn});
   dispatcher.Post(responder_task);
 
   dispatcher.RunUntilStalled();
@@ -389,8 +360,8 @@ TEST(HandshakeTest, ResponderRejectsMismatchedVersionInAck) {
   raw_conn->SetNextRead(std::move(ack_buf));
 
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(responder_task.result().has_value());
-  EXPECT_EQ(responder_task.result()->status(), RpcStatus::ProtocolError());
+  ASSERT_TRUE(responder_task.has_value());
+  EXPECT_EQ(responder_task.value().status(), RpcStatus::ProtocolError());
 }
 
 TEST(HandshakeTest, ResponderRejectsInvalidMagicInAck) {
@@ -398,7 +369,7 @@ TEST(HandshakeTest, ResponderRejectsInvalidMagicInAck) {
   async2::DispatcherForTest dispatcher;
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  HandshakeTestTask responder_task(ResponderHandshakeFuture{conn});
+  async2::FutureTask responder_task(ResponderHandshakeFuture{conn});
   dispatcher.Post(responder_task);
 
   dispatcher.RunUntilStalled();
@@ -422,8 +393,8 @@ TEST(HandshakeTest, ResponderRejectsInvalidMagicInAck) {
   raw_conn->SetNextRead(std::move(bad_ack));
 
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(responder_task.result().has_value());
-  EXPECT_EQ(responder_task.result()->status(), RpcStatus::ProtocolError());
+  ASSERT_TRUE(responder_task.has_value());
+  EXPECT_EQ(responder_task.value().status(), RpcStatus::ProtocolError());
 }
 
 TEST(HandshakeTest, ResponderAcceptsHandshakePacketWithTrailingBytes) {
@@ -431,7 +402,7 @@ TEST(HandshakeTest, ResponderAcceptsHandshakePacketWithTrailingBytes) {
   async2::DispatcherForTest dispatcher;
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  HandshakeTestTask responder_task(ResponderHandshakeFuture{conn});
+  async2::FutureTask responder_task(ResponderHandshakeFuture{conn});
   dispatcher.Post(responder_task);
 
   dispatcher.RunUntilStalled();
@@ -441,7 +412,7 @@ TEST(HandshakeTest, ResponderAcceptsHandshakePacketWithTrailingBytes) {
       allocator, HandshakePacket::Type::kSyn, 1, /*extra_bytes=*/1));
 
   dispatcher.RunUntilStalled();
-  EXPECT_FALSE(responder_task.result().has_value());
+  EXPECT_FALSE(responder_task.has_value());
   EXPECT_EQ(raw_conn->commit_count(), 1u);
 
   auto syn_ack = HandshakePacket::Decode(raw_conn->last_written_buf());
@@ -455,7 +426,7 @@ TEST(HandshakeTest, ResponderNegotiatesDownWithNewerInitiator) {
   async2::DispatcherForTest dispatcher;
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  HandshakeTestTask responder_task(ResponderHandshakeFuture{conn});
+  async2::FutureTask responder_task(ResponderHandshakeFuture{conn});
   dispatcher.Post(responder_task);
 
   dispatcher.RunUntilStalled();
@@ -465,7 +436,7 @@ TEST(HandshakeTest, ResponderNegotiatesDownWithNewerInitiator) {
       allocator, HandshakePacket::Type::kSyn, 2, /*extra_bytes=*/4));
 
   dispatcher.RunUntilStalled();
-  EXPECT_FALSE(responder_task.result().has_value());
+  EXPECT_FALSE(responder_task.has_value());
   EXPECT_EQ(raw_conn->commit_count(), 1u);
 
   // The local v1 responder negotiates down to version 1.
@@ -480,10 +451,10 @@ TEST(HandshakeTest, ResponderNegotiatesDownWithNewerInitiator) {
       allocator, HandshakePacket::Type::kAck, 1, /*extra_bytes=*/4));
 
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(responder_task.result().has_value());
-  PW_TEST_ASSERT_OK(responder_task.result()->status());
-  EXPECT_EQ(responder_task.result()->value().info.negotiated_version, 1u);
-  EXPECT_TRUE(responder_task.result()->value().connection);
+  ASSERT_TRUE(responder_task.has_value());
+  PW_TEST_ASSERT_OK(responder_task.value().status());
+  EXPECT_EQ(responder_task.value().value().info.negotiated_version, 1u);
+  EXPECT_TRUE(responder_task.value().value().connection);
 }
 
 TEST(HandshakeTest, InitiatorAcceptsNegotiatedVersionFromNewerResponder) {
@@ -491,7 +462,7 @@ TEST(HandshakeTest, InitiatorAcceptsNegotiatedVersionFromNewerResponder) {
   async2::DispatcherForTest dispatcher;
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  HandshakeTestTask initiator_task(InitiatorHandshakeFuture{conn});
+  async2::FutureTask initiator_task(InitiatorHandshakeFuture{conn});
   dispatcher.Post(initiator_task);
 
   dispatcher.RunUntilStalled();
@@ -509,10 +480,10 @@ TEST(HandshakeTest, InitiatorAcceptsNegotiatedVersionFromNewerResponder) {
 
   dispatcher.RunUntilStalled();
   EXPECT_EQ(raw_conn->commit_count(), 2u);
-  ASSERT_TRUE(initiator_task.result().has_value());
-  PW_TEST_ASSERT_OK(initiator_task.result()->status());
-  EXPECT_EQ(initiator_task.result()->value().info.negotiated_version, 1u);
-  EXPECT_TRUE(initiator_task.result()->value().connection);
+  ASSERT_TRUE(initiator_task.has_value());
+  PW_TEST_ASSERT_OK(initiator_task.value().status());
+  EXPECT_EQ(initiator_task.value().value().info.negotiated_version, 1u);
+  EXPECT_TRUE(initiator_task.value().value().connection);
 
   auto ack = HandshakePacket::Decode(raw_conn->last_written_buf());
   ASSERT_TRUE(ack.has_value());
@@ -525,7 +496,7 @@ TEST(HandshakeTest, InitiatorSendsMaxVersionAndEchoesNegotiatedVersion) {
   async2::DispatcherForTest dispatcher;
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  HandshakeTestTask initiator_task(
+  async2::FutureTask initiator_task(
       InitiatorHandshakeFuture{conn, HandshakeInfo{3}});
   dispatcher.Post(initiator_task);
 
@@ -544,9 +515,9 @@ TEST(HandshakeTest, InitiatorSendsMaxVersionAndEchoesNegotiatedVersion) {
   raw_conn->SetNextRead(std::move(enc_syn_ack));
 
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(initiator_task.result().has_value());
-  PW_TEST_ASSERT_OK(initiator_task.result()->status());
-  EXPECT_EQ(initiator_task.result()->value().info.negotiated_version, 2u);
+  ASSERT_TRUE(initiator_task.has_value());
+  PW_TEST_ASSERT_OK(initiator_task.value().status());
+  EXPECT_EQ(initiator_task.value().value().info.negotiated_version, 2u);
 
   auto ack = HandshakePacket::Decode(raw_conn->last_written_buf());
   ASSERT_TRUE(ack.has_value());
@@ -559,7 +530,7 @@ TEST(HandshakeTest, ResponderSendsNegotiatedVersionInSynAck) {
   async2::DispatcherForTest dispatcher;
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  HandshakeTestTask responder_task(
+  async2::FutureTask responder_task(
       ResponderHandshakeFuture{conn, HandshakeInfo{3}});
   dispatcher.Post(responder_task);
 
@@ -586,9 +557,9 @@ TEST(HandshakeTest, ResponderSendsNegotiatedVersionInSynAck) {
   raw_conn->SetNextRead(std::move(enc_ack));
 
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(responder_task.result().has_value());
-  PW_TEST_ASSERT_OK(responder_task.result()->status());
-  EXPECT_EQ(responder_task.result()->value().info.negotiated_version, 2u);
+  ASSERT_TRUE(responder_task.has_value());
+  PW_TEST_ASSERT_OK(responder_task.value().status());
+  EXPECT_EQ(responder_task.value().value().info.negotiated_version, 2u);
 }
 
 TEST(HandshakeTest, VersionNegotiationBothAboveOne) {
@@ -597,9 +568,9 @@ TEST(HandshakeTest, VersionNegotiationBothAboveOne) {
 
   auto paired = transport::ForwardingSocketPair::Create(allocator);
 
-  HandshakeTestTask initiator_task(
+  async2::FutureTask initiator_task(
       InitiatorHandshakeFuture(paired.first(), HandshakeInfo{3}));
-  HandshakeTestTask responder_task(
+  async2::FutureTask responder_task(
       ResponderHandshakeFuture(paired.second(), HandshakeInfo{2}));
 
   dispatcher.Post(initiator_task);
@@ -607,13 +578,13 @@ TEST(HandshakeTest, VersionNegotiationBothAboveOne) {
 
   dispatcher.RunUntilStalled();
 
-  ASSERT_TRUE(initiator_task.result().has_value());
-  PW_TEST_ASSERT_OK(initiator_task.result()->status());
-  EXPECT_EQ(initiator_task.result()->value().info.negotiated_version, 2u);
+  ASSERT_TRUE(initiator_task.has_value());
+  PW_TEST_ASSERT_OK(initiator_task.value().status());
+  EXPECT_EQ(initiator_task.value().value().info.negotiated_version, 2u);
 
-  ASSERT_TRUE(responder_task.result().has_value());
-  PW_TEST_ASSERT_OK(responder_task.result()->status());
-  EXPECT_EQ(responder_task.result()->value().info.negotiated_version, 2u);
+  ASSERT_TRUE(responder_task.has_value());
+  PW_TEST_ASSERT_OK(responder_task.value().status());
+  EXPECT_EQ(responder_task.value().value().info.negotiated_version, 2u);
 }
 
 TEST(HandshakeTest, ResponderRejectsVersionZeroInSyn) {
@@ -621,7 +592,7 @@ TEST(HandshakeTest, ResponderRejectsVersionZeroInSyn) {
   async2::DispatcherForTest dispatcher;
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  HandshakeTestTask responder_task(ResponderHandshakeFuture{conn});
+  async2::FutureTask responder_task(ResponderHandshakeFuture{conn});
   dispatcher.Post(responder_task);
 
   dispatcher.RunUntilStalled();
@@ -633,8 +604,8 @@ TEST(HandshakeTest, ResponderRejectsVersionZeroInSyn) {
   raw_conn->SetNextRead(std::move(enc_syn));
 
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(responder_task.result().has_value());
-  EXPECT_EQ(responder_task.result()->status(), RpcStatus::ProtocolError());
+  ASSERT_TRUE(responder_task.has_value());
+  EXPECT_EQ(responder_task.value().status(), RpcStatus::ProtocolError());
   EXPECT_EQ(raw_conn->commit_count(), 0u);
   EXPECT_TRUE(raw_conn->is_closed());
 }
@@ -644,7 +615,7 @@ TEST(HandshakeTest, InitiatorRejectsVersionZeroInSynAck) {
   async2::DispatcherForTest dispatcher;
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  HandshakeTestTask initiator_task(InitiatorHandshakeFuture{conn});
+  async2::FutureTask initiator_task(InitiatorHandshakeFuture{conn});
   dispatcher.Post(initiator_task);
 
   dispatcher.RunUntilStalled();
@@ -657,8 +628,8 @@ TEST(HandshakeTest, InitiatorRejectsVersionZeroInSynAck) {
   raw_conn->SetNextRead(std::move(enc_syn_ack));
 
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(initiator_task.result().has_value());
-  EXPECT_EQ(initiator_task.result()->status(), RpcStatus::ProtocolError());
+  ASSERT_TRUE(initiator_task.has_value());
+  EXPECT_EQ(initiator_task.value().status(), RpcStatus::ProtocolError());
   EXPECT_EQ(raw_conn->commit_count(), 1u);
   EXPECT_TRUE(raw_conn->is_closed());
 }
@@ -668,7 +639,7 @@ TEST(HandshakeTest, ConnectionClosedDuringHandshake) {
   async2::DispatcherForTest dispatcher;
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  HandshakeTestTask initiator_task(InitiatorHandshakeFuture{conn});
+  async2::FutureTask initiator_task(InitiatorHandshakeFuture{conn});
   dispatcher.Post(initiator_task);
 
   dispatcher.RunUntilStalled();
@@ -678,8 +649,8 @@ TEST(HandshakeTest, ConnectionClosedDuringHandshake) {
   conn.Close();
   dispatcher.RunUntilStalled();
 
-  ASSERT_TRUE(initiator_task.result().has_value());
-  EXPECT_EQ(initiator_task.result()->status(), RpcStatus::Disconnected());
+  ASSERT_TRUE(initiator_task.has_value());
+  EXPECT_EQ(initiator_task.value().status(), RpcStatus::Disconnected());
 }
 
 TEST(HandshakeTest, FailedHandshakeClosesConnection) {
@@ -687,7 +658,7 @@ TEST(HandshakeTest, FailedHandshakeClosesConnection) {
   async2::DispatcherForTest dispatcher;
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  HandshakeTestTask initiator_task(InitiatorHandshakeFuture{conn});
+  async2::FutureTask initiator_task(InitiatorHandshakeFuture{conn});
   dispatcher.Post(initiator_task);
 
   dispatcher.RunUntilStalled();
@@ -698,8 +669,8 @@ TEST(HandshakeTest, FailedHandshakeClosesConnection) {
   raw_conn->SetNextRead(std::move(bad_buf));
 
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(initiator_task.result().has_value());
-  EXPECT_EQ(initiator_task.result()->status(), RpcStatus::ProtocolError());
+  ASSERT_TRUE(initiator_task.has_value());
+  EXPECT_EQ(initiator_task.value().status(), RpcStatus::ProtocolError());
   EXPECT_TRUE(raw_conn->is_closed());
 }
 

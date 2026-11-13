@@ -13,12 +13,12 @@
 // the License.
 #include <cstddef>
 #include <cstring>
-#include <optional>
 #include <type_traits>
 #include <utility>
 
 #include "pw_allocator/testing.h"
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/future_task.h"
 #include "pw_bytes/endian.h"
 #include "pw_rpc2/internal/call.h"
 #include "pw_rpc2/internal/client_connection_task.h"
@@ -36,75 +36,6 @@ namespace pw::rpc2 {
 namespace {
 
 namespace flags = ::pw::rpc2::internal::flags;
-
-template <typename Fut>
-class WriteTestTask : public async2::Task {
- public:
-  explicit WriteTestTask(Fut fut) : fut_(std::move(fut)) {}
-
-  async2::Poll<> DoPend(async2::Context& cx) override {
-    auto poll = fut_.Pend(cx);
-    if (poll.IsPending()) {
-      return async2::Pending();
-    }
-    result_ = *poll;
-    return async2::Ready();
-  }
-
-  const std::optional<RpcStatus>& result() const { return result_; }
-
- private:
-  Fut fut_;
-  std::optional<RpcStatus> result_;
-};
-
-template <typename Fut>
-WriteTestTask(Fut fut) -> WriteTestTask<Fut>;
-
-template <typename Fut = RawReadFuture>
-class ReadTestTask : public async2::Task {
- public:
-  explicit ReadTestTask(Fut fut) : fut_(std::move(fut)) {}
-
-  async2::Poll<> DoPend(async2::Context& cx) override {
-    auto poll = fut_.Pend(cx);
-    if (poll.IsPending()) {
-      return async2::Pending();
-    }
-    result_ = std::move(*poll);
-    return async2::Ready();
-  }
-
-  Fut& future() { return fut_; }
-  const std::optional<RpcResult<ConstBuf>>& result() const { return result_; }
-
- private:
-  Fut fut_;
-  std::optional<RpcResult<ConstBuf>> result_;
-};
-
-template <typename Fut>
-ReadTestTask(Fut fut) -> ReadTestTask<Fut>;
-
-class ReserveTestTask : public async2::Task {
- public:
-  explicit ReserveTestTask(ReserveWriteFuture fut) : fut_(std::move(fut)) {}
-
-  async2::Poll<> DoPend(async2::Context& cx) override {
-    auto poll = fut_.Pend(cx);
-    if (poll.IsPending()) {
-      return async2::Pending();
-    }
-    result_ = std::move(*poll);
-    return async2::Ready();
-  }
-
-  RpcResult<WriteReservation>& result() { return *result_; }
-
- private:
-  ReserveWriteFuture fut_;
-  std::optional<RpcResult<WriteReservation>> result_;
-};
 
 TEST(RawReaderWriterTest, RequireValidCallAndExposeCallId) {
   allocator::test::AllocatorForTest<16384> allocator;
@@ -135,11 +66,11 @@ TEST(RawWriterTest, WritesMessageAndFinish) {
   auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
 
   // 1. Reserve 10 bytes, write 3 bytes, and commit 3 bytes.
-  ReserveTestTask task1(writer.ReserveWrite(10));
+  async2::FutureTask task1(writer.ReserveWrite(10));
   dispatcher.Post(task1);
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(task1.result().ok());
-  WriteReservation& res1 = *task1.result();
+  ASSERT_TRUE(task1.value().ok());
+  WriteReservation& res1 = *task1.value();
   EXPECT_GE(res1.size(), 10u);
   EXPECT_EQ(static_cast<size_t>(res1.end() - res1.begin()), res1.size());
   EXPECT_EQ(static_cast<size_t>(res1.cend() - res1.cbegin()), res1.size());
@@ -160,10 +91,10 @@ TEST(RawWriterTest, WritesMessageAndFinish) {
 
   // 2. Write second message from borrowed bytes
   const std::byte msg2[2] = {std::byte(10), std::byte(20)};
-  WriteTestTask task2(writer.WriteCopy(ConstBuf::Unowned(msg2)));
+  async2::FutureTask task2(writer.WriteCopy(ConstBuf::Unowned(msg2)));
   dispatcher.Post(task2);
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(task2.result().has_value() && task2.result()->ok());
+  ASSERT_TRUE(task2.has_value() && task2.value().ok());
   EXPECT_EQ(raw_conn->commit_count(), 2u);
 
   auto decode2 = internal::InboundPacket::Decode(raw_conn->last_written_buf());
@@ -175,10 +106,10 @@ TEST(RawWriterTest, WritesMessageAndFinish) {
   EXPECT_EQ(decode2.payload()[1], std::byte(20));
 
   // 3. Finish stream
-  WriteTestTask task3(writer.Finish());
+  async2::FutureTask task3(writer.Finish());
   dispatcher.Post(task3);
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(task3.result().has_value() && task3.result()->ok());
+  ASSERT_TRUE(task3.has_value() && task3.value().ok());
   EXPECT_TRUE(writer.is_closed());
   EXPECT_EQ(raw_conn->commit_count(), 3u);
 
@@ -306,10 +237,10 @@ TEST(RawWriterTest, WriteCopyReleasesOwnedMessageWhenSent) {
   ASSERT_GT(message_allocator.metrics().allocated_bytes.value(), 0u);
 
   // `task` keeps the `WriteFuture` alive after it completes.
-  WriteTestTask task(writer.WriteCopy(std::move(message)));
+  async2::FutureTask task(writer.WriteCopy(std::move(message)));
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(task.result().has_value() && task.result()->ok());
+  ASSERT_TRUE(task.has_value() && task.value().ok());
   EXPECT_EQ(message_allocator.metrics().allocated_bytes.value(), 0u);
 
   auto decode = internal::InboundPacket::Decode(raw_conn->last_written_buf());
@@ -334,10 +265,10 @@ TEST(RawWriterTest, WriteCopyEmptyBracesSendsEmptyMessage) {
 
   auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
 
-  WriteTestTask task(writer.WriteCopy({}));
+  async2::FutureTask task(writer.WriteCopy({}));
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(task.result().has_value() && task.result()->ok());
+  ASSERT_TRUE(task.has_value() && task.value().ok());
   EXPECT_EQ(raw_conn->commit_count(), 1u);
 
   auto decode = internal::InboundPacket::Decode(raw_conn->last_written_buf());
@@ -360,12 +291,12 @@ TEST(RawWriterTest, CancelledReservationReleasesWithoutCommit) {
 
   auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
 
-  ReserveTestTask task(writer.ReserveWrite(10));
+  async2::FutureTask task(writer.ReserveWrite(10));
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
 
-  ASSERT_TRUE(task.result().ok());
-  auto res = std::move(task.result().value());
+  ASSERT_TRUE(task.value().ok());
+  auto res = std::move(task.value().value());
 
   // Explicitly drop reservation without committing
   res.Drop();
@@ -389,29 +320,29 @@ TEST(RawWriterTest, OversizeReservationFailsWithoutClosingWriter) {
   auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
 
   // The packet header pushes this over the transport's limit.
-  ReserveTestTask oversize(writer.ReserveWrite(max_size));
+  async2::FutureTask oversize(writer.ReserveWrite(max_size));
   dispatcher.Post(oversize);
   dispatcher.RunUntilStalled();
-  EXPECT_EQ(oversize.result().status(), RpcStatus::MessageTooLarge());
+  EXPECT_EQ(oversize.value().status(), RpcStatus::MessageTooLarge());
   EXPECT_EQ(raw_conn->commit_count(), 0u);
   EXPECT_FALSE(writer.is_closed());
 
   // A size that would overflow `sizeof(PacketHeader) + max_payload_size` must
   // also fail with kMessageTooLarge rather than wrapping around.
-  ReserveTestTask overflow(
+  async2::FutureTask overflow(
       writer.ReserveWrite(std::numeric_limits<size_t>::max()));
   dispatcher.Post(overflow);
   dispatcher.RunUntilStalled();
-  EXPECT_EQ(overflow.result().status(), RpcStatus::MessageTooLarge());
+  EXPECT_EQ(overflow.value().status(), RpcStatus::MessageTooLarge());
   EXPECT_EQ(raw_conn->commit_count(), 0u);
   EXPECT_FALSE(writer.is_closed());
 
   // The writer can still send messages that fit.
-  ReserveTestTask fits(writer.ReserveWrite(3));
+  async2::FutureTask fits(writer.ReserveWrite(3));
   dispatcher.Post(fits);
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(fits.result().ok());
-  PW_TEST_EXPECT_OK(fits.result()->Commit(3));
+  ASSERT_TRUE(fits.value().ok());
+  PW_TEST_EXPECT_OK(fits.value()->Commit(3));
   EXPECT_EQ(raw_conn->commit_count(), 1u);
 
   oversize.Deregister();
@@ -545,10 +476,10 @@ TEST(RawWriterTest, DestructorAfterFinishDoesNotResend) {
 
   {
     auto writer = internal::CallAccess::Create<RawWriter>(call);
-    WriteTestTask task(writer.Finish());
+    async2::FutureTask task(writer.Finish());
     dispatcher.Post(task);
     dispatcher.RunUntilStalled();
-    ASSERT_TRUE(task.result().has_value() && task.result()->ok());
+    ASSERT_TRUE(task.has_value() && task.value().ok());
     EXPECT_TRUE(writer.is_closed());
     task.Deregister();
   }
@@ -572,18 +503,18 @@ TEST(RawWriterTest, MessageCommittedAfterFinishIsRejected) {
 
   auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
 
-  ReserveTestTask message(writer.ReserveWrite(2));
+  async2::FutureTask message(writer.ReserveWrite(2));
   dispatcher.Post(message);
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(message.result().ok());
+  ASSERT_TRUE(message.value().ok());
 
-  WriteTestTask finish(writer.Finish());
+  async2::FutureTask finish(writer.Finish());
   dispatcher.Post(finish);
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(finish.result().has_value() && finish.result()->ok());
+  ASSERT_TRUE(finish.has_value() && finish.value().ok());
   EXPECT_EQ(raw_conn->commit_count(), 1u);
 
-  EXPECT_EQ(message.result()->Commit(2), RpcStatus::WriteClosed());
+  EXPECT_EQ(message.value()->Commit(2), RpcStatus::WriteClosed());
   EXPECT_EQ(raw_conn->commit_count(), 1u);
   auto decoded = internal::InboundPacket::Decode(raw_conn->last_written_buf());
   ASSERT_NE(decoded, nullptr);
@@ -607,13 +538,13 @@ TEST(RawWriterTest, MessageCommittedAfterCancelReportsCancellation) {
 
   auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
 
-  ReserveTestTask message(writer.ReserveWrite(2));
+  async2::FutureTask message(writer.ReserveWrite(2));
   dispatcher.Post(message);
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(message.result().ok());
+  ASSERT_TRUE(message.value().ok());
 
   writer.Cancel();
-  EXPECT_EQ(message.result()->Commit(2), RpcStatus::Cancelled());
+  EXPECT_EQ(message.value()->Commit(2), RpcStatus::Cancelled());
   dispatcher.RunUntilStalled();
   // The call was never started, so nothing at all reaches the peer.
   EXPECT_EQ(raw_conn->commit_count(), 0u);
@@ -632,10 +563,10 @@ TEST(RawReaderTest, ReadsPayloadBufFromCall) {
   ASSERT_NE(call, nullptr);
   auto reader = internal::CallAccess::Create<RawReader>(call);
 
-  ReadTestTask task(reader.Read());
+  async2::FutureTask task(reader.Read());
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
-  EXPECT_FALSE(task.result().has_value());
+  EXPECT_FALSE(task.has_value());
 
   Buf msg = Buf::Allocate(allocator, 4);
   std::memset(msg.data(), 0x55, 4);
@@ -644,8 +575,8 @@ TEST(RawReaderTest, ReadsPayloadBufFromCall) {
   call->OnMessage(ConstBuf(std::move(msg)));
 
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(task.result().has_value() && task.result()->ok());
-  EXPECT_EQ(task.result()->value().size(), 4u);
+  ASSERT_TRUE(task.has_value() && task.value().ok());
+  EXPECT_EQ(task.value().value().size(), 4u);
 
   task.Deregister();
 }
@@ -657,7 +588,7 @@ void ReadOneMessage(async2::DispatcherForTest& dispatcher,
                     internal::Call& call,
                     Fut read_fut,
                     size_t expected_size) {
-  ReadTestTask task(std::move(read_fut));
+  async2::FutureTask task(std::move(read_fut));
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
 
@@ -667,8 +598,8 @@ void ReadOneMessage(async2::DispatcherForTest& dispatcher,
   call.OnMessage(ConstBuf(std::move(msg)));
 
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(task.result().has_value() && task.result()->ok());
-  EXPECT_EQ(task.result()->value().size(), expected_size);
+  ASSERT_TRUE(task.has_value() && task.value().ok());
+  EXPECT_EQ(task.value().value().size(), expected_size);
   task.Deregister();
 }
 
@@ -690,7 +621,7 @@ TEST(RawReaderTest, SequentialReadsReuseTheCall) {
 
   // A completed future that is still alive must not block the next read.
   RawReadFuture read_fut = reader.Read();
-  ReadTestTask task(std::move(read_fut));
+  async2::FutureTask task(std::move(read_fut));
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
 
@@ -699,7 +630,7 @@ TEST(RawReaderTest, SequentialReadsReuseTheCall) {
   ASSERT_TRUE(call->ReserveMessageSlot());
   call->OnMessage(ConstBuf(std::move(msg)));
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(task.result().has_value() && task.result()->ok());
+  ASSERT_TRUE(task.has_value() && task.value().ok());
 
   // `task` still owns the completed future here.
   RawReadFuture next_fut = reader.Read();
@@ -740,11 +671,11 @@ TEST(RawResponseFutureTest, DroppingPendingFutureCancelsCall) {
   call->MarkStarted();
 
   {
-    ReadTestTask task(internal::CallAccess::Create<RawResponseFuture>(
+    async2::FutureTask task(internal::CallAccess::Create<RawResponseFuture>(
         IntrusivePtr<internal::Call>(call)));
     dispatcher.Post(task);
     dispatcher.RunUntilStalled();
-    EXPECT_FALSE(task.result().has_value());
+    EXPECT_FALSE(task.has_value());
     task.Deregister();
   }
   // Nothing is left to observe the response, so the call is cancelled.
@@ -765,24 +696,23 @@ TEST(RawResponseFutureTest, CancelResolvesPendingFutureToCancelled) {
   ASSERT_NE(call, nullptr);
   call->MarkStarted();
 
-  ReadTestTask task(
-      internal::CallAccess::Create<RawResponseFuture>(std::move(call)));
+  auto future =
+      internal::CallAccess::Create<RawResponseFuture>(std::move(call));
+  async2::FutureTask task(future);
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
-  EXPECT_FALSE(task.result().has_value());
+  EXPECT_FALSE(task.has_value());
 
-  task.future().Cancel();
+  future.Cancel();
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(task.result().has_value());
-  EXPECT_EQ(task.result()->status(), RpcStatus::Cancelled());
+  ASSERT_TRUE(task.has_value());
+  EXPECT_EQ(task.value().status(), RpcStatus::Cancelled());
   EXPECT_EQ(raw_conn->commit_count(), 1u);
 
   // Cancelling again, after the call has ended, does nothing.
-  task.future().Cancel();
+  future.Cancel();
   dispatcher.RunUntilStalled();
   EXPECT_EQ(raw_conn->commit_count(), 1u);
-
-  task.Deregister();
 }
 
 TEST(RawResponseFutureTest, CancelWithoutCallIsNoOp) {
@@ -804,11 +734,9 @@ TEST(RawWriterTest, PollingOnWrongDispatcherCrashes) {
   ASSERT_NE(call, nullptr);
 
   auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
-  WriteTestTask task(writer.Finish());
-  wrong_dispatcher.Post(task);
-
-  EXPECT_DEATH_IF_SUPPORTED(wrong_dispatcher.RunUntilStalled(), "");
-  task.Deregister();
+  auto fut = writer.Finish();
+  EXPECT_DEATH_IF_SUPPORTED(
+      wrong_dispatcher.RunInTaskUntilStalled(fut).IgnorePoll(), "");
 }
 
 TEST(RawReaderTest, PollingOnWrongDispatcherCrashes) {
@@ -823,11 +751,9 @@ TEST(RawReaderTest, PollingOnWrongDispatcherCrashes) {
   ASSERT_NE(call, nullptr);
 
   auto reader = internal::CallAccess::Create<RawReader>(std::move(call));
-  ReadTestTask task(reader.Read());
-  wrong_dispatcher.Post(task);
-
-  EXPECT_DEATH_IF_SUPPORTED(wrong_dispatcher.RunUntilStalled(), "");
-  task.Deregister();
+  auto fut = reader.Read();
+  EXPECT_DEATH_IF_SUPPORTED(
+      wrong_dispatcher.RunInTaskUntilStalled(fut).IgnorePoll(), "");
 }
 
 TEST(RawResponseFutureTest, PollingOnWrongDispatcherCrashes) {
@@ -842,12 +768,9 @@ TEST(RawResponseFutureTest, PollingOnWrongDispatcherCrashes) {
   ASSERT_NE(call, nullptr);
   call->MarkStarted();
 
-  ReadTestTask task(
-      internal::CallAccess::Create<RawResponseFuture>(std::move(call)));
-  wrong_dispatcher.Post(task);
-
-  EXPECT_DEATH_IF_SUPPORTED(wrong_dispatcher.RunUntilStalled(), "");
-  task.Deregister();
+  auto fut = internal::CallAccess::Create<RawResponseFuture>(std::move(call));
+  EXPECT_DEATH_IF_SUPPORTED(
+      wrong_dispatcher.RunInTaskUntilStalled(fut).IgnorePoll(), "");
 }
 
 }  // namespace

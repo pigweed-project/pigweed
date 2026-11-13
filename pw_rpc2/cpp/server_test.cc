@@ -25,6 +25,7 @@
 #include "pw_allocator/testing.h"
 #include "pw_assert/check.h"
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/future_task.h"
 #include "pw_async2/task.h"
 #include "pw_async2/try.h"
 #include "pw_async2/value_future.h"
@@ -52,32 +53,6 @@ namespace {
 using internal::ProtocolError;
 
 namespace flags = ::pw::rpc2::internal::flags;
-
-// Awaits a `ControlFuture` on the dispatcher. A future only makes progress
-// while a task is pending it, so tests cannot simply run the dispatcher and
-// inspect `is_complete()`.
-class ControlTask : public async2::Task {
- public:
-  explicit ControlTask(ControlFuture&& future)
-      : async2::Task(PW_ASYNC_TASK_NAME("ControlTask")),
-        future_(std::move(future)) {}
-
-  [[nodiscard]] bool done() const { return done_; }
-
-  // Only valid once `done()`.
-  [[nodiscard]] RpcStatus status() const { return status_; }
-
- private:
-  async2::Poll<> DoPend(async2::Context& cx) override {
-    PW_TRY_READY_ASSIGN(status_, future_.Pend(cx));
-    done_ = true;
-    return async2::Ready();
-  }
-
-  ControlFuture future_;
-  bool done_ = false;
-  RpcStatus status_ = RpcStatus::ProtocolError();
-};
 
 class MockServerListener : public transport::ReliableListener {
  public:
@@ -315,10 +290,10 @@ TEST(ServerTest, RegisterTransportAndAcceptConnectionWithHandshake) {
   EstablishServerConnection(
       allocator, dispatcher, server, transport, raw_conn, conn);
 
-  ControlTask close_task(server.Close());
+  async2::FutureTask close_task(server.Close());
   dispatcher.Post(close_task);
   dispatcher.RunUntilStalled();
-  EXPECT_TRUE(close_task.done());
+  EXPECT_TRUE(close_task.has_value());
 }
 
 TEST(ServerTest, ServiceMethodDispatchRouting) {
@@ -350,10 +325,10 @@ TEST(ServerTest, ServiceMethodDispatchRouting) {
   EXPECT_EQ(echo_service.last_dispatched_method(), 1u);
   EXPECT_EQ(echo_service.last_payload_size(), 4u);
 
-  ControlTask close_task(server.Close());
+  async2::FutureTask close_task(server.Close());
   dispatcher.Post(close_task);
   dispatcher.RunUntilStalled();
-  EXPECT_TRUE(close_task.done());
+  EXPECT_TRUE(close_task.has_value());
 }
 
 TEST(ServerTest, ServiceNotFoundRepliesError) {
@@ -394,10 +369,10 @@ TEST(ServerTest, ServiceNotFoundRepliesError) {
   EXPECT_EQ(decode_err.call_id(), 7u);
   EXPECT_EQ(decode_err.error(), ProtocolError::kUnknownService);
 
-  ControlTask close_task(server.Close());
+  async2::FutureTask close_task(server.Close());
   dispatcher.Post(close_task);
   dispatcher.RunUntilStalled();
-  EXPECT_TRUE(close_task.done());
+  EXPECT_TRUE(close_task.has_value());
 }
 
 TEST(ServerTest, MethodNotFoundRepliesError) {
@@ -441,10 +416,10 @@ TEST(ServerTest, MethodNotFoundRepliesError) {
   EXPECT_EQ(decode_err.call_id(), 8u);
   EXPECT_EQ(decode_err.error(), ProtocolError::kUnknownMethod);
 
-  ControlTask close_task(server.Close());
+  async2::FutureTask close_task(server.Close());
   dispatcher.Post(close_task);
   dispatcher.RunUntilStalled();
-  EXPECT_TRUE(close_task.done());
+  EXPECT_TRUE(close_task.has_value());
 }
 
 TEST(ServerTest, RegisterDuplicateServiceIdCrashes) {
@@ -464,10 +439,10 @@ TEST(ServerTest, RegisterDuplicateServiceIdCrashes) {
 
   // The server in this process really was started, so it has to be closed.
   // Closing discards the queued registrations instead of applying them.
-  ControlTask close_task(server.Close());
+  async2::FutureTask close_task(server.Close());
   dispatcher.Post(close_task);
   dispatcher.RunUntilStalled();
-  EXPECT_TRUE(close_task.done());
+  EXPECT_TRUE(close_task.has_value());
 }
 
 TEST(ServerTest, StartTwiceCrashes) {
@@ -480,10 +455,10 @@ TEST(ServerTest, StartTwiceCrashes) {
   EXPECT_DEATH_IF_SUPPORTED(server.Start(), "");
 
   // The server in this process really was started, so it has to be closed.
-  ControlTask close_task(server.Close());
+  async2::FutureTask close_task(server.Close());
   dispatcher.Post(close_task);
   dispatcher.RunUntilStalled();
-  EXPECT_TRUE(close_task.done());
+  EXPECT_TRUE(close_task.has_value());
 }
 
 TEST(ServerTest, DestroyingUnclosedServerCrashes) {
@@ -515,10 +490,10 @@ TEST(ServerTest, CloseTearsDownListenersAndConnections) {
         allocator, dispatcher, server, transport, raw_conn, conn);
     ASSERT_FALSE(raw_conn->is_closed());
 
-    ControlTask close_task(server.Close());
+    async2::FutureTask close_task(server.Close());
     dispatcher.Post(close_task);
     dispatcher.RunUntilStalled();
-    EXPECT_TRUE(close_task.done());
+    EXPECT_TRUE(close_task.has_value());
     EXPECT_TRUE(raw_conn->is_closed());
   }
 
@@ -603,10 +578,10 @@ TEST(ServerTest, HasConnectionTracksOpenConnections) {
   EXPECT_FALSE(server_task.HasConnection(connection1));
   EXPECT_TRUE(server_task.HasConnection(connection2));
 
-  ControlTask close_task(server.Close());
+  async2::FutureTask close_task(server.Close());
   dispatcher.Post(close_task);
   dispatcher.RunUntilStalled();
-  EXPECT_TRUE(close_task.done());
+  EXPECT_TRUE(close_task.has_value());
   EXPECT_FALSE(server_task.HasConnection(connection2));
 }
 
@@ -643,10 +618,10 @@ TEST(ServerTest, CloseDrainsInFlightServerCalls) {
   // The call is dispatched and parked, so the connection still owns it.
   ASSERT_EQ(stalling_service.future_destructions(), 0);
 
-  ControlTask close_task(server.Close());
+  async2::FutureTask close_task(server.Close());
   dispatcher.Post(close_task);
   dispatcher.RunUntilStalled();
-  EXPECT_TRUE(close_task.done());
+  EXPECT_TRUE(close_task.has_value());
 
   // Teardown on the dispatcher drained the parked call task.
   EXPECT_EQ(stalling_service.future_destructions(), 1);
@@ -710,9 +685,9 @@ TEST(ServerTest, RegisterMultipleListenersWhileRunningDoesNotCrash) {
 
   server.Start();
 
-  ControlTask reg1(server.RegisterListener(listener1));
-  ControlTask reg2(server.RegisterListener(listener2));
-  ControlTask reg3(server.RegisterListener(listener3));
+  async2::FutureTask reg1(server.RegisterListener(listener1));
+  async2::FutureTask reg2(server.RegisterListener(listener2));
+  async2::FutureTask reg3(server.RegisterListener(listener3));
 
   dispatcher.Post(reg1);
   dispatcher.Post(reg2);
@@ -720,17 +695,17 @@ TEST(ServerTest, RegisterMultipleListenersWhileRunningDoesNotCrash) {
 
   dispatcher.RunUntilStalled();
 
-  EXPECT_TRUE(reg1.done());
-  PW_TEST_EXPECT_OK(reg1.status());
-  EXPECT_TRUE(reg2.done());
-  PW_TEST_EXPECT_OK(reg2.status());
-  EXPECT_TRUE(reg3.done());
-  PW_TEST_EXPECT_OK(reg3.status());
+  EXPECT_TRUE(reg1.has_value());
+  PW_TEST_EXPECT_OK(reg1.value());
+  EXPECT_TRUE(reg2.has_value());
+  PW_TEST_EXPECT_OK(reg2.value());
+  EXPECT_TRUE(reg3.has_value());
+  PW_TEST_EXPECT_OK(reg3.value());
 
-  ControlTask close_task(server.Close());
+  async2::FutureTask close_task(server.Close());
   dispatcher.Post(close_task);
   dispatcher.RunUntilStalled();
-  EXPECT_TRUE(close_task.done());
+  EXPECT_TRUE(close_task.has_value());
 }
 
 TEST(ServerTest, RegistrationBeforeStart) {
@@ -751,15 +726,15 @@ TEST(ServerTest, RegistrationBeforeStart) {
   // Before Start() there is nothing to apply listener registrations, so both
   // forms apply them on the calling thread: the async future comes back
   // already resolved.
-  ControlTask listener_task(server.RegisterListener(listener1));
+  async2::FutureTask listener_task(server.RegisterListener(listener1));
   EXPECT_EQ(allocator.metrics().num_allocations.value(), 1u);
   PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(listener2));
   EXPECT_EQ(allocator.metrics().num_allocations.value(), 2u);
 
   dispatcher.Post(listener_task);
   dispatcher.RunUntilStalled();
-  EXPECT_TRUE(listener_task.done());
-  PW_TEST_EXPECT_OK(listener_task.status());
+  EXPECT_TRUE(listener_task.has_value());
+  PW_TEST_EXPECT_OK(listener_task.value());
 
   // Listeners only begin accepting once the server runs.
   EXPECT_EQ(listener1.accept_calls(), 0u);
@@ -770,10 +745,10 @@ TEST(ServerTest, RegistrationBeforeStart) {
   EXPECT_EQ(listener1.accept_calls(), 1u);
   EXPECT_EQ(listener2.accept_calls(), 1u);
 
-  ControlTask close_task(server.Close());
+  async2::FutureTask close_task(server.Close());
   dispatcher.Post(close_task);
   dispatcher.RunUntilStalled();
-  EXPECT_TRUE(close_task.done());
+  EXPECT_TRUE(close_task.has_value());
 }
 
 // Closing a server that was never started completes immediately, drops the
@@ -788,19 +763,19 @@ TEST(ServerTest, CloseBeforeStartDropsQueuedRequests) {
   MockServerListener listener2;
 
   PW_TEST_EXPECT_OK(server.RegisterService(service));
-  ControlTask listener_task(server.RegisterListener(listener1));
+  async2::FutureTask listener_task(server.RegisterListener(listener1));
   PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(listener2));
   EXPECT_EQ(allocator.metrics().num_allocations.value(), 2u);
 
-  ControlTask close_task(server.Close());
+  async2::FutureTask close_task(server.Close());
   dispatcher.Post(listener_task);
   dispatcher.Post(close_task);
   dispatcher.RunUntilStalled();
 
-  ASSERT_TRUE(close_task.done());
-  PW_TEST_EXPECT_OK(close_task.status());
-  ASSERT_TRUE(listener_task.done());
-  PW_TEST_EXPECT_OK(listener_task.status());
+  ASSERT_TRUE(close_task.has_value());
+  PW_TEST_EXPECT_OK(close_task.value());
+  ASSERT_TRUE(listener_task.has_value());
+  PW_TEST_EXPECT_OK(listener_task.value());
 
   // Both listener records were freed by the close.
   EXPECT_EQ(allocator.metrics().allocated_bytes.value(), 0u);
@@ -838,17 +813,17 @@ TEST(ServerTest, RegistrationWhileClosingFails) {
   ASSERT_EQ(stalling_service.future_destructions(), 0);
 
   MockServerListener late_listener;
-  ControlTask close_task(server.Close());
+  async2::FutureTask close_task(server.Close());
   EXPECT_EQ(server.RegisterService(echo_service), RpcStatus::Closed());
-  ControlTask listener_task(server.RegisterListener(late_listener));
+  async2::FutureTask listener_task(server.RegisterListener(late_listener));
   dispatcher.Post(close_task);
   dispatcher.Post(listener_task);
   dispatcher.RunUntilStalled();
 
-  ASSERT_TRUE(close_task.done());
-  PW_TEST_EXPECT_OK(close_task.status());
-  ASSERT_TRUE(listener_task.done());
-  EXPECT_EQ(listener_task.status(), RpcStatus::Closed());
+  ASSERT_TRUE(close_task.has_value());
+  PW_TEST_EXPECT_OK(close_task.value());
+  ASSERT_TRUE(listener_task.has_value());
+  EXPECT_EQ(listener_task.value(), RpcStatus::Closed());
   EXPECT_EQ(stalling_service.future_destructions(), 1);
 }
 
@@ -862,23 +837,23 @@ TEST(ServerTest, ControlOperationsAfterCloseResolveImmediately) {
   PW_TEST_EXPECT_OK(server.RegisterService(service));
   server.Start();
 
-  ControlTask close_task(server.Close());
+  async2::FutureTask close_task(server.Close());
   dispatcher.Post(close_task);
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(close_task.done());
+  ASSERT_TRUE(close_task.has_value());
 
   EXPECT_EQ(server.RegisterService(service), RpcStatus::Closed());
   EXPECT_EQ(server.RegisterListenerBlocking(listener), RpcStatus::Closed());
 
-  ControlTask listener_task(server.RegisterListener(listener));
-  ControlTask second_close_task(server.Close());
+  async2::FutureTask listener_task(server.RegisterListener(listener));
+  async2::FutureTask second_close_task(server.Close());
   dispatcher.Post(listener_task);
   dispatcher.Post(second_close_task);
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(listener_task.done());
-  EXPECT_EQ(listener_task.status(), RpcStatus::Closed());
-  ASSERT_TRUE(second_close_task.done());
-  PW_TEST_EXPECT_OK(second_close_task.status());
+  ASSERT_TRUE(listener_task.has_value());
+  EXPECT_EQ(listener_task.value(), RpcStatus::Closed());
+  ASSERT_TRUE(second_close_task.has_value());
+  PW_TEST_EXPECT_OK(second_close_task.value());
 
   server.CloseBlocking();  // Also a no-op once closed.
 }
@@ -908,18 +883,18 @@ TEST(ServerTest, AsyncControlOperationsSubmittedFromAnotherThread) {
 
   PW_TEST_EXPECT_OK(register_service);
 
-  ControlTask register_listener_task(std::move(*register_listener));
+  async2::FutureTask register_listener_task(std::move(*register_listener));
   dispatcher.Post(register_listener_task);
   dispatcher.RunUntilStalled();
 
-  ASSERT_TRUE(register_listener_task.done());
-  PW_TEST_EXPECT_OK(register_listener_task.status());
+  ASSERT_TRUE(register_listener_task.has_value());
+  PW_TEST_EXPECT_OK(register_listener_task.value());
   EXPECT_EQ(transport.accept_calls(), 1u);
 
-  ControlTask close_task(server.Close());
+  async2::FutureTask close_task(server.Close());
   dispatcher.Post(close_task);
   dispatcher.RunUntilStalled();
-  EXPECT_TRUE(close_task.done());
+  EXPECT_TRUE(close_task.has_value());
 }
 
 TEST(ServerTest, AsyncControlOperationsWhenAllocatorExhausted) {
@@ -936,18 +911,18 @@ TEST(ServerTest, AsyncControlOperationsWhenAllocatorExhausted) {
   // allocator is exhausted; only the listener's record allocation fails.
   failing_allocator.DisableAllocate();
   PW_TEST_EXPECT_OK(server.RegisterService(echo_service));
-  ControlTask register_listener_task(server.RegisterListener(transport));
+  async2::FutureTask register_listener_task(server.RegisterListener(transport));
   dispatcher.Post(register_listener_task);
   dispatcher.RunUntilStalled();
 
-  ASSERT_TRUE(register_listener_task.done());
-  EXPECT_EQ(register_listener_task.status(), RpcStatus::ResourceExhausted());
+  ASSERT_TRUE(register_listener_task.has_value());
+  EXPECT_EQ(register_listener_task.value(), RpcStatus::ResourceExhausted());
   EXPECT_EQ(transport.accept_calls(), 0u);
 
-  ControlTask close_task(server.Close());
+  async2::FutureTask close_task(server.Close());
   dispatcher.Post(close_task);
   dispatcher.RunUntilStalled();
-  EXPECT_TRUE(close_task.done());
+  EXPECT_TRUE(close_task.has_value());
 }
 
 TEST(ServerTest, DroppingQueuedRegisterListenerFutureWithdrawsRequest) {
@@ -966,11 +941,11 @@ TEST(ServerTest, DroppingQueuedRegisterListenerFutureWithdrawsRequest) {
     ControlFuture reg2 = server.RegisterListener(listener2);
   }
 
-  ControlTask task1(std::move(reg1));
+  async2::FutureTask task1(std::move(reg1));
   dispatcher.Post(task1);
   dispatcher.RunUntilStalled();
-  EXPECT_TRUE(task1.done());
-  PW_TEST_EXPECT_OK(task1.status());
+  EXPECT_TRUE(task1.has_value());
+  PW_TEST_EXPECT_OK(task1.value());
 
   // Only listener1 was registered: one record was allocated and only
   // listener1 has been asked to accept.
@@ -978,10 +953,10 @@ TEST(ServerTest, DroppingQueuedRegisterListenerFutureWithdrawsRequest) {
   EXPECT_EQ(listener1.accept_calls(), 1u);
   EXPECT_EQ(listener2.accept_calls(), 0u);
 
-  ControlTask close_task(server.Close());
+  async2::FutureTask close_task(server.Close());
   dispatcher.Post(close_task);
   dispatcher.RunUntilStalled();
-  EXPECT_TRUE(close_task.done());
+  EXPECT_TRUE(close_task.has_value());
 }
 
 TEST(ServerTest, MovingQueuedControlFuturesPreservesRequests) {
@@ -1004,9 +979,9 @@ TEST(ServerTest, MovingQueuedControlFuturesPreservesRequests) {
   moved_close = std::move(close);
   ControlFuture moved_first = std::move(first);
 
-  ControlTask task1(std::move(moved_first));
-  ControlTask task2(std::move(moved_second));
-  ControlTask task3(std::move(moved_close));
+  async2::FutureTask task1(std::move(moved_first));
+  async2::FutureTask task2(std::move(moved_second));
+  async2::FutureTask task3(std::move(moved_close));
   dispatcher.Post(task1);
   dispatcher.Post(task2);
   dispatcher.Post(task3);
@@ -1014,12 +989,12 @@ TEST(ServerTest, MovingQueuedControlFuturesPreservesRequests) {
 
   // The close was requested before the listener requests were applied, so
   // they fail; the close itself succeeds.
-  EXPECT_TRUE(task1.done());
-  EXPECT_EQ(task1.status(), RpcStatus::Closed());
-  EXPECT_TRUE(task2.done());
-  EXPECT_EQ(task2.status(), RpcStatus::Closed());
-  EXPECT_TRUE(task3.done());
-  PW_TEST_EXPECT_OK(task3.status());
+  EXPECT_TRUE(task1.has_value());
+  EXPECT_EQ(task1.value(), RpcStatus::Closed());
+  EXPECT_TRUE(task2.has_value());
+  EXPECT_EQ(task2.value(), RpcStatus::Closed());
+  EXPECT_TRUE(task3.has_value());
+  PW_TEST_EXPECT_OK(task3.value());
 }
 
 TEST(ServerTest, CallAllocationFailureRepliesError) {
@@ -1065,10 +1040,10 @@ TEST(ServerTest, CallAllocationFailureRepliesError) {
   EXPECT_EQ(decode_err.call_id(), 12u);
   EXPECT_EQ(decode_err.error(), ProtocolError::kFailedToAllocateCall);
 
-  ControlTask close_task(server.Close());
+  async2::FutureTask close_task(server.Close());
   dispatcher.Post(close_task);
   dispatcher.RunUntilStalled();
-  EXPECT_TRUE(close_task.done());
+  EXPECT_TRUE(close_task.has_value());
 }
 
 TEST(ServerTest, ListenerKeepsAcceptingAfterConnectionAllocationFailure) {
@@ -1106,10 +1081,10 @@ TEST(ServerTest, ListenerKeepsAcceptingAfterConnectionAllocationFailure) {
 
   EXPECT_EQ(raw_conn->commit_count(), 1u);  // SYN-ACK
 
-  ControlTask close_task(server.Close());
+  async2::FutureTask close_task(server.Close());
   dispatcher.Post(close_task);
   dispatcher.RunUntilStalled();
-  EXPECT_TRUE(close_task.done());
+  EXPECT_TRUE(close_task.has_value());
 }
 
 TEST(ServerTest, InvalidRequestPayloadRepliesError) {
@@ -1152,10 +1127,10 @@ TEST(ServerTest, InvalidRequestPayloadRepliesError) {
   EXPECT_EQ(decode_err.call_id(), 13u);
   EXPECT_EQ(decode_err.error(), ProtocolError::kInvalidRequestPayload);
 
-  ControlTask close_task(server.Close());
+  async2::FutureTask close_task(server.Close());
   dispatcher.Post(close_task);
   dispatcher.RunUntilStalled();
-  EXPECT_TRUE(close_task.done());
+  EXPECT_TRUE(close_task.has_value());
 }
 
 // Service with a bidirectional-streaming method that records the size of every
@@ -1253,10 +1228,10 @@ class ServerStartPacketTest : public ::testing::Test {
   }
 
   ~ServerStartPacketTest() override {
-    ControlTask close_task(server_.Close());
+    async2::FutureTask close_task(server_.Close());
     dispatcher_.Post(close_task);
     dispatcher_.RunUntilStalled();
-    EXPECT_TRUE(close_task.done());
+    EXPECT_TRUE(close_task.has_value());
   }
 
   void Receive(Buf&& packet) {

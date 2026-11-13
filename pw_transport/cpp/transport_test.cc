@@ -23,6 +23,7 @@
 #include "pw_async2/await.h"
 #include "pw_async2/dispatcher.h"
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/future_task.h"
 #include "pw_bytes/span.h"
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_sync/interrupt_spin_lock.h"
@@ -1414,62 +1415,44 @@ TEST(TransportTest, CloseAndWhenClosedShareFuture) {
     mutable sync::InterruptSpinLock lock_;
   };
 
-  class VoidFutureTask : public async2::Task {
-   public:
-    VoidFutureTask(CloseFuture future)
-        : future_(std::move(future)), resolved_(false) {}
-
-    async2::Poll<> DoPend(async2::Context& cx) override {
-      PW_AWAIT([[maybe_unused]] auto result, future_, cx);
-      resolved_ = true;
-      return async2::Ready();
-    }
-
-    bool resolved() const { return resolved_; }
-
-   private:
-    CloseFuture future_;
-    bool resolved_;
-  };
-
   auto* impl = allocator.New<AsyncCloseReliableSocket>(allocator);
   ReliableSocket conn = impl->WrapSocket();
 
-  VoidFutureTask when_closed_task1(conn.WhenClosed());
-  VoidFutureTask when_closed_task2(conn.WhenClosed());
+  async2::FutureTask when_closed_task1(conn.WhenClosed());
+  async2::FutureTask when_closed_task2(conn.WhenClosed());
   dispatcher.Post(when_closed_task1);
   dispatcher.Post(when_closed_task2);
   dispatcher.RunUntilStalled();
 
-  EXPECT_FALSE(when_closed_task1.resolved());
-  EXPECT_FALSE(when_closed_task2.resolved());
+  EXPECT_FALSE(when_closed_task1.is_complete());
+  EXPECT_FALSE(when_closed_task2.is_complete());
   EXPECT_EQ(impl->do_close_calls(), 0);
 
   // Call Close(), which triggers DoClose() once and returns a shared
   // CloseFuture.
-  VoidFutureTask close_task(conn.Close());
+  async2::FutureTask close_task(conn.Close());
   dispatcher.Post(close_task);
   dispatcher.RunUntilStalled();
 
   EXPECT_EQ(impl->do_close_calls(), 1);
-  EXPECT_FALSE(close_task.resolved());
-  EXPECT_FALSE(when_closed_task1.resolved());
+  EXPECT_FALSE(close_task.is_complete());
+  EXPECT_FALSE(when_closed_task1.is_complete());
   // Calling Close() again does not trigger DoClose() a second time.
-  VoidFutureTask close_task2(conn.Close());
+  async2::FutureTask close_task2(conn.Close());
   dispatcher.Post(close_task2);
   dispatcher.RunUntilStalled();
   EXPECT_EQ(impl->do_close_calls(), 1);
-  EXPECT_FALSE(close_task2.resolved());
+  EXPECT_FALSE(close_task2.is_complete());
 
   // Implementation calls MarkClosed(). All pending Close and WhenClosed futures
   // resolve.
   impl->FinishAsyncClose();
   dispatcher.RunUntilStalled();
 
-  EXPECT_TRUE(close_task.resolved());
-  EXPECT_TRUE(close_task2.resolved());
-  EXPECT_TRUE(when_closed_task1.resolved());
-  EXPECT_TRUE(when_closed_task2.resolved());
+  EXPECT_TRUE(close_task.is_complete());
+  EXPECT_TRUE(close_task2.is_complete());
+  EXPECT_TRUE(when_closed_task1.is_complete());
+  EXPECT_TRUE(when_closed_task2.is_complete());
 }
 
 TEST(TransportTest, SingleReadFutureInvariant) {

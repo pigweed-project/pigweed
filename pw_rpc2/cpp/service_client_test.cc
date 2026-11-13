@@ -230,36 +230,6 @@ void ReceiveMalformedPacket(pw::Allocator& allocator,
   raw_conn.SetNextRead(std::move(malformed));
 }
 
-// Polls a future that it owns and keeps reachable, so that tests can cancel the
-// future while the task waits on it.
-template <typename Fut>
-class FutureOwningTask : public async2::Task {
- public:
-  explicit FutureOwningTask(Fut future) : future_(std::move(future)) {}
-  ~FutureOwningTask() override { Deregister(); }
-
-  Fut& future() { return future_; }
-  const std::optional<typename Fut::value_type>& result() const {
-    return result_;
-  }
-
- private:
-  async2::Poll<> DoPend(async2::Context& cx) override {
-    auto poll = future_.Pend(cx);
-    if (poll.IsPending()) {
-      return async2::Pending();
-    }
-    result_.emplace(std::move(*poll));
-    return async2::Ready();
-  }
-
-  Fut future_;
-  std::optional<typename Fut::value_type> result_;
-};
-
-template <typename Fut>
-FutureOwningTask(Fut future) -> FutureOwningTask<Fut>;
-
 // Server packets that cannot answer a unary or client-streaming call, which
 // takes exactly one packet with a payload that completes the RPC.
 constexpr internal::PacketType kNotSingleResponse[] = {
@@ -1618,14 +1588,15 @@ TEST(ServiceClientTest, CancelUnaryCallBeforeSendingSendsNothing) {
   TestServiceClient test_service(client, 100u);
   const size_t commits_before = raw_conn->commit_count();
 
-  FutureOwningTask task(
-      test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, pw::ConstBuf()));
-  task.future().Cancel();
+  auto future =
+      test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, pw::ConstBuf());
+  future.Cancel();
+  async2::FutureTask task(future);
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
 
-  ASSERT_TRUE(task.result().has_value());
-  EXPECT_EQ(task.result()->status(), RpcStatus::Cancelled());
+  ASSERT_TRUE(task.has_value());
+  EXPECT_EQ(task.value().status(), RpcStatus::Cancelled());
   EXPECT_EQ(raw_conn->commit_count(), commits_before);
 }
 
@@ -1639,24 +1610,25 @@ TEST(ServiceClientTest, CancelUnaryCallAfterSendingCancelsOnServer) {
       dispatcher);
   TestServiceClient test_service(client, 100u);
 
-  FutureOwningTask task(
-      test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, pw::ConstBuf()));
+  auto future =
+      test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, pw::ConstBuf());
+  async2::FutureTask task(future);
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
-  ASSERT_FALSE(task.result().has_value());
+  ASSERT_FALSE(task.has_value());
   const uint32_t call_id = LastSentCallId(*raw_conn);
   const size_t commits_before = raw_conn->commit_count();
 
-  task.future().Cancel();
+  future.Cancel();
   dispatcher.RunUntilStalled();
 
-  ASSERT_TRUE(task.result().has_value());
-  EXPECT_EQ(task.result()->status(), RpcStatus::Cancelled());
+  ASSERT_TRUE(task.has_value());
+  EXPECT_EQ(task.value().status(), RpcStatus::Cancelled());
   EXPECT_EQ(raw_conn->commit_count(), commits_before + 1u);
   ExpectSentError(*raw_conn, call_id, ProtocolError::kCancelled);
 
   // Cancelling a finished call does nothing.
-  task.future().Cancel();
+  future.Cancel();
   dispatcher.RunUntilStalled();
   EXPECT_EQ(raw_conn->commit_count(), commits_before + 1u);
 }
@@ -1671,11 +1643,12 @@ TEST(ServiceClientTest, CancelUnaryCallAfterResponseDoesNothing) {
       dispatcher);
   TestServiceClient test_service(client, 100u);
 
-  FutureOwningTask task(
-      test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, pw::ConstBuf()));
+  auto future =
+      test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, pw::ConstBuf());
+  async2::FutureTask task(future);
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
-  ASSERT_FALSE(task.result().has_value());
+  ASSERT_FALSE(task.has_value());
 
   std::byte resp[2] = {};
   auto framed_resp = internal::PacketFramer::FrameResponsePacket(
@@ -1683,11 +1656,11 @@ TEST(ServiceClientTest, CancelUnaryCallAfterResponseDoesNothing) {
   ASSERT_NE(framed_resp, nullptr);
   raw_conn->SetNextRead(std::move(framed_resp));
   dispatcher.RunUntilStalled();
-  ASSERT_TRUE(task.result().has_value());
-  PW_TEST_ASSERT_OK(task.result().value());
+  ASSERT_TRUE(task.has_value());
+  PW_TEST_ASSERT_OK(task.value());
   const size_t commits_before = raw_conn->commit_count();
 
-  task.future().Cancel();
+  future.Cancel();
   dispatcher.RunUntilStalled();
   EXPECT_EQ(raw_conn->commit_count(), commits_before);
 }
@@ -1712,16 +1685,16 @@ TEST(ServiceClientTest, CancelRawResponseFutureCancelsOnServer) {
   PW_TEST_ASSERT_OK(response_future);
   const uint32_t call_id = LastSentCallId(*raw_conn);
 
-  FutureOwningTask task(std::move(*response_future));
+  async2::FutureTask task(*response_future);
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
-  ASSERT_FALSE(task.result().has_value());
+  ASSERT_FALSE(task.has_value());
 
-  task.future().Cancel();
+  response_future->Cancel();
   dispatcher.RunUntilStalled();
 
-  ASSERT_TRUE(task.result().has_value());
-  EXPECT_EQ(task.result()->status(), RpcStatus::Cancelled());
+  ASSERT_TRUE(task.has_value());
+  EXPECT_EQ(task.value().status(), RpcStatus::Cancelled());
   ExpectSentError(*raw_conn, call_id, ProtocolError::kCancelled);
 }
 
@@ -1743,16 +1716,17 @@ TEST(ServiceClientTest, CancelClientStreamResponseCancelsOnServer) {
   PW_TEST_ASSERT_OK(call_task.value());
   const uint32_t call_id = LastSentCallId(*raw_conn);
 
-  FutureOwningTask task(std::move(*call_task.value()).response());
+  auto response_future = std::move(*call_task.value()).response();
+  async2::FutureTask task(response_future);
   dispatcher.Post(task);
   dispatcher.RunUntilStalled();
-  ASSERT_FALSE(task.result().has_value());
+  ASSERT_FALSE(task.has_value());
 
-  task.future().Cancel();
+  response_future.Cancel();
   dispatcher.RunUntilStalled();
 
-  ASSERT_TRUE(task.result().has_value());
-  EXPECT_EQ(task.result()->status(), RpcStatus::Cancelled());
+  ASSERT_TRUE(task.has_value());
+  EXPECT_EQ(task.value().status(), RpcStatus::Cancelled());
   ExpectSentError(*raw_conn, call_id, ProtocolError::kCancelled);
 }
 
@@ -1913,12 +1887,10 @@ TEST(ServiceClientTest, PollingCallFutureOnWrongDispatcherCrashes) {
       dispatcher);
   TestServiceClient test_service(client, 100u);
 
-  async2::FutureTask task(
-      test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, pw::ConstBuf()));
-  wrong_dispatcher.Post(task);
-
-  EXPECT_DEATH_IF_SUPPORTED(wrong_dispatcher.RunUntilStalled(), "");
-  task.Deregister();
+  auto fut =
+      test_service.CallUnary<pw::ConstBuf, pw::ConstBuf>(200u, pw::ConstBuf());
+  EXPECT_DEATH_IF_SUPPORTED(
+      wrong_dispatcher.RunInTaskUntilStalled(fut).IgnorePoll(), "");
 }
 
 }  // namespace

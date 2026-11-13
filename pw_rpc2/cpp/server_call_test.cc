@@ -20,6 +20,7 @@
 
 #include "pw_allocator/testing.h"
 #include "pw_async2/dispatcher_for_test.h"
+#include "pw_async2/future_task.h"
 #include "pw_rpc2/internal/call.h"
 #include "pw_rpc2/internal/packet.h"
 #include "pw_rpc2/internal/packet_testing.h"
@@ -41,81 +42,6 @@ ConstBuf MakeConstBuf(Allocator& alloc, std::string_view str) {
   std::memcpy(buf.data(), str.data(), str.size());
   return ConstBuf(std::move(buf));
 }
-
-template <typename Fut>
-class WriteTestTask : public async2::Task {
- public:
-  explicit WriteTestTask(Fut fut) : fut_(std::move(fut)) {}
-
-  async2::Poll<> DoPend(async2::Context& cx) override {
-    auto poll = fut_.Pend(cx);
-    if (poll.IsPending()) {
-      return async2::Pending();
-    }
-    result_ = *poll;
-    return async2::Ready();
-  }
-
-  const std::optional<RpcStatus>& result() const { return result_; }
-
- private:
-  Fut fut_;
-  std::optional<RpcStatus> result_;
-};
-
-template <typename Fut>
-WriteTestTask(Fut fut) -> WriteTestTask<Fut>;
-
-template <typename Fut = RawReadFuture>
-class ReadTestTask : public async2::Task {
- public:
-  explicit ReadTestTask(Fut fut) : fut_(std::move(fut)) {}
-
-  async2::Poll<> DoPend(async2::Context& cx) override {
-    auto poll = fut_.Pend(cx);
-    if (poll.IsPending()) {
-      return async2::Pending();
-    }
-    result_ = std::move(*poll);
-    return async2::Ready();
-  }
-
-  const std::optional<RpcResult<ConstBuf>>& result() const { return result_; }
-
- private:
-  Fut fut_;
-  std::optional<RpcResult<ConstBuf>> result_;
-};
-
-template <typename Fut>
-ReadTestTask(Fut) -> ReadTestTask<Fut>;
-
-template <typename Fut = ReserveWriteFuture>
-class ReserveTestTask : public async2::Task {
- public:
-  explicit ReserveTestTask(Fut fut) : fut_(std::move(fut)) {}
-
-  async2::Poll<> DoPend(async2::Context& cx) override {
-    auto poll = fut_.Pend(cx);
-    if (poll.IsPending()) {
-      return async2::Pending();
-    }
-    result_ = std::move(*poll);
-    return async2::Ready();
-  }
-
-  std::optional<RpcResult<WriteReservation>>& result() { return result_; }
-  const std::optional<RpcResult<WriteReservation>>& result() const {
-    return result_;
-  }
-
- private:
-  Fut fut_;
-  std::optional<RpcResult<WriteReservation>> result_;
-};
-
-template <typename Fut>
-ReserveTestTask(Fut) -> ReserveTestTask<Fut>;
 
 // Each test starts calls on a real server connection and acts as their method.
 class ServerCallTest : public ::testing::Test {
@@ -148,11 +74,12 @@ TEST_F(ServerCallTest, UnaryWriterFinishSendsResponsePacket) {
   EXPECT_EQ(internal::CallAccess::call_id(responder), 50u);
 
   const auto resp_bytes = as_bytes(span("unary resp", 10));
-  WriteTestTask task(responder.FinishCopy(ConstBuf::Unowned(resp_bytes)));
+  async2::FutureTask task(responder.FinishCopy(ConstBuf::Unowned(resp_bytes)));
   dispatcher_.Post(task);
   dispatcher_.RunUntilStalled();
 
-  ASSERT_TRUE(task.result().has_value() && task.result()->ok());
+  ASSERT_TRUE(task.has_value());
+  PW_TEST_ASSERT_OK(task.value());
   EXPECT_EQ(raw_conn_->commit_count(), 1u);
 
   auto decode_res =
@@ -165,8 +92,6 @@ TEST_F(ServerCallTest, UnaryWriterFinishSendsResponsePacket) {
   EXPECT_EQ(decode_res.call_id(), 50u);
   EXPECT_EQ(decode_res.payload().size(), 10u);
   EXPECT_EQ(std::memcmp(decode_res.payload().data(), "unary resp", 10), 0);
-
-  task.Deregister();
 }
 
 TEST_F(ServerCallTest, UnaryWriterFinishCopyReleasesOwnedResponseWhenSent) {
@@ -180,11 +105,12 @@ TEST_F(ServerCallTest, UnaryWriterFinishCopyReleasesOwnedResponseWhenSent) {
   ASSERT_GT(response_allocator.metrics().allocated_bytes.value(), 0u);
 
   // `task` keeps the `WriteFuture` alive after it completes.
-  WriteTestTask task(responder.FinishCopy(std::move(response)));
+  async2::FutureTask task(responder.FinishCopy(std::move(response)));
   dispatcher_.Post(task);
   dispatcher_.RunUntilStalled();
 
-  ASSERT_TRUE(task.result().has_value() && task.result()->ok());
+  ASSERT_TRUE(task.has_value());
+  PW_TEST_ASSERT_OK(task.value());
   EXPECT_EQ(response_allocator.metrics().allocated_bytes.value(), 0u);
 
   auto decode_res =
@@ -193,8 +119,6 @@ TEST_F(ServerCallTest, UnaryWriterFinishCopyReleasesOwnedResponseWhenSent) {
   EXPECT_EQ(decode_res.call_id(), 51u);
   ASSERT_EQ(decode_res.payload().size(), 5u);
   EXPECT_EQ(std::memcmp(decode_res.payload().data(), "owned", 5), 0);
-
-  task.Deregister();
 }
 
 // Typed writers copy encoded responses from a `ConstBuf` like raw writers do.
@@ -213,11 +137,12 @@ TEST_F(ServerCallTest, TypedUnaryWriterFinishCopySendsBytes) {
   ASSERT_GT(response_allocator.metrics().allocated_bytes.value(), 0u);
 
   // `task` keeps the `WriteFuture` alive after it completes.
-  WriteTestTask task(responder.FinishCopy(std::move(response)));
+  async2::FutureTask task(responder.FinishCopy(std::move(response)));
   dispatcher_.Post(task);
   dispatcher_.RunUntilStalled();
 
-  ASSERT_TRUE(task.result().has_value() && task.result()->ok());
+  ASSERT_TRUE(task.has_value());
+  PW_TEST_ASSERT_OK(task.value());
   EXPECT_EQ(response_allocator.metrics().allocated_bytes.value(), 0u);
 
   auto decode_res =
@@ -226,8 +151,6 @@ TEST_F(ServerCallTest, TypedUnaryWriterFinishCopySendsBytes) {
   EXPECT_EQ(decode_res.call_id(), 52u);
   ASSERT_EQ(decode_res.payload().size(), 5u);
   EXPECT_EQ(std::memcmp(decode_res.payload().data(), "typed", 5), 0);
-
-  task.Deregister();
 }
 
 TEST_F(ServerCallTest, UnaryWriterReserveThatOverflowsFails) {
@@ -237,16 +160,14 @@ TEST_F(ServerCallTest, UnaryWriterReserveThatOverflowsFails) {
       internal::CallAccess::Create<RawUnaryWriter>(std::move(call));
 
   // Adding the packet header to this size would wrap around.
-  ReserveTestTask task(
+  async2::FutureTask task(
       responder.ReserveFinish(std::numeric_limits<size_t>::max()));
   dispatcher_.Post(task);
   dispatcher_.RunUntilStalled();
 
-  ASSERT_TRUE(task.result().has_value());
-  EXPECT_EQ(task.result()->status(), RpcStatus::MessageTooLarge());
+  ASSERT_TRUE(task.has_value());
+  EXPECT_EQ(task.value().status(), RpcStatus::MessageTooLarge());
   EXPECT_EQ(raw_conn_->commit_count(), 0u);
-
-  task.Deregister();
 }
 
 TEST_F(ServerCallTest, ServerStreamingWriterWriteAndFinish) {
@@ -255,12 +176,13 @@ TEST_F(ServerCallTest, ServerStreamingWriterWriteAndFinish) {
   auto responder = internal::CallAccess::Create<RawWriter>(std::move(call));
 
   // Write chunk 1
-  ReserveTestTask task1(responder.ReserveWrite(7));
+  async2::FutureTask task1(responder.ReserveWrite(7));
   dispatcher_.Post(task1);
   dispatcher_.RunUntilStalled();
-  ASSERT_TRUE(task1.result().has_value() && task1.result()->ok());
-  std::memcpy((*task1.result())->data(), "chunk 1", 7);
-  PW_TEST_EXPECT_OK((*task1.result())->Commit(7));
+  ASSERT_TRUE(task1.has_value());
+  PW_TEST_ASSERT_OK(task1.value());
+  std::memcpy(task1.value()->data(), "chunk 1", 7);
+  PW_TEST_EXPECT_OK(task1.value()->Commit(7));
 
   auto decode1 = internal::InboundPacket::Decode(raw_conn_->last_written_buf());
   ASSERT_NE(decode1, nullptr);
@@ -268,18 +190,16 @@ TEST_F(ServerCallTest, ServerStreamingWriterWriteAndFinish) {
             (internal::PacketType::Make<flags::kServer, flags::kHasPayload>()));
 
   // Finish stream
-  WriteTestTask task2(responder.Finish());
+  async2::FutureTask task2(responder.Finish());
   dispatcher_.Post(task2);
   dispatcher_.RunUntilStalled();
-  ASSERT_TRUE(task2.result().has_value() && task2.result()->ok());
+  ASSERT_TRUE(task2.has_value());
+  PW_TEST_ASSERT_OK(task2.value());
 
   auto decode2 = internal::InboundPacket::Decode(raw_conn_->last_written_buf());
   ASSERT_NE(decode2, nullptr);
   EXPECT_EQ(decode2.type(),
             (internal::PacketType::Make<flags::kServer, flags::kOkTerminal>()));
-
-  task1.Deregister();
-  task2.Deregister();
 }
 
 TEST_F(ServerCallTest, ReaderAndWriterShareCallId) {
@@ -301,20 +221,21 @@ TEST_F(ServerCallTest, ClientStreamingReadsRequestsThenFinishes) {
   ASSERT_TRUE(call->ReserveMessageSlot());
   call->OnMessage(MakeConstBuf(allocator_, "chunk1"));
 
-  ReadTestTask read_task(reader.Read());
+  async2::FutureTask read_task(reader.Read());
   dispatcher_.Post(read_task);
   dispatcher_.RunUntilStalled();
-  ASSERT_TRUE(read_task.result().has_value() && read_task.result()->ok());
-  EXPECT_EQ(read_task.result()->value().size(), 6u);
-  read_task.Deregister();
+  ASSERT_TRUE(read_task.has_value());
+  PW_TEST_ASSERT_OK(read_task.value());
+  EXPECT_EQ(read_task.value()->size(), 6u);
 
   // 2. Server finishes with UnaryWriter via ReserveFinish
-  ReserveTestTask finish_task(responder.ReserveFinish(7));
+  async2::FutureTask finish_task(responder.ReserveFinish(7));
   dispatcher_.Post(finish_task);
   dispatcher_.RunUntilStalled();
-  ASSERT_TRUE(finish_task.result().has_value() && finish_task.result()->ok());
-  std::memcpy((*finish_task.result())->data(), "summary", 7);
-  PW_TEST_EXPECT_OK((*finish_task.result())->Commit(7));
+  ASSERT_TRUE(finish_task.has_value());
+  PW_TEST_ASSERT_OK(finish_task.value());
+  std::memcpy(finish_task.value()->data(), "summary", 7);
+  PW_TEST_EXPECT_OK(finish_task.value()->Commit(7));
   EXPECT_EQ(raw_conn_->commit_count(), 1u);
 
   auto decode_res =
@@ -325,8 +246,6 @@ TEST_F(ServerCallTest, ClientStreamingReadsRequestsThenFinishes) {
                                         flags::kHasPayload,
                                         flags::kOkTerminal>()));
   EXPECT_EQ(decode_res.call_id(), 110u);
-
-  finish_task.Deregister();
 }
 
 TEST_F(ServerCallTest, BidiStreamingWritesMessageThenFinishes) {
@@ -336,22 +255,22 @@ TEST_F(ServerCallTest, BidiStreamingWritesMessageThenFinishes) {
   auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
 
   // Server writes message via ReserveWrite
-  ReserveTestTask write_task(writer.ReserveWrite(12));
+  async2::FutureTask write_task(writer.ReserveWrite(12));
   dispatcher_.Post(write_task);
   dispatcher_.RunUntilStalled();
-  ASSERT_TRUE(write_task.result().has_value() && write_task.result()->ok());
-  std::memcpy((*write_task.result())->data(), "server chunk", 12);
-  PW_TEST_EXPECT_OK((*write_task.result())->Commit(12));
+  ASSERT_TRUE(write_task.has_value());
+  PW_TEST_ASSERT_OK(write_task.value());
+  std::memcpy(write_task.value()->data(), "server chunk", 12);
+  PW_TEST_EXPECT_OK(write_task.value()->Commit(12));
   EXPECT_EQ(raw_conn_->commit_count(), 1u);
-  write_task.Deregister();
 
   // Server finishes
-  WriteTestTask close_task(writer.Finish());
+  async2::FutureTask close_task(writer.Finish());
   dispatcher_.Post(close_task);
   dispatcher_.RunUntilStalled();
-  ASSERT_TRUE(close_task.result().has_value() && close_task.result()->ok());
+  ASSERT_TRUE(close_task.has_value());
+  PW_TEST_ASSERT_OK(close_task.value());
   EXPECT_EQ(raw_conn_->commit_count(), 2u);
-  close_task.Deregister();
 }
 
 TEST_F(ServerCallTest, UnaryWriterCancel) {
@@ -405,12 +324,13 @@ TEST_F(ServerCallTest, ZeroCopyReserveFinish) {
 
   auto responder =
       internal::CallAccess::Create<RawUnaryWriter>(std::move(call));
-  ReserveTestTask task(responder.ReserveFinish(12));
+  async2::FutureTask task(responder.ReserveFinish(12));
   dispatcher_.Post(task);
   dispatcher_.RunUntilStalled();
 
-  ASSERT_TRUE(task.result().has_value() && task.result()->ok());
-  auto res = std::move(**task.result());
+  ASSERT_TRUE(task.has_value());
+  PW_TEST_ASSERT_OK(task.value());
+  auto res = std::move(*task.value());
   EXPECT_GE(res.size(), 12u);
 
   // Write payload zero-copy into reserved buffer
@@ -428,8 +348,6 @@ TEST_F(ServerCallTest, ZeroCopyReserveFinish) {
                                         flags::kOkTerminal>()));
   EXPECT_EQ(decode_res.call_id(), 100u);
   EXPECT_EQ(decode_res.payload().size(), 12u);
-
-  task.Deregister();
 }
 
 TEST_F(ServerCallTest, DroppedUnaryFinishFutureFallsBackToRAIICancellation) {
@@ -468,13 +386,13 @@ TEST_F(ServerCallTest, DroppedUnaryReservationReopensWriterWhileAlive) {
   auto responder =
       internal::CallAccess::Create<RawUnaryWriter>(std::move(call));
   {
-    ReserveTestTask task(responder.ReserveFinish(8));
+    async2::FutureTask task(responder.ReserveFinish(8));
     dispatcher_.Post(task);
     dispatcher_.RunUntilStalled();
-    ASSERT_TRUE(task.result().has_value() && task.result()->ok());
+    ASSERT_TRUE(task.has_value());
+    PW_TEST_ASSERT_OK(task.value());
     // Drop the reservation without calling Commit().
-    (*task.result())->Drop();
-    task.Deregister();
+    task.value()->Drop();
   }
 
   // Because the reservation was dropped without committing and the responder
