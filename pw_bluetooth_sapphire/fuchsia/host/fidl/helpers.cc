@@ -1357,10 +1357,26 @@ std::optional<bt::sm::LTK> BredrKeyFromFidl(const fsys::BredrBondData& data) {
   }
   auto key = PeerKeyFromFidl(data.link_key());
 
-  // Core Spec v6.0, Volume 2, Part H, Section 3.1: BR/EDR link keys are always
-  // 16 bytes (128 bits)
+  // While the BR/EDR link key itself is 16 bytes (Core Spec v6.0, Vol 2,
+  // Part H, Section 3.1), SecurityProperties::enc_key_size() records the
+  // negotiated session encryption key size (7-16 bytes, Vol 2, Part C,
+  // Section 4.2.5.2). Default to 16 bytes only when 0 (unset).
+  size_t enc_key_size = key.security().enc_key_size() == 0
+                            ? bt::hci_spec::kBrEdrLinkKeySize
+                            : key.security().enc_key_size();
+  if (enc_key_size < bt::hci_spec::kMinEncryptionKeySize ||
+      enc_key_size > bt::hci_spec::kBrEdrLinkKeySize) {
+    bt_log(WARN,
+           "fidl",
+           "BR/EDR bond link key has invalid encryption_key_size: %zu "
+           "(expected 0 or [%hhu, %zu])",
+           enc_key_size,
+           bt::hci_spec::kMinEncryptionKeySize,
+           bt::hci_spec::kBrEdrLinkKeySize);
+    return std::nullopt;
+  }
   bt::sm::SecurityProperties sec_props(key.security().level(),
-                                       bt::hci_spec::kBrEdrLinkKeySize,
+                                       enc_key_size,
                                        key.security().secure_connections());
   return bt::sm::LTK(sec_props, bt::hci_spec::LinkKey(key.value(), 0, 0));
 }
@@ -1430,9 +1446,9 @@ fuchsia::bluetooth::sys::BondingData PeerToFidlBondingData(
                    std::back_inserter(*out_bredr.mutable_services()),
                    UuidToFidl);
     fsys::PeerKey link_key = LtkToFidlPeerKey(*peer.bredr()->link_key());
-    // Core Spec v6.0, Volume 2, Part H, Section 3.1: BR/EDR link keys are
-    // always 16 bytes (128 bits)
-    link_key.security.encryption_key_size = bt::hci_spec::kBrEdrLinkKeySize;
+    if (link_key.security.encryption_key_size == 0) {
+      link_key.security.encryption_key_size = bt::hci_spec::kBrEdrLinkKeySize;
+    }
     out_bredr.set_link_key(std::move(link_key));
     out.set_bredr_bond(std::move(out_bredr));
   }

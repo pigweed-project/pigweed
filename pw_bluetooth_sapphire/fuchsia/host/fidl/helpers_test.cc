@@ -1747,6 +1747,34 @@ TEST(HelpersTest, BredrKeyFromFidlWithZeroKeySizeEnforces16Bytes) {
   EXPECT_EQ(bt::hci_spec::kBrEdrLinkKeySize, result->security().enc_key_size());
 }
 
+TEST(HelpersTest, BredrKeyFromFidlPreservesNonZeroKeySize) {
+  for (uint8_t key_size :
+       {bt::hci_spec::kMinEncryptionKeySize,
+        uint8_t{8},
+        static_cast<uint8_t>(bt::hci_spec::kBrEdrLinkKeySize)}) {
+    fsys::PeerKey key = kTestKeyFidl;
+    key.security.encryption_key_size = key_size;
+
+    fsys::BredrBondData bredr;
+    bredr.set_link_key(key);
+    std::optional<bt::sm::LTK> result = BredrKeyFromFidl(bredr);
+    ASSERT_TRUE(result) << "key_size=" << static_cast<unsigned>(key_size);
+    EXPECT_EQ(key_size, result->security().enc_key_size());
+  }
+}
+
+TEST(HelpersTest, BredrKeyFromFidlRejectsOutOfRangeNonZeroKeySizes) {
+  for (uint8_t bad_size : {uint8_t{1}, uint8_t{6}, uint8_t{17}, uint8_t{128}}) {
+    fsys::PeerKey key = kTestKeyFidl;
+    key.security.encryption_key_size = bad_size;
+
+    fsys::BredrBondData bredr;
+    bredr.set_link_key(key);
+    EXPECT_FALSE(BredrKeyFromFidl(bredr).has_value())
+        << "bad_size=" << static_cast<unsigned>(bad_size);
+  }
+}
+
 TEST(HelpersTest, BredrServicesFromFidlEmpty) {
   EXPECT_TRUE(BredrServicesFromFidl(fsys::BredrBondData()).empty());
 }
@@ -1883,6 +1911,27 @@ TEST_F(HelpersAdapterTest,
   ASSERT_TRUE(data.bredr_bond().has_link_key());
   EXPECT_EQ(bt::hci_spec::kBrEdrLinkKeySize,
             data.bredr_bond().link_key().security.encryption_key_size);
+}
+
+TEST_F(HelpersAdapterTest,
+       PeerToFidlBondingData_BredrDataPreservesNonZeroKeySize) {
+  auto* peer =
+      adapter()->peer_cache()->NewPeer(kTestPeerAddr, /*connectable=*/true);
+  const bt::sm::SecurityProperties kTestSecurityEight(
+      bt::sm::SecurityLevel::kEncrypted,
+      8,
+      /*secure_connections=*/false);
+  const bt::sm::LTK kTestLtkEight(kTestSecurityEight,
+                                  bt::hci_spec::LinkKey(kTestKeyValue, 0, 0));
+  EXPECT_TRUE(peer->MutBrEdr().SetBondData(kTestLtkEight));
+
+  fsys::BondingData data = PeerToFidlBondingData(adapter().get(), *peer);
+  ASSERT_TRUE(data.has_bredr_bond());
+  ASSERT_TRUE(data.bredr_bond().has_link_key());
+  EXPECT_EQ(8u, data.bredr_bond().link_key().security.encryption_key_size);
+  std::optional<bt::sm::LTK> round_trip = BredrKeyFromFidl(data.bredr_bond());
+  ASSERT_TRUE(round_trip.has_value());
+  EXPECT_EQ(kTestLtkEight, *round_trip);
 }
 
 TEST_F(HelpersAdapterTest, PeerToFidlBondingData_IncludesBredrServices) {
