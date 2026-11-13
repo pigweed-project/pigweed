@@ -1444,6 +1444,100 @@ TEST_F(ConnectionTest, EncryptionKeyRefreshSecureConnectionsWithAesSucceeds) {
   EXPECT_TRUE(test_device()->AllExpectedDataPacketsSent());
 }
 
+TEST_F(
+    ConnectionTest,
+    EncryptionSecureConnectionsTransactionCollisionDoesNotCloseLinkAsCentral) {
+  std::unique_ptr<BrEdrConnection> connection = NewACLConnection(
+      pw::bluetooth::emboss::ConnectionRole::CENTRAL, kTestHandle);
+
+  connection->set_use_secure_connections(true);
+
+  int callback_count = 0;
+  Result<bool> result = fit::error(Error(HostError::kFailed));
+  connection->set_encryption_change_callback([&](Result<bool> cb_result) {
+    ASSERT_TRUE(cb_result.is_error());
+    callback_count++;
+    result = cb_result;
+  });
+
+  // LMP_ERROR_TRANSACTION_COLLISION should not trigger an immediate disconnect.
+  test_device()->SendCommandChannelPacket(
+      bt::testing::EncryptionChangeEventPacket(
+          pw::bluetooth::emboss::StatusCode::LMP_ERROR_TRANSACTION_COLLISION,
+          kTestHandle,
+          hci_spec::EncryptionStatus::kOff));
+  RunUntilIdle();
+
+  EXPECT_EQ(1, callback_count);
+  EXPECT_TRUE(result.error_value().is(
+      pw::bluetooth::emboss::StatusCode::LMP_ERROR_TRANSACTION_COLLISION));
+
+  // DIFFERENT_TRANSACTION_COLLISION should also not trigger an immediate
+  // disconnect.
+  test_device()->SendCommandChannelPacket(
+      bt::testing::EncryptionChangeEventPacket(
+          pw::bluetooth::emboss::StatusCode::DIFFERENT_TRANSACTION_COLLISION,
+          kTestHandle,
+          hci_spec::EncryptionStatus::kOff));
+  RunUntilIdle();
+
+  EXPECT_EQ(2, callback_count);
+  EXPECT_TRUE(result.error_value().is(
+      pw::bluetooth::emboss::StatusCode::DIFFERENT_TRANSACTION_COLLISION));
+
+  // Only the normal teardown disconnect command should be sent when connection
+  // is destroyed.
+  EXPECT_CMD_PACKET_OUT(test_device(), kDisconnectCommand);
+  EXPECT_TRUE(test_device()->AllExpectedDataPacketsSent());
+}
+
+TEST_F(
+    ConnectionTest,
+    EncryptionSecureConnectionsTransactionCollisionDoesNotCloseLinkAsPeripheral) {
+  std::unique_ptr<BrEdrConnection> connection = NewACLConnection(
+      pw::bluetooth::emboss::ConnectionRole::PERIPHERAL, kTestHandle);
+
+  connection->set_use_secure_connections(true);
+
+  int callback_count = 0;
+  Result<bool> result = fit::error(Error(HostError::kFailed));
+  connection->set_encryption_change_callback([&](Result<bool> cb_result) {
+    ASSERT_TRUE(cb_result.is_error());
+    callback_count++;
+    result = cb_result;
+  });
+
+  // LMP_ERROR_TRANSACTION_COLLISION should not trigger an immediate disconnect.
+  test_device()->SendCommandChannelPacket(
+      bt::testing::EncryptionChangeEventPacket(
+          pw::bluetooth::emboss::StatusCode::LMP_ERROR_TRANSACTION_COLLISION,
+          kTestHandle,
+          hci_spec::EncryptionStatus::kOff));
+  RunUntilIdle();
+
+  EXPECT_EQ(1, callback_count);
+  EXPECT_TRUE(result.error_value().is(
+      pw::bluetooth::emboss::StatusCode::LMP_ERROR_TRANSACTION_COLLISION));
+
+  // DIFFERENT_TRANSACTION_COLLISION should also not trigger an immediate
+  // disconnect.
+  test_device()->SendCommandChannelPacket(
+      bt::testing::EncryptionChangeEventPacket(
+          pw::bluetooth::emboss::StatusCode::DIFFERENT_TRANSACTION_COLLISION,
+          kTestHandle,
+          hci_spec::EncryptionStatus::kOff));
+  RunUntilIdle();
+
+  EXPECT_EQ(2, callback_count);
+  EXPECT_TRUE(result.error_value().is(
+      pw::bluetooth::emboss::StatusCode::DIFFERENT_TRANSACTION_COLLISION));
+
+  // Only the normal teardown disconnect command should be sent when connection
+  // is destroyed.
+  EXPECT_CMD_PACKET_OUT(test_device(), kDisconnectCommand);
+  EXPECT_TRUE(test_device()->AllExpectedDataPacketsSent());
+}
+
 TEST_P(LinkTypeConnectionTest, EncryptionKeyRefreshEvents) {
   // clang-format off
   StaticByteBuffer kEncryptionKeyRefresh(

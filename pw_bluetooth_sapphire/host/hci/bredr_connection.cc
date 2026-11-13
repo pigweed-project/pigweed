@@ -148,18 +148,25 @@ void BrEdrConnection::HandleEncryptionStatusValidated(Result<bool> result) {
   // Core Spec Vol 3, Part C, 5.2.2.1.1 and 5.2.2.2.1 mention disconnecting the
   // link after pairing failures (supported by TS GAP/SEC/SEM/BV-10-C), but do
   // not specify actions to take after encryption failures. We'll choose to
-  // disconnect ACL links after encryption failure. Also disconnect if a peer
-  // successfully *disables* encryption on an established BR/EDR link: upper
-  // layers (L2CAP, GAP) do not re-evaluate channel security on encryption
-  // change, so allowing the link to continue would expose previously-authorised
-  // channels over plaintext.
+  // disconnect ACL links after encryption failure (except for recoverable
+  // transaction collisions where the central's procedure takes precedence or we
+  // will retry enabling encryption). Also disconnect if a peer successfully
+  // *disables* encryption on an established BR/EDR link: upper layers (L2CAP,
+  // GAP) do not re-evaluate channel security on encryption change, so allowing
+  // the link to continue would expose previously-authorised channels over
+  // plaintext.
 
   if (state() != Connection::State::kConnected) {
     bt_log(DEBUG, "hci", "encryption status ignored for closed connection");
     return;
   }
 
-  if (result.is_error() || !result.value()) {
+  const bool is_transaction_collision =
+      result.is_error() &&
+      result.error_value().is_any_of(
+          pw::bluetooth::emboss::StatusCode::LMP_ERROR_TRANSACTION_COLLISION,
+          pw::bluetooth::emboss::StatusCode::DIFFERENT_TRANSACTION_COLLISION);
+  if (!is_transaction_collision && (result.is_error() || !result.value())) {
     Disconnect(pw::bluetooth::emboss::StatusCode::AUTHENTICATION_FAILURE);
   }
 

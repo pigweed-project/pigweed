@@ -66,7 +66,9 @@ SecureSimplePairingState::SecureSimplePairingState(
   link_->set_encryption_change_callback(
       fit::bind_member<&SecureSimplePairingState::OnEncryptionChange>(this));
   cleanup_cb_ = [](SecureSimplePairingState* self) {
-    self->link_->set_encryption_change_callback(nullptr);
+    if (self->link_.is_alive()) {
+      self->link_->set_encryption_change_callback(nullptr);
+    }
     hci::Result<> status = ToResult(HostError::kLinkDisconnected);
     auto callbacks_to_signal = self->CompletePairingRequests(status);
 
@@ -74,7 +76,8 @@ SecureSimplePairingState::SecureSimplePairingState(
            "gap-bredr",
            "Signaling %zu unresolved pairing listeners for %#.4x",
            callbacks_to_signal.size(),
-           self->handle());
+           self->link_.is_alive() ? self->handle()
+                                  : hci_spec::ConnectionHandle{0});
 
     for (auto& cb : callbacks_to_signal) {
       cb();
@@ -988,7 +991,7 @@ void SecureSimplePairingState::OnEncryptionChange(hci::Result<bool> result) {
     current_pairing_->retry_enable_encryption_task.set_function(
         [this](pw::async::Context /*ctx*/, pw::Status status) {
           if (status.ok() && state_ == State::kWaitEncryption) {
-            bt_log(INFO, "hci-le", "Retrying enabling encryption");
+            bt_log(INFO, "gap-bredr", "Retrying enabling encryption");
             EnableEncryption();
           }
         });
@@ -1172,7 +1175,7 @@ void SecureSimplePairingState::SignalStatus(hci::Result<> status,
   bt_log(INFO,
          "gap-bredr",
          "Signaling pairing listeners for %#.4x (id: %s) from %s with %s",
-         handle(),
+         link_.is_alive() ? handle() : hci_spec::ConnectionHandle{0},
          bt_str(peer_id()),
          caller,
          bt_str(status));
@@ -1184,7 +1187,9 @@ void SecureSimplePairingState::SignalStatus(hci::Result<> status,
   // This SecureSimplePairingState may be destroyed by these callbacks (e.g. if
   // signaling an error causes a disconnection), so care must be taken not to
   // access any members.
-  status_callback_(handle(), status);
+  if (link_.is_alive()) {
+    status_callback_(handle(), status);
+  }
   for (auto& cb : callbacks_to_signal) {
     cb();
   }
@@ -1231,11 +1236,13 @@ std::vector<fit::closure> SecureSimplePairingState::CompletePairingRequests(
     // On pairing failure, or if request_queue_ is non-empty while not pairing
     // (e.g. from kInitiatorWaitLEPairingComplete when an unexpected event
     // occurred), signal and clear all queued requests.
+    const hci_spec::ConnectionHandle conn_handle =
+        link_.is_alive() ? handle() : hci_spec::ConnectionHandle{0};
     for (auto& request : request_queue_) {
       callbacks_to_signal.emplace_back(
-          [handle = handle(),
-           status,
-           cb = std::move(request.status_callback)]() { cb(handle, status); });
+          [conn_handle, status, cb = std::move(request.status_callback)]() {
+            cb(conn_handle, status);
+          });
     }
     request_queue_.clear();
     current_pairing_ = nullptr;
@@ -1311,6 +1318,12 @@ std::vector<fit::closure> SecureSimplePairingState::CompletePairingRequests(
 }
 
 bool SecureSimplePairingState::EnableEncryption() {
+  if (!link_.is_alive()) {
+    state_ = State::kFailed;
+    SignalStatus(ToResult(HostError::kLinkDisconnected), __func__);
+    return false;
+  }
+
   if (!link_->StartEncryption()) {
     bt_log(ERROR,
            "gap-bredr",
@@ -1319,7 +1332,7 @@ bool SecureSimplePairingState::EnableEncryption() {
            bt_str(peer_id()),
            ToString(state()));
     state_ = State::kFailed;
-    status_callback_(link_->handle(), ToResult(HostError::kFailed));
+    SignalStatus(ToResult(HostError::kFailed), __func__);
     return false;
   }
   state_ = State::kWaitEncryption;

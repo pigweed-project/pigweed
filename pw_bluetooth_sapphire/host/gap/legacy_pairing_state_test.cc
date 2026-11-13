@@ -119,11 +119,17 @@ class LegacyPairingStateTest : public TestBase {
     peer_ = nullptr;
     peer_cache_ = nullptr;
 
-    EXPECT_CMD_PACKET_OUT(test_device(),
-                          testing::DisconnectPacket(kTestHandle));
-    connection_.reset();
+    DestroyConnection();
 
     TestBase::TearDown();
+  }
+
+  void DestroyConnection() {
+    if (connection_) {
+      EXPECT_CMD_PACKET_OUT(test_device(),
+                            testing::DisconnectPacket(kTestHandle));
+      connection_.reset();
+    }
   }
 
   fit::closure MakeAuthRequestCallback() {
@@ -1407,9 +1413,13 @@ TEST_F(LegacyPairingStateTest, TransactionCollision) {
   auto tc_result = ToResult(
       pw::bluetooth::emboss::StatusCode::LMP_ERROR_TRANSACTION_COLLISION);
   hci::Result<bool> result(tc_result.take_error());
+  connection()->set_encryption_status(
+      pw::bluetooth::emboss::EncryptionStatus::OFF);
   connection()->TriggerEncryptionChangeCallback(result);
 
   EXPECT_FALSE(cb_called);
+  connection()->set_encryption_status(pw::bluetooth::emboss::EncryptionStatus::
+                                          ON_WITH_E0_FOR_BREDR_OR_AES_FOR_LE);
   connection()->TriggerEncryptionChangeCallback(fit::ok(true));
   EXPECT_TRUE(cb_called);
 }
@@ -1449,6 +1459,8 @@ TEST_F(LegacyPairingStateTest, DifferentTransactionCollisionAsCentral) {
   auto tc_result = ToResult(
       pw::bluetooth::emboss::StatusCode::DIFFERENT_TRANSACTION_COLLISION);
   hci::Result<bool> result(tc_result.take_error());
+  connection()->set_encryption_status(
+      pw::bluetooth::emboss::EncryptionStatus::OFF);
   connection()->TriggerEncryptionChangeCallback(result);
   EXPECT_FALSE(cb_called);
 
@@ -1456,6 +1468,8 @@ TEST_F(LegacyPairingStateTest, DifferentTransactionCollisionAsCentral) {
   RunFor(LegacyPairingState::kDelayRetryEnableEncryption);
   ASSERT_EQ(1, connection()->start_encryption_count());
 
+  connection()->set_encryption_status(pw::bluetooth::emboss::EncryptionStatus::
+                                          ON_WITH_E0_FOR_BREDR_OR_AES_FOR_LE);
   connection()->TriggerEncryptionChangeCallback(fit::ok(true));
   EXPECT_TRUE(cb_called);
 }
@@ -1495,6 +1509,8 @@ TEST_F(LegacyPairingStateTest, DifferentTransactionCollisionAsPeripheral) {
   auto tc_result = ToResult(
       pw::bluetooth::emboss::StatusCode::DIFFERENT_TRANSACTION_COLLISION);
   hci::Result<bool> result(tc_result.take_error());
+  connection()->set_encryption_status(
+      pw::bluetooth::emboss::EncryptionStatus::OFF);
   connection()->TriggerEncryptionChangeCallback(result);
   EXPECT_FALSE(cb_called);
 
@@ -1544,6 +1560,8 @@ TEST_F(LegacyPairingStateTest,
   hci::Result<bool> result(tc_result.take_error());
 
   // Trigger the first collision event. This should schedule a retry.
+  connection()->set_encryption_status(
+      pw::bluetooth::emboss::EncryptionStatus::OFF);
   connection()->TriggerEncryptionChangeCallback(result);
   EXPECT_FALSE(cb_called);
 
@@ -1600,9 +1618,13 @@ TEST_F(LegacyPairingStateTest,
   auto tc_result = ToResult(
       pw::bluetooth::emboss::StatusCode::DIFFERENT_TRANSACTION_COLLISION);
   hci::Result<bool> result(tc_result.take_error());
+  connection()->set_encryption_status(
+      pw::bluetooth::emboss::EncryptionStatus::OFF);
   connection()->TriggerEncryptionChangeCallback(result);
   EXPECT_FALSE(cb_called);
 
+  connection()->set_encryption_status(pw::bluetooth::emboss::EncryptionStatus::
+                                          ON_WITH_E0_FOR_BREDR_OR_AES_FOR_LE);
   connection()->TriggerEncryptionChangeCallback(fit::ok(true));
   EXPECT_TRUE(cb_called);
 
@@ -1610,6 +1632,87 @@ TEST_F(LegacyPairingStateTest,
   // retry handler is called
   RunFor(LegacyPairingState::kDelayRetryEnableEncryption);
   ASSERT_EQ(1, connection()->start_encryption_count());
+}
+
+TEST_F(LegacyPairingStateTest, NonE0EncryptionFailsLegacyPairing) {
+  FakePairingDelegate pairing_delegate(kTestLocalIoCap);
+  pairing_delegate.SetDisplayPasskeyCallback(
+      [](PeerId, uint32_t, PairingDelegate::DisplayMethod, auto cb) {
+        cb(/*confirm=*/true);
+      });
+
+  LegacyPairingState pairing_state(peer()->GetWeakPtr(),
+                                   pairing_delegate.GetWeakPtr(),
+                                   connection()->GetWeakPtr(),
+                                   /*outgoing_connection=*/true,
+                                   &dispatcher(),
+                                   MakeAuthRequestCallback(),
+                                   NoOpStatusCallback);
+  pairing_state.SetPairingDelegate(pairing_delegate.GetWeakPtr());
+
+  std::optional<hci::Result<>> pairing_status;
+  pairing_state.InitiatePairing(
+      [&pairing_status](hci_spec::ConnectionHandle, hci::Result<> status) {
+        pairing_status = status;
+      });
+  static_cast<void>(pairing_state.OnLinkKeyRequest());
+  pairing_state.OnPinCodeRequest(NoOpUserPinCodeCallback);
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                  kTestLegacyLinkKeyType));
+  pairing_state.OnAuthenticationComplete(
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  ASSERT_EQ(1, connection()->start_encryption_count());
+
+  connection()->set_encryption_status(
+      pw::bluetooth::emboss::EncryptionStatus::ON_WITH_AES_FOR_BREDR);
+  connection()->TriggerEncryptionChangeCallback(fit::ok(true));
+  ASSERT_TRUE(pairing_status.has_value());
+  EXPECT_EQ(ToResult(HostError::kFailed), *pairing_status);
+}
+
+TEST_F(LegacyPairingStateTest,
+       EncryptionRetryAfterLinkDestroyedFailsGracefully) {
+  FakePairingDelegate pairing_delegate(kTestLocalIoCap);
+  pairing_delegate.SetDisplayPasskeyCallback(
+      [](PeerId, uint32_t, PairingDelegate::DisplayMethod, auto cb) {
+        cb(/*confirm=*/true);
+      });
+
+  LegacyPairingState pairing_state(peer()->GetWeakPtr(),
+                                   pairing_delegate.GetWeakPtr(),
+                                   connection()->GetWeakPtr(),
+                                   /*outgoing_connection=*/false,
+                                   &dispatcher(),
+                                   MakeAuthRequestCallback(),
+                                   NoOpStatusCallback);
+  pairing_state.SetPairingDelegate(pairing_delegate.GetWeakPtr());
+
+  std::optional<hci::Result<>> pairing_status;
+  pairing_state.InitiatePairing(
+      [&pairing_status](hci_spec::ConnectionHandle, hci::Result<> status) {
+        pairing_status = status;
+      });
+  static_cast<void>(pairing_state.OnLinkKeyRequest());
+  pairing_state.OnPinCodeRequest(NoOpUserPinCodeCallback);
+  EXPECT_TRUE(pairing_state.OnLinkKeyNotification(kTestLinkKeyValue,
+                                                  kTestLegacyLinkKeyType));
+  pairing_state.OnAuthenticationComplete(
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  ASSERT_EQ(1, connection()->start_encryption_count());
+
+  auto tc_result = ToResult(
+      pw::bluetooth::emboss::StatusCode::DIFFERENT_TRANSACTION_COLLISION);
+  connection()->set_encryption_status(
+      pw::bluetooth::emboss::EncryptionStatus::OFF);
+  connection()->TriggerEncryptionChangeCallback(
+      hci::Result<bool>(tc_result.take_error()));
+  EXPECT_FALSE(pairing_status.has_value());
+
+  DestroyConnection();
+
+  RunFor(LegacyPairingState::kDelayRetryEnableEncryption);
+  ASSERT_TRUE(pairing_status.has_value());
+  EXPECT_EQ(ToResult(HostError::kLinkDisconnected), *pairing_status);
 }
 
 // Event injectors. Return values are necessarily ignored in order to make types

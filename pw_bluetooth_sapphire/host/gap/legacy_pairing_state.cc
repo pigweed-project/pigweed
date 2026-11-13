@@ -628,24 +628,11 @@ void LegacyPairingState::OnEncryptionChange(hci::Result<bool> result) {
   inspect_properties_.encryption_status.Set(
       EncryptionStatusToString(encryption_status));
 
-  // E0 encryption shall be used for Legacy Pairing when encryption is enabled
-  // (Core Spec v5.4, Vol 2, Part C, 4.2.5)
-  if (encryption_status != pw::bluetooth::emboss::EncryptionStatus::
-                               ON_WITH_E0_FOR_BREDR_OR_AES_FOR_LE) {
-    bt_log(WARN,
-           "gap-bredr",
-           "E0 encryption must be used for legacy pairing when encryption is "
-           "enabled");
-    state_ = State::kFailed;
-    SignalStatus(ToResult(HostError::kFailed), __func__);
-    return;
-  }
-
   if (result.is_error()) {
     current_pairing_->retry_enable_encryption_task.set_function(
         [this](pw::async::Context /*ctx*/, pw::Status status) {
           if (status.ok() && state_ == State::kWaitEncryption) {
-            bt_log(INFO, "hci-le", "Retrying enabling encryption");
+            bt_log(INFO, "gap-bredr", "Retrying enabling encryption");
             EnableEncryption();
           }
         });
@@ -666,6 +653,19 @@ void LegacyPairingState::OnEncryptionChange(hci::Result<bool> result) {
         SignalStatus(result.take_error(), __func__);
         return;
     }
+  }
+
+  // E0 encryption shall be used for Legacy Pairing when encryption is enabled
+  // (Core Spec v5.4, Vol 2, Part C, 4.2.5)
+  if (encryption_status != pw::bluetooth::emboss::EncryptionStatus::
+                               ON_WITH_E0_FOR_BREDR_OR_AES_FOR_LE) {
+    bt_log(WARN,
+           "gap-bredr",
+           "E0 encryption must be used for legacy pairing when encryption is "
+           "enabled");
+    state_ = State::kFailed;
+    SignalStatus(ToResult(HostError::kFailed), __func__);
+    return;
   }
 
   // Encryption indicates the end of pairing so reset state for another pairing
@@ -717,7 +717,11 @@ LegacyPairingState::Pairing::MakeResponderForBonded(
 }
 
 bool LegacyPairingState::EnableEncryption() {
-  PW_CHECK(link_.is_alive());
+  if (!link_.is_alive()) {
+    state_ = State::kFailed;
+    SignalStatus(ToResult(HostError::kLinkDisconnected), __func__);
+    return false;
+  }
 
   if (!link_->StartEncryption()) {
     bt_log(
@@ -728,7 +732,7 @@ bool LegacyPairingState::EnableEncryption() {
         bt_str(peer_id_),
         ToString(state_));
     state_ = State::kFailed;
-    status_callback_(link_->handle(), ToResult(HostError::kFailed));
+    SignalStatus(ToResult(HostError::kFailed), __func__);
     return false;
   }
   state_ = State::kWaitEncryption;
@@ -827,11 +831,13 @@ std::vector<fit::closure> LegacyPairingState::CompletePairingRequests(
 
   if (status.is_error()) {
     // On pairing failure, signal all requests
+    const hci_spec::ConnectionHandle conn_handle =
+        link_.is_alive() ? handle() : hci_spec::ConnectionHandle{0};
     for (auto& request : request_queue_) {
       callbacks_to_signal.emplace_back(
-          [handle = handle(),
-           status,
-           cb = std::move(request.status_callback)]() { cb(handle, status); });
+          [conn_handle, status, cb = std::move(request.status_callback)]() {
+            cb(conn_handle, status);
+          });
     }
     request_queue_.clear();
     current_pairing_ = nullptr;
