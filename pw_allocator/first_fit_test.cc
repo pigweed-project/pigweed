@@ -233,6 +233,10 @@ TEST_F(FirstFitAllocatorTest, MeasureFragmentation) { MeasureFragmentation(); }
 
 TEST_F(FirstFitAllocatorTest, PoisonPeriodically) { PoisonPeriodically(); }
 
+TEST_F(FirstFitAllocatorTest, DoesNotLeakHeapPointers) {
+  DoesNotLeakHeapPointers();
+}
+
 // Fuzz tests.
 
 using ::pw::allocator::test::BlockAlignedBuffer;

@@ -142,4 +142,8 @@ TEST_F(TlsfAllocatorTest, MeasureFragmentation) { MeasureFragmentation(); }
 
 TEST_F(TlsfAllocatorTest, PoisonPeriodically) { PoisonPeriodically(); }
 
+TEST_F(TlsfAllocatorTest, DoesNotLeakHeapPointers) {
+  DoesNotLeakHeapPointers();
+}
+
 }  // namespace

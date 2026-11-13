@@ -17,6 +17,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 #include "pw_allocator/deallocator.h"
 #include "pw_allocator/fragmentation.h"
@@ -327,6 +328,40 @@ TEST(BuddyAllocatorTest, MeasureFragmentation) {
 
   allocator.Deallocate(ptr2);
   EXPECT_EQ(allocator.GetAllocatedBytes().value(), 0U);
+}
+
+TEST(BuddyAllocatorTest, DoesNotLeakHeapPointers) {
+  std::array<std::byte, kBufferSize> buffer{};
+  BuddyAllocator allocator(buffer);
+
+  const auto region_start = reinterpret_cast<uintptr_t>(buffer.data());
+  const auto region_end = region_start + buffer.size();
+  auto expect_no_heap_pointers = [region_start, region_end](const void* ptr,
+                                                            size_t size) {
+    const auto* bytes = static_cast<const std::byte*>(ptr);
+    for (size_t i = 0; i + sizeof(uintptr_t) <= size; ++i) {
+      uintptr_t value = 0;
+      std::memcpy(&value, bytes + i, sizeof(value));
+      EXPECT_TRUE(value < region_start || value >= region_end)
+          << "Found internal heap pointer at offset " << i;
+    }
+  };
+
+  constexpr Layout kLayout(16, 1);
+  void* ptr1 = allocator.Allocate(kLayout);
+  void* ptr2 = allocator.Allocate(kLayout);
+  ASSERT_NE(ptr1, nullptr);
+  ASSERT_NE(ptr2, nullptr);
+  expect_no_heap_pointers(ptr1, kLayout.size());
+  expect_no_heap_pointers(ptr2, kLayout.size());
+
+  allocator.Deallocate(ptr1);
+  allocator.Deallocate(ptr2);
+
+  void* merged = allocator.Allocate(Layout(48, 1));
+  ASSERT_NE(merged, nullptr);
+  expect_no_heap_pointers(merged, 48);
+  allocator.Deallocate(merged);
 }
 
 // Fuzz tests.

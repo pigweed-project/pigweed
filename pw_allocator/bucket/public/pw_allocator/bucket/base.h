@@ -14,6 +14,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstring>
 #include <limits>
 
 #include "pw_allocator/block/poisonable.h"
@@ -92,7 +93,12 @@ class BucketBase {
   /// null. Exactly which block is returned depends on the specific bucket
   /// implementation.
   [[nodiscard]] BlockType* RemoveAny() {
-    return empty() ? nullptr : derived()->DoRemoveAny();
+    if (empty()) {
+      return nullptr;
+    }
+    BlockType* block = derived()->DoRemoveAny();
+    ClearItem(*block);
+    return block;
   }
 
   /// If the given `block` is in this bucket, removes it and returns true;
@@ -100,7 +106,11 @@ class BucketBase {
   ///
   /// @param  block   The block to be removed.
   [[nodiscard]] bool Remove(BlockType& block) {
-    return block.InnerSize() >= sizeof(ItemType) && derived()->DoRemove(block);
+    if (block.InnerSize() < sizeof(ItemType) || !derived()->DoRemove(block)) {
+      return false;
+    }
+    ClearItem(block);
+    return true;
   }
 
   /// Removes and returns a block that can be allocated with the given `layout`,
@@ -111,7 +121,11 @@ class BucketBase {
   ///
   /// @param  layout  Allocatable layout of the block to be removed.
   [[nodiscard]] BlockType* RemoveCompatible(Layout layout) {
-    return derived()->DoRemoveCompatible(layout);
+    BlockType* block = derived()->DoRemoveCompatible(layout);
+    if (block != nullptr) {
+      ClearItem(*block);
+    }
+    return block;
   }
 
   /// Removes all blocks from this bucket.
@@ -174,6 +188,12 @@ class BucketBase {
   constexpr Derived* derived() { return static_cast<Derived*>(this); }
   constexpr const Derived* derived() const {
     return static_cast<const Derived*>(this);
+  }
+
+  /// Clears the intrusive item from a removed block's usable space so internal
+  /// heap pointers cannot be leaked when the block is reallocated.
+  static void ClearItem(BlockType& block) {
+    std::memset(block.UsableSpace(), 0, sizeof(ItemType));
   }
 
   /// The maximum inner size of blocks in this bucket.

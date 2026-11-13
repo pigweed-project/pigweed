@@ -17,6 +17,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 #include "pw_allocator/internal/counter.h"
 #include "pw_allocator/layout.h"
@@ -243,6 +244,45 @@ TEST_F(ChunkPoolTest, MakeUniqueUnboundedArrayDifferentType) {
     EXPECT_EQ(bytes.size(), layout.size());
   }
   EXPECT_EQ(pool.GetAllocatedBytes().value(), 0u);
+}
+
+TEST_F(ChunkPoolTest, DoesNotLeakHeapPointers) {
+  std::array<std::byte, 256> buffer{};
+  constexpr Layout kLayout = Layout::Of<U64[2]>();
+  pw::allocator::ChunkPool pool(buffer, kLayout);
+
+  const auto region_start = reinterpret_cast<uintptr_t>(buffer.data());
+  const auto region_end = region_start + buffer.size();
+  auto expect_no_heap_pointers = [region_start, region_end](const void* ptr,
+                                                            size_t size) {
+    const auto* bytes = static_cast<const std::byte*>(ptr);
+    for (size_t i = 0; i + sizeof(uintptr_t) <= size; ++i) {
+      uintptr_t value = 0;
+      std::memcpy(&value, bytes + i, sizeof(value));
+      EXPECT_TRUE(value < region_start || value >= region_end)
+          << "Found internal heap pointer at offset " << i;
+    }
+  };
+
+  void* ptr1 = pool.Allocate();
+  void* ptr2 = pool.Allocate();
+  ASSERT_NE(ptr1, nullptr);
+  ASSERT_NE(ptr2, nullptr);
+  expect_no_heap_pointers(ptr1, kLayout.size());
+  expect_no_heap_pointers(ptr2, kLayout.size());
+
+  pool.Deallocate(ptr1);
+  pool.Deallocate(ptr2);
+
+  void* reused2 = pool.Allocate();
+  void* reused1 = pool.Allocate();
+  ASSERT_NE(reused2, nullptr);
+  ASSERT_NE(reused1, nullptr);
+  expect_no_heap_pointers(reused2, kLayout.size());
+  expect_no_heap_pointers(reused1, kLayout.size());
+
+  pool.Deallocate(reused1);
+  pool.Deallocate(reused2);
 }
 
 }  // namespace

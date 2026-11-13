@@ -151,6 +151,7 @@ class BlockAllocatorTest : public ::testing::Test {
   void GetMaxAllocatableWhenNoBlocksFree();
   void MeasureFragmentation();
   void PoisonPeriodically();
+  void DoesNotLeakHeapPointers();
 
   // Fuzz tests.
   void NoCorruptedBlocks();
@@ -657,6 +658,62 @@ void BlockAllocatorTest<BlockAllocatorType, kCapacity>::PoisonPeriodically() {
   } else {
     static_assert(is_poisonable_v<BlockType>);
   }
+}
+
+template <typename BlockAllocatorType, size_t kCapacity>
+void BlockAllocatorTest<BlockAllocatorType,
+                        kCapacity>::DoesNotLeakHeapPointers() {
+  ByteSpan region = GetBytes();
+  std::memset(region.data(), 0, region.size());
+  pw::Allocator& allocator = GetGenericAllocator({
+      {kSmallOuterSize, Preallocation::kUsed},
+      {kSmallOuterSize, Preallocation::kUsed},
+      {kSmallOuterSize, Preallocation::kUsed},
+      {Preallocation::kSizeRemaining, Preallocation::kUsed},
+  });
+
+  const auto region_start = cpp20::bit_cast<uintptr_t>(region.data());
+  const auto region_end = region_start + region.size();
+  auto expect_no_heap_pointers = [region_start, region_end](const void* ptr,
+                                                            size_t size) {
+    const auto* bytes = static_cast<const std::byte*>(ptr);
+    for (size_t i = 0; i + sizeof(uintptr_t) <= size; ++i) {
+      uintptr_t value = 0;
+      std::memcpy(&value, bytes + i, sizeof(value));
+      EXPECT_TRUE(value < region_start || value >= region_end)
+          << "Found internal heap pointer at offset " << i;
+    }
+  };
+
+  // Deallocate two non-adjacent blocks so buckets/fast-bins store multiple
+  // intrusive items, then reallocate and verify their metadata was cleared.
+  allocator.Deallocate(Fetch(0));
+  Store(0, nullptr);
+  allocator.Deallocate(Fetch(2));
+  Store(2, nullptr);
+
+  constexpr Layout small_layout(kSmallInnerSize, 1);
+  Store(0, allocator.Allocate(small_layout));
+  Store(2, allocator.Allocate(small_layout));
+  ASSERT_NE(Fetch(0), nullptr);
+  ASSERT_NE(Fetch(2), nullptr);
+  expect_no_heap_pointers(Fetch(0), small_layout.size());
+  expect_no_heap_pointers(Fetch(2), small_layout.size());
+
+  // Deallocate three adjacent blocks so they coalesce into one free block,
+  // then allocate across the merged region and verify no stale intrusive
+  // pointers remain in its interior.
+  allocator.Deallocate(Fetch(0));
+  Store(0, nullptr);
+  allocator.Deallocate(Fetch(2));
+  Store(2, nullptr);
+  allocator.Deallocate(Fetch(1));
+  Store(1, nullptr);
+
+  constexpr Layout merged_layout(kSmallInnerSize * 3, 1);
+  Store(0, allocator.Allocate(merged_layout));
+  ASSERT_NE(Fetch(0), nullptr);
+  expect_no_heap_pointers(Fetch(0), merged_layout.size());
 }
 
 // Fuzz test support.

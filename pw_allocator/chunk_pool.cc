@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <new>
 
 #include "lib/stdcompat/bit.h"
@@ -65,6 +66,7 @@ void* ChunkPool::DoAllocate() {
   }
   std::byte* ptr = next_;
   next_ = *(std::launder(reinterpret_cast<std::byte**>(next_)));
+  std::memset(ptr, 0, sizeof(void*));
   ++num_allocated_;
   return ptr;
 }

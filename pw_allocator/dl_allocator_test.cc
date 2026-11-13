@@ -144,6 +144,8 @@ TEST_F(DlAllocatorTest, GetMaxAllocatableWhenNoBlocksFree) {
 
 TEST_F(DlAllocatorTest, MeasureFragmentation) { MeasureFragmentation(); }
 
+TEST_F(DlAllocatorTest, DoesNotLeakHeapPointers) { DoesNotLeakHeapPointers(); }
+
 // Fuzz tests.
 
 using ::pw::allocator::test::BlockAlignedBuffer;

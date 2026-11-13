@@ -237,6 +237,10 @@ TEST_F(BucketAllocatorTest, MeasureFragmentation) { MeasureFragmentation(); }
 
 TEST_F(BucketAllocatorTest, PoisonPeriodically) { PoisonPeriodically(); }
 
+TEST_F(BucketAllocatorTest, DoesNotLeakHeapPointers) {
+  DoesNotLeakHeapPointers();
+}
+
 // Fuzz tests.
 
 using ::pw::allocator::test::BlockAlignedBuffer;
