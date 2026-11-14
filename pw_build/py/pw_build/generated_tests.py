@@ -11,13 +11,17 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-"""Tools for generating tests that execute in Python, TypeScript, C++, and Java.
+"""Tools for generating multi-language tests from Python and YAML.
 
-This module provides a way to write data-driven tests that can be executed in
-multiple languages, ensuring that the implementations behave identically.
+This module provides utilities to write data-driven tests that can be executed
+in multiple languages, ensuring that the implementations behave identically:
 
-The core of this module is the :py:class:`TestGenerator` class, which takes a
-sequence of test cases and generates tests for Python, C++, and TypeScript.
+- :py:class:`TestGenerator`: Generates Python, C++, TypeScript, Java, and Rust
+  tests from a sequence of Python test case objects.
+- :py:func:`jinja_main`, :py:func:`parse_jinja_args`, and
+  :py:data:`DEFAULT_JINJA_FILTERS`: Renders language-specific test data or
+  harnesses from YAML test case definitions and Jinja2 templates using shared
+  literal formatting filters backed by :py:mod:`pw_codegen`.
 
 The following example shows how to use ``generated_tests.py``:
 
@@ -55,22 +59,28 @@ that is not recommended, since the tests may become outdated.
 """
 
 import argparse
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
-from collections import defaultdict
-import unittest
-
+from pathlib import Path
+from types import MappingProxyType
 from typing import (
     Any,
     Callable,
     Generic,
     Iterable,
     Iterator,
+    Mapping,
     Sequence,
     TextIO,
     TypeVar,
     Union,
 )
+import unittest
+
+import jinja2
+
+from pw_codegen import cpp, java, rust, typescript
 
 _COPYRIGHT = f"""\
 // Copyright {datetime.now().year} The Pigweed Authors
@@ -391,6 +401,158 @@ class TestGenerator(Generic[T]):
         for line in self._generate_rust_tests(self._rust_test):
             output.write(line)
             output.write('\n')
+
+
+_UINT32_MAX = 0xFFFFFFFF
+
+
+def _check_u32(value: int) -> int:
+    if not 0 <= value <= _UINT32_MAX:
+        raise ValueError(
+            f'Expected unsigned 32-bit int [0, {_UINT32_MAX}], got {value!r}'
+        )
+    return value
+
+
+def _cc_optional(
+    formatter: Callable[[Any], str],
+) -> Callable[[Any], str]:
+    def _format(value: Any) -> str:
+        if value is None:
+            return 'std::nullopt'
+        return formatter(value)
+
+    return _format
+
+
+def _rust_optional(
+    formatter: Callable[[Any], str],
+) -> Callable[[Any], str]:
+    def _format(value: Any) -> str:
+        if value is None:
+            return 'None'
+        return f'Some({formatter(value)})'
+
+    return _format
+
+
+#: Shared Jinja2 filters mapping filter names to Pigweed codegen helpers.
+DEFAULT_JINJA_FILTERS: Mapping[str, Callable[..., Any]] = MappingProxyType(
+    {
+        'cc_bool': cpp.bool_literal,
+        'cc_bytes': cpp.uint8_array,
+        'cc_char': cpp.char_literal,
+        'cc_f32': cpp.float_literal,
+        'cc_f64': cpp.double_literal,
+        'cc_hex_u32': lambda v: f'0x{_check_u32(v):08x}u',
+        'cc_i64': lambda v: f'int64_t{{{cpp.int_literal(v, "int64")}}}',
+        'cc_opt_u32': _cc_optional(
+            lambda v: f'uint32_t{{{cpp.int_literal(v, "uint32")}}}'
+        ),
+        'cc_string': cpp.string_literal,
+        'cc_u32': lambda v: f'uint32_t{{{cpp.int_literal(v, "uint32")}}}',
+        'cc_u64': lambda v: f'uint64_t{{{cpp.int_literal(v, "uint64")}}}',
+        'java_bytes': java.byte_array,
+        'java_string': java.string_literal,
+        'rust_bool': rust.bool_literal,
+        'rust_bytes': rust.byte_slice,
+        'rust_char': rust.char_literal,
+        'rust_f32': rust.f32_literal,
+        'rust_f64': rust.f64_literal,
+        'rust_hex_u32': lambda v: f'0x{_check_u32(v):08x}u32',
+        'rust_i64': rust.i64_literal,
+        'rust_opt_u32': _rust_optional(rust.u32_literal),
+        'rust_string': rust.string_literal,
+        'rust_u32': rust.u32_literal,
+        'rust_u64': rust.u64_literal,
+        'ts_bytes': typescript.byte_array,
+    }
+)
+
+
+def parse_jinja_args(
+    description: str | None = None,
+    argv: Sequence[str] | None = None,
+) -> argparse.Namespace:
+    """Parses CLI arguments (``--yaml``, ``--template``, ``--output``).
+
+    Args:
+        description: Optional parser description override.
+        argv: Optional argument sequence; defaults to ``sys.argv[1:]``.
+
+    Returns:
+        Parsed ``argparse.Namespace`` with ``yaml``, ``template``, and
+        ``output`` ``Path`` attributes.
+    """
+    parser = argparse.ArgumentParser(
+        description=description
+        or (
+            'Generate unit test files from a YAML definition and Jinja2 '
+            'template.'
+        )
+    )
+    parser.add_argument(
+        '--yaml',
+        type=Path,
+        required=True,
+        help='Path to YAML test case definition file.',
+    )
+    parser.add_argument(
+        '--template',
+        type=Path,
+        required=True,
+        help='Path to Jinja2 template file.',
+    )
+    parser.add_argument(
+        '--output',
+        type=Path,
+        required=True,
+        help='Path to generated output file.',
+    )
+    return parser.parse_args(argv)
+
+
+def jinja_main(
+    loader: Callable[[Path], Mapping[str, Any]],
+    *,
+    description: str | None = None,
+    extra_filters: Mapping[str, Callable[..., Any]] | None = None,
+    argv: Sequence[str] | None = None,
+) -> int:
+    """CLI entry point for generating test files from YAML and Jinja2.
+
+    Args:
+        loader: Callable returning a Jinja2 template context mapping from the
+            input YAML ``Path``.
+        description: Optional CLI description passed to ``parse_jinja_args``.
+        extra_filters: Optional additional or override Jinja2 filters merged
+            over ``DEFAULT_JINJA_FILTERS``.
+        argv: Optional CLI argument list for testing; defaults to ``sys.argv``.
+
+    Returns:
+        Process exit status code (``0`` on success).
+    """
+    args = parse_jinja_args(description=description, argv=argv)
+    context = loader(args.yaml)
+    template_text = args.template.read_text(encoding='utf-8')
+
+    # Templates generate source code (C++/Rust/etc.) rather than HTML.
+    env = jinja2.Environment(
+        loader=jinja2.BaseLoader(),
+        undefined=jinja2.StrictUndefined,
+        autoescape=False,
+        trim_blocks=True,
+        lstrip_blocks=True,
+        keep_trailing_newline=True,
+    )
+    env.filters.update(DEFAULT_JINJA_FILTERS)
+    if extra_filters:
+        env.filters.update(extra_filters)
+
+    rendered = env.from_string(template_text).render(**context)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(rendered, encoding='utf-8')
+    return 0
 
 
 def _parse_test_generation_args() -> argparse.Namespace:

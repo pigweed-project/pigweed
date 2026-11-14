@@ -15,10 +15,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection, Iterable, Iterator
+from collections.abc import Callable, Collection, Iterable, Iterator
 import contextlib
 import itertools
+import math
 import re
+import struct
 from typing import NamedTuple
 
 from pw_codegen import OutputFile, snake_to_pascal
@@ -641,6 +643,14 @@ def constant_style(name: str) -> str:
 
 
 _INT32_MAX = 2**31 - 1
+_UINT32_MAX = 0xFFFFFFFF
+_PRINTABLE_ASCII_MIN = 0x20
+_PRINTABLE_ASCII_MAX = 0x7E
+
+
+def bool_literal(value: bool) -> str:
+    """Formats ``value`` as a C++ boolean literal (``true`` or ``false``)."""
+    return "true" if value else "false"
 
 
 def int_literal(value: int, int_type: str = "int64") -> str:
@@ -674,7 +684,7 @@ def int_literal(value: int, int_type: str = "int64") -> str:
     if 0 <= value <= _INT32_MAX:
         return str(value)
     if int_type.startswith("uint"):
-        return f"{value}u" if value <= 0xFFFFFFFF else f"{value}ull"
+        return f"{value}u" if value <= _UINT32_MAX else f"{value}ull"
     if -_INT32_MAX <= value < 0:
         return str(value)
     int64_min = INT_TYPES["int64"].min_value
@@ -682,6 +692,52 @@ def int_literal(value: int, int_type: str = "int64") -> str:
         # The literal 9223372036854775808 doesn't fit in signed long long.
         return f"({int64_min + 1}ll - 1)"
     return f"{value}ll"
+
+
+def _floating_point_literal(
+    value: int | float, cc_type: str, suffix: str
+) -> str:
+    try:
+        fval = float(value)
+    except OverflowError as exc:
+        raise ValueError(f"Value {value!r} overflows {cc_type}") from exc
+    if math.isnan(fval):
+        return f"std::numeric_limits<{cc_type}>::quiet_NaN()"
+    if math.isinf(fval):
+        prefix = "-" if fval < 0 else ""
+        return f"{prefix}std::numeric_limits<{cc_type}>::infinity()"
+    if cc_type == "float":
+        try:
+            struct.pack("<f", fval)
+        except OverflowError as exc:
+            raise ValueError(
+                f"Value {value!r} is out of range for float"
+            ) from exc
+    return f"{repr(fval)}{suffix}"
+
+
+def float_literal(value: int | float) -> str:
+    """Formats ``value`` as a 32-bit C++ ``float`` literal or special value.
+
+    Args:
+        value: Integer or floating-point value to format.
+
+    Raises:
+        ValueError: ``value`` overflows ``float``.
+    """
+    return _floating_point_literal(value, "float", "f")
+
+
+def double_literal(value: int | float) -> str:
+    """Formats ``value`` as a C++ ``double`` literal or special value.
+
+    Args:
+        value: Integer or floating-point value to format.
+
+    Raises:
+        ValueError: ``value`` overflows ``double``.
+    """
+    return _floating_point_literal(value, "double", "")
 
 
 _STRING_ESCAPES: dict[int, str] = {
@@ -706,7 +762,7 @@ def _string_literal_parts(data: bytes) -> Iterator[str]:
             hex_byte = False
             yield _STRING_ESCAPES[byte]
             continue
-        if 0x20 <= byte < 0x7F:
+        if _PRINTABLE_ASCII_MIN <= byte <= _PRINTABLE_ASCII_MAX:
             char = chr(byte)
             if hex_byte and (char.isdigit() or "a" <= char.lower() <= "f"):
                 yield '""'  # Split literal so \x doesn't absorb this hex digit.
@@ -733,6 +789,32 @@ def string_literal(data: str | bytes) -> str:
     return "".join(_string_literal_parts(data))
 
 
+def char_literal(data: str | bytes) -> str:
+    """Formats a single byte or ASCII character as a C++ ``char`` literal.
+
+    Args:
+        data: Single-byte ``bytes`` or 1-byte ASCII ``str``.
+
+    Raises:
+        ValueError: ``data`` does not encode to a single byte.
+    """
+    if isinstance(data, str):
+        data = data.encode("utf-8")
+    if len(data) != 1:
+        raise ValueError(f"C++ char literal must be 1 byte, got {data!r}")
+
+    byte = data[0]
+    if byte == ord(b"'"):
+        return r"'\''"
+    if byte == ord(b'"'):
+        return "'\"'"
+    if byte in _STRING_ESCAPES:
+        return f"'{_STRING_ESCAPES[byte]}'"
+    if _PRINTABLE_ASCII_MIN <= byte <= _PRINTABLE_ASCII_MAX:
+        return f"'{chr(byte)}'"
+    return rf"'\x{byte:02x}'"
+
+
 def doc_comment(doc: str, indent: str = "") -> Iterator[str]:
     """Yields ``///`` C++ documentation comment lines for ``doc``.
 
@@ -750,8 +832,33 @@ def doc_comment(doc: str, indent: str = "") -> Iterator[str]:
         yield line
 
 
+def _format_byte_array(
+    data: bytes | bytearray | memoryview,
+    format_byte: Callable[[int], str],
+    *,
+    bytes_per_line: int | None = None,
+    indent: str = "  ",
+) -> str:
+    if bytes_per_line is not None and bytes_per_line <= 0:
+        raise ValueError(
+            f"bytes_per_line must be positive; got {bytes_per_line}"
+        )
+    if not data:
+        return "{}"
+
+    elements = [format_byte(byte) for byte in data]
+    if bytes_per_line is None:
+        return f"{{{', '.join(elements)}}}"
+
+    it = iter(elements)
+    lines: list[str] = []
+    while chunk := tuple(itertools.islice(it, bytes_per_line)):
+        lines.append(f"{indent}{', '.join(chunk)},")
+    return "{\n" + "\n".join(lines) + "\n}"
+
+
 def byte_array(
-    data: bytes,
+    data: bytes | bytearray | memoryview,
     *,
     bytes_per_line: int | None = None,
     indent: str = "  ",
@@ -763,23 +870,41 @@ def byte_array(
     when ``data`` is empty). When ``bytes_per_line`` is positive and ``data``
     is non-empty, formats a multiline initializer with up to ``bytes_per_line``
     elements per indented line.
+
+    Raises:
+        ValueError: ``bytes_per_line`` is not a positive integer.
     """
-    if bytes_per_line is not None and bytes_per_line <= 0:
-        raise ValueError(
-            f"bytes_per_line must be positive; got {bytes_per_line}"
-        )
-    if not data:
-        return "{}"
+    return _format_byte_array(
+        data,
+        lambda b: f"std::byte{{0x{b:02x}}}",
+        bytes_per_line=bytes_per_line,
+        indent=indent,
+    )
 
-    elements = [f"std::byte{{0x{byte:02x}}}" for byte in data]
-    if bytes_per_line is None:
-        return f"{{{', '.join(elements)}}}"
 
-    it = iter(elements)
-    lines: list[str] = []
-    while chunk := tuple(itertools.islice(it, bytes_per_line)):
-        lines.append(f"{indent}{', '.join(chunk)},")
-    return "{\n" + "\n".join(lines) + "\n}"
+def uint8_array(
+    data: bytes | bytearray | memoryview,
+    *,
+    bytes_per_line: int | None = None,
+    indent: str = "  ",
+) -> str:
+    """Formats ``data`` as a C/C++ hexadecimal byte brace-enclosed initializer.
+
+    When ``bytes_per_line`` is ``None`` (the default), returns a single-line
+    initializer such as ``"{0x01, 0x02}"`` (or ``"{}"`` when ``data`` is
+    empty). When ``bytes_per_line`` is positive and ``data`` is non-empty,
+    formats a multiline initializer with up to ``bytes_per_line`` elements per
+    indented line.
+
+    Raises:
+        ValueError: ``bytes_per_line`` is not a positive integer.
+    """
+    return _format_byte_array(
+        data,
+        lambda b: f"0x{b:02x}",
+        bytes_per_line=bytes_per_line,
+        indent=indent,
+    )
 
 
 def includes(headers: Iterable[str]) -> list[str]:

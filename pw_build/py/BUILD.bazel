@@ -67,6 +67,7 @@ pw_py_library(
         "pw_build/zip.py",
     ],
     data = [
+        "pw_build/py.typed",
         "pw_build/zephyr_default_CMakeLists.txt",
         "pw_build/zephyr_default_prj.conf",
     ],
@@ -75,6 +76,7 @@ pw_py_library(
         "//pw_cli/py:pw_cli",
         "//pw_codegen/py:pw_codegen",
         "//pw_config_loader/py:pw_config_loader",
+        "@pigweed_python_packages//jinja2",
         "@pigweed_python_packages//jsonschema",
         "@pigweed_python_packages//patch",
         "@pigweed_python_packages//pyyaml",
@@ -354,7 +356,10 @@ pw_py_test(
     name = "generated_tests_test",
     size = "small",
     srcs = ["generated_tests_test.py"],
-    deps = [":pw_build"],
+    deps = [
+        ":pw_build",
+        "@pigweed_python_packages//jinja2",
+    ],
 )
 
 # DOCSTAG: [pw_build-generated-test-example-py]

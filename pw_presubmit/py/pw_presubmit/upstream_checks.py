@@ -82,6 +82,7 @@ SOURCE_FILES_FILTER_GN_EXCLUDE = FileFilter(
         # keep-sorted: start
         r'.*\.rst$',
         r'\bcodelab/',
+        r'\bconformance_test/',
         r'\bdocs/',
         r'\bexamples/',
         r'\bjava/',
@@ -404,6 +405,7 @@ def _get_comment_style(path: Path) -> str | None:
         '.js',
         '.ts',
         '.go',
+        '.rs',
     ):
         return '//'
     if path.suffix in ('.py', '.gn', '.gni', '.cfg', '.emb', '.yaml', '.toml'):

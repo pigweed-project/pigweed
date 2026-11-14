@@ -38,14 +38,16 @@ Code generators across Pigweed (including :ref:`module-pw_protobuf`,
   :py:func:`~pw_codegen.snake_to_pascal`).
 - :py:mod:`pw_codegen.cpp`: C++ keywords and standard-library macro sets,
   identifier validation and escaping, Google constant naming
-  (:py:func:`~pw_codegen.cpp.constant_style`), integer, ``std::byte`` array,
-  and UTF-8/byte string literals, ``#include`` sorting, ``namespace`` blocks,
-  and Doxygen ``///`` doc comments.
+  (:py:func:`~pw_codegen.cpp.constant_style`), boolean, integer,
+  floating-point, character, UTF-8/byte string, ``std::byte`` array, and
+  ``uint8_t`` array literals, ``#include`` sorting, ``namespace`` blocks, and
+  Doxygen ``///`` doc comments.
 - :py:mod:`pw_codegen.python`: Python identifier validation, double-quote
   preferred string literals, and safe triple-quoted docstring formatting.
 - :py:mod:`pw_codegen.java`: Java string literals and ``byte[]`` array literals.
-- :py:mod:`pw_codegen.rust`: Rust string literals and ``&[u8]`` byte slice
-  literals.
+- :py:mod:`pw_codegen.rust`: Rust keywords, identifier validation, boolean,
+  integer, floating-point, Unicode ``char``, string literals, and ``&[u8]`` byte
+  slice literals.
 - :py:mod:`pw_codegen.typescript`: TypeScript ``Uint8Array`` literals.
 
 .. toctree::

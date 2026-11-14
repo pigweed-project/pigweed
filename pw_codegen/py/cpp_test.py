@@ -118,12 +118,99 @@ class CppIntLiteralTest(unittest.TestCase):
             cpp.int_literal(1.5, "int32")  # type: ignore[arg-type]
 
 
+class CppScalarLiteralTest(unittest.TestCase):
+    """Tests C++ boolean, floating-point, and character literals."""
+
+    def test_bool_literal(self) -> None:
+        """Verifies C++ boolean literal formatting."""
+        self.assertEqual(cpp.bool_literal(True), "true")
+        self.assertEqual(cpp.bool_literal(False), "false")
+
+    def test_float_literal(self) -> None:
+        """Verifies 32-bit C++ float literals, non-finites, and bounds."""
+        self.assertEqual(cpp.float_literal(2.5), "2.5f")
+        self.assertEqual(cpp.float_literal(-0.0), "-0.0f")
+        self.assertEqual(cpp.float_literal(0), "0.0f")
+        self.assertEqual(
+            cpp.float_literal(float("nan")),
+            "std::numeric_limits<float>::quiet_NaN()",
+        )
+        self.assertEqual(
+            cpp.float_literal(float("inf")),
+            "std::numeric_limits<float>::infinity()",
+        )
+        self.assertEqual(
+            cpp.float_literal(float("-inf")),
+            "-std::numeric_limits<float>::infinity()",
+        )
+        self.assertEqual(
+            cpp.float_literal(3.4028234663852886e38),
+            "3.4028234663852886e+38f",
+        )
+        for overflow_f32 in (1e300, -1e300, 3.4028236e38, -3.4028236e38):
+            with self.subTest(overflow_f32=overflow_f32):
+                with self.assertRaises(ValueError):
+                    cpp.float_literal(overflow_f32)
+        with self.assertRaises(ValueError):
+            cpp.float_literal(10**400)
+
+    def test_double_literal(self) -> None:
+        """Verifies C++ double literals, non-finites, and bounds."""
+        self.assertEqual(cpp.double_literal(3.14), "3.14")
+        self.assertEqual(cpp.double_literal(-0.0), "-0.0")
+        self.assertEqual(cpp.double_literal(-42), "-42.0")
+        self.assertEqual(
+            cpp.double_literal(float("nan")),
+            "std::numeric_limits<double>::quiet_NaN()",
+        )
+        self.assertEqual(
+            cpp.double_literal(float("inf")),
+            "std::numeric_limits<double>::infinity()",
+        )
+        self.assertEqual(
+            cpp.double_literal(float("-inf")),
+            "-std::numeric_limits<double>::infinity()",
+        )
+        with self.assertRaises(ValueError):
+            cpp.double_literal(10**400)
+
+    def test_char_literal(self) -> None:
+        """Verifies C++ single-character literal escaping and validation."""
+        self.assertEqual(cpp.char_literal("a"), "'a'")
+        self.assertEqual(cpp.char_literal(" "), "' '")
+        self.assertEqual(cpp.char_literal("~"), "'~'")
+        self.assertEqual(cpp.char_literal('"'), "'\"'")
+        self.assertEqual(cpp.char_literal(b"Z"), "'Z'")
+        self.assertEqual(cpp.char_literal("'"), r"'\''")
+        self.assertEqual(cpp.char_literal("\\"), r"'\\'")
+        self.assertEqual(cpp.char_literal("\a"), r"'\a'")
+        self.assertEqual(cpp.char_literal("\b"), r"'\b'")
+        self.assertEqual(cpp.char_literal("\f"), r"'\f'")
+        self.assertEqual(cpp.char_literal("\n"), r"'\n'")
+        self.assertEqual(cpp.char_literal("\r"), r"'\r'")
+        self.assertEqual(cpp.char_literal("\t"), r"'\t'")
+        self.assertEqual(cpp.char_literal("\v"), r"'\v'")
+        self.assertEqual(cpp.char_literal("\0"), r"'\x00'")
+        self.assertEqual(cpp.char_literal(b"\x00"), r"'\x00'")
+        self.assertEqual(cpp.char_literal(b"\x1f"), r"'\x1f'")
+        self.assertEqual(cpp.char_literal(b"\x20"), "' '")
+        self.assertEqual(cpp.char_literal(b"\x7e"), "'~'")
+        self.assertEqual(cpp.char_literal(b"\x7f"), r"'\x7f'")
+        self.assertEqual(cpp.char_literal(b"\xff"), r"'\xff'")
+        for invalid in ("", "ab", b"", b"ab", "é"):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    cpp.char_literal(invalid)
+
+
 class CppStringLiteralTest(unittest.TestCase):
     """Tests C++ string and byte literal escaping."""
 
     def test_basic_string(self) -> None:
+        """Verifies basic C++ string literals."""
         self.assertEqual(cpp.string_literal(""), '""')
         self.assertEqual(cpp.string_literal("hello"), '"hello"')
+        self.assertEqual(cpp.string_literal(b"\x1f ~\x7f"), r'"\x1f ~\x7f"')
 
     def test_escapes(self) -> None:
         self.assertEqual(
@@ -169,13 +256,21 @@ class CppDocCommentTest(unittest.TestCase):
 
 
 class CppByteArrayTest(unittest.TestCase):
-    """Tests C++ std::byte initializer formatting."""
+    """Tests C++ std::byte and uint8_t initializer formatting."""
 
     def test_single_line(self) -> None:
         self.assertEqual(cpp.byte_array(b""), "{}")
         self.assertEqual(
             cpp.byte_array(b"\x01\x0a\xff"),
             "{std::byte{0x01}, std::byte{0x0a}, std::byte{0xff}}",
+        )
+        self.assertEqual(
+            cpp.byte_array(bytearray(b"\x01\x02")),
+            "{std::byte{0x01}, std::byte{0x02}}",
+        )
+        self.assertEqual(
+            cpp.byte_array(memoryview(b"\x0a\x0b")),
+            "{std::byte{0x0a}, std::byte{0x0b}}",
         )
 
     def test_multiline_exact_and_remainder_chunks(self) -> None:
@@ -204,8 +299,31 @@ class CppByteArrayTest(unittest.TestCase):
 
     def test_invalid_bytes_per_line(self) -> None:
         for bad in (0, -1):
-            with self.assertRaisesRegex(ValueError, "bytes_per_line"):
-                cpp.byte_array(b"\x01", bytes_per_line=bad)
+            with self.subTest(bad=bad):
+                with self.assertRaisesRegex(ValueError, "bytes_per_line"):
+                    cpp.byte_array(b"\x01", bytes_per_line=bad)
+                with self.assertRaisesRegex(ValueError, "bytes_per_line"):
+                    cpp.uint8_array(b"\x01", bytes_per_line=bad)
+
+    def test_uint8_array(self) -> None:
+        """Verifies C++ uint8_t initializer list formatting."""
+        self.assertEqual(cpp.uint8_array(b""), "{}")
+        self.assertEqual(
+            cpp.uint8_array(b"\x00\x01\xfe\xff"),
+            "{0x00, 0x01, 0xfe, 0xff}",
+        )
+        self.assertEqual(
+            cpp.uint8_array(bytearray(b"\x01\x02")),
+            "{0x01, 0x02}",
+        )
+        self.assertEqual(
+            cpp.uint8_array(memoryview(b"\xfe\xff")),
+            "{0xfe, 0xff}",
+        )
+        self.assertEqual(
+            cpp.uint8_array(b"\x01\x02\x03", bytes_per_line=2, indent="  "),
+            "{\n  0x01, 0x02,\n  0x03,\n}",
+        )
 
 
 class CppStructureTest(unittest.TestCase):

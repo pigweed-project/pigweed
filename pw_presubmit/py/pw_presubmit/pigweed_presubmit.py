@@ -1165,6 +1165,7 @@ def static_analysis(ctx: PresubmitContext):
 SOURCE_FILES_FILTER_CMAKE_EXCLUDE = FileFilter(
     exclude=(
         # keep-sorted: start
+        r'\bconformance_test/',
         r'\bpw_bluetooth_sapphire/fuchsia',
         r'\bpw_kernel',
         # keep-sorted: end
