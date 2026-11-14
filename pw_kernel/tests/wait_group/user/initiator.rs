@@ -60,6 +60,9 @@ fn test_wait_group() -> Result<()> {
     send_char(handle::IPC_A, 'a', 0)?;
     send_char(handle::IPC_B, 'b', 1)?;
     send_char(handle::IPC_A, 'c', 2)?;
+    // Send a 4th transaction on `IPC_A` so `IPC_A` already has `READABLE`
+    // pending when the handler adds it in `test_add_signaled_member_wakes_waiter`.
+    send_char(handle::IPC_A, 'd', 3)?;
 
     Ok(())
 }

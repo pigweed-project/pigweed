@@ -83,6 +83,13 @@
               // Generous stacks size pending kernel stack size optimization.
               kernel_stack_size_bytes: 2048,
               type: "thread",
+              main_thread: true,
+            },
+            {
+              name: "waiter_thread",
+              // Generous stacks size pending kernel stack size optimization.
+              kernel_stack_size_bytes: 2048,
+              type: "thread",
             },
           ],
         },

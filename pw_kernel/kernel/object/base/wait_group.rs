@@ -243,6 +243,21 @@ impl<K: Kernel> KernelObject<K> for WaitGroupObject<K> {
             unsafe { state.unsignaled_objects.push_front_unchecked(base.into()) };
         }
 
+        // If the added object already has active signals matching `signal_mask`,
+        // wake any threads already blocked in `object_wait()` on this wait group.
+        if is_signaled {
+            let active_signals = object_state.active_signals;
+            let sched = kernel.get_scheduler().lock(kernel);
+            let _ = signal_all_matching_waiters_with_return_signals_locked(
+                kernel,
+                sched,
+                &mut state.waiters,
+                Signals::READABLE,
+                active_signals,
+                user_data,
+            );
+        }
+
         Ok(())
     }
 
