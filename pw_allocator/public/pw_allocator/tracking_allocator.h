@@ -58,34 +58,151 @@ class TrackingAllocator : public ForwardingAllocator {
   using Base = ForwardingAllocator;
 
  public:
-  explicit TrackingAllocator(metric::Token token,
-                             const Capabilities& capabilities) noexcept
+  /// Constructs a tracking allocator without setting its wrapped allocator.
+  ///
+  /// `Init()` must be called with the wrapped allocator before any allocation
+  /// methods are invoked. Can be used with `PW_CONSTINIT` for two-phase
+  /// initialization regardless of which metrics `MetricsType` enables.
+  ///
+  /// @param[in] token Tokenized name of this allocator's metric group.
+  /// @param[in] capabilities Capabilities exposed by this allocator.
+  constexpr explicit TrackingAllocator(
+      metric::Token token, const Capabilities& capabilities) noexcept
       : Base(capabilities), metrics_(token) {}
 
-  TrackingAllocator(metric::Token token, Allocator& allocator) noexcept
-      : TrackingAllocator(token, allocator.capabilities()) {
+  /// Constructs a tracking allocator wrapping `allocator` with explicit
+  /// `capabilities`.
+  ///
+  /// Unlike `TrackingAllocator(metric::Token, Allocator&)`, this constructor
+  /// does not read `allocator.capabilities()`, so it can be used with
+  /// `PW_CONSTINIT` for single-phase constant initialization when wrapping a
+  /// separate static allocator and `MetricsType` only enables counter metrics
+  /// (i.e. neither `requested_bytes` nor `allocated_bytes` is enabled). When
+  /// `requested_bytes` or `allocated_bytes` is enabled, use two-phase
+  /// initialization via `TrackingAllocator(token, capabilities)` and `Init()`.
+  ///
+  /// @param[in] token Tokenized name of this allocator's metric group.
+  /// @param[in,out] allocator Wrapped allocator to forward requests to. Must
+  /// remain valid for the lifetime of this object.
+  /// @param[in] capabilities Capabilities exposed by this allocator.
+  constexpr TrackingAllocator(metric::Token token,
+                              Allocator& allocator,
+                              const Capabilities& capabilities)
+      : TrackingAllocator(token, capabilities) {
     Init(allocator);
   }
 
-  template <typename OtherMetrics>
-  TrackingAllocator(metric::Token token,
-                    TrackingAllocator<OtherMetrics>& parent,
-                    const AddTrackingAllocatorAsChild&)
-      : TrackingAllocator(token, parent) {
-    parent.metric_group().Add(metric_group());
+  /// Constructs a tracking allocator wrapping `allocator` and inheriting
+  /// `allocator.capabilities()`.
+  ///
+  /// @param[in] token Tokenized name of this allocator's metric group.
+  /// @param[in,out] allocator Wrapped allocator to forward requests to. Must
+  /// remain valid for the lifetime of this object.
+  constexpr TrackingAllocator(metric::Token token,
+                              Allocator& allocator) noexcept
+      : TrackingAllocator(token, allocator, allocator.capabilities()) {}
+
+  /// Constructs a tracking allocator without setting its wrapped allocator and
+  /// registers its `metric_group()` in `groups` (for example
+  /// `pw::metric::global_groups` or `parent_group.children()`).
+  ///
+  /// `Init()` must be called with the wrapped allocator before any allocation
+  /// methods are invoked. Can be used with `PW_CONSTINIT` inside a composite
+  /// struct containing `groups` regardless of which metrics `MetricsType`
+  /// enables.
+  ///
+  /// @param[in] token Tokenized name of this allocator's metric group.
+  /// @param[in] capabilities Capabilities exposed by this allocator.
+  /// @param[in,out] groups Metric group list to register `metric_group()` in.
+  ///
+  /// @pre `groups` must already be initialized, and access to `groups` during
+  /// construction and destruction must be externally synchronized.
+  constexpr TrackingAllocator(metric::Token token,
+                              const Capabilities& capabilities,
+                              metric::GroupList& groups) noexcept
+      : Base(capabilities), metrics_(token, groups) {}
+
+  /// Constructs a tracking allocator wrapping `allocator` with explicit
+  /// `capabilities` and registers its `metric_group()` in `groups`.
+  ///
+  /// Does not read `allocator.capabilities()`, so it can be used with
+  /// `PW_CONSTINIT` inside a composite struct containing `groups` when wrapping
+  /// a separate static allocator and `MetricsType` only enables counter
+  /// metrics.
+  ///
+  /// @param[in] token Tokenized name of this allocator's metric group.
+  /// @param[in,out] allocator Wrapped allocator to forward requests to. Must
+  /// remain valid for the lifetime of this object.
+  /// @param[in] capabilities Capabilities exposed by this allocator.
+  /// @param[in,out] groups Metric group list to register `metric_group()` in.
+  ///
+  /// @pre `groups` must already be initialized, and access to `groups` during
+  /// construction and destruction must be externally synchronized.
+  constexpr TrackingAllocator(metric::Token token,
+                              Allocator& allocator,
+                              const Capabilities& capabilities,
+                              metric::GroupList& groups)
+      : TrackingAllocator(token, capabilities, groups) {
+    Init(allocator);
   }
 
-  void Init(Allocator& allocator);
+  /// Constructs a tracking allocator wrapping `allocator` and registers its
+  /// `metric_group()` in `groups` (for example `pw::metric::global_groups` or
+  /// `parent_group.children()`).
+  ///
+  /// @param[in] token Tokenized name of this allocator's metric group.
+  /// @param[in,out] allocator Wrapped allocator to forward requests to. Must
+  /// remain valid for the lifetime of this object.
+  /// @param[in,out] groups Metric group list to register `metric_group()` in.
+  ///
+  /// @pre `groups` must already be initialized (`pw::metric::global_groups` is
+  /// `PW_CONSTINIT` and safe during dynamic static initialization; avoid
+  /// passing `children()` of a dynamically initialized global `Group` in
+  /// another translation unit), and access to `groups` during construction and
+  /// destruction must be externally synchronized.
+  constexpr TrackingAllocator(metric::Token token,
+                              Allocator& allocator,
+                              metric::GroupList& groups)
+      : TrackingAllocator(token, allocator, allocator.capabilities(), groups) {}
 
-  const metric::Group& metric_group() const { return metrics_.group(); }
-  metric::Group& metric_group() { return metrics_.group(); }
+  /// Constructs a tracking allocator wrapping `parent` and adds its
+  /// `metric_group()` as a child of `parent.metric_group()`.
+  ///
+  /// @param[in] token Tokenized name of this allocator's metric group.
+  /// @param[in,out] parent Parent tracking allocator to wrap and register
+  /// under. Must remain valid for the lifetime of this object.
+  template <typename OtherMetrics>
+  constexpr TrackingAllocator(metric::Token token,
+                              TrackingAllocator<OtherMetrics>& parent,
+                              const AddTrackingAllocatorAsChild&)
+      : TrackingAllocator(token, parent, parent.metric_group().children()) {}
 
-  const MetricsType& metrics() const { return metrics_.metrics(); }
+  /// Sets the wrapped allocator after two-phase construction and verifies that
+  /// `allocator` supports all metrics enabled by `MetricsType`.
+  ///
+  /// @param[in,out] allocator Wrapped allocator to forward requests to. Must
+  /// remain valid for the lifetime of this object.
+  ///
+  /// @pre No wrapped allocator has been set yet, and if `allocator` itself uses
+  /// two-phase initialization (such as `SynchronizedAllocator`),
+  /// `allocator.Init(...)` must be called first when `requested_bytes` or
+  /// `allocated_bytes` is enabled.
+  constexpr void Init(Allocator& allocator);
+
+  /// Returns this tracking allocator's metric group.
+  constexpr const metric::Group& metric_group() const {
+    return metrics_.group();
+  }
+  /// Returns this tracking allocator's mutable metric group.
+  constexpr metric::Group& metric_group() { return metrics_.group(); }
+
+  /// Returns the metrics struct tracked by this allocator.
+  constexpr const MetricsType& metrics() const { return metrics_.metrics(); }
 
   /// Requests to update out-of-band metrics, if any.
   ///
   /// See also `NoMetrics::UpdateDeferred`.
-  void UpdateDeferred() const { metrics_.UpdateDeferred(allocator()); }
+  void UpdateDeferred() { metrics_.UpdateDeferred(allocator()); }
 
  protected:
   /// @copydoc Allocator::Allocate
@@ -104,13 +221,13 @@ class TrackingAllocator : public ForwardingAllocator {
   void DoAfterReallocateDone(Layout new_layout, void* new_ptr) override;
 
  private:
-  mutable internal::Metrics<MetricsType> metrics_;
+  internal::Metrics<MetricsType> metrics_;
 };
 
 // Template method implementation.
 
 template <typename MetricsType>
-void TrackingAllocator<MetricsType>::Init(Allocator& allocator) {
+constexpr void TrackingAllocator<MetricsType>::Init(Allocator& allocator) {
   // Check that allocator supports requested metrics.
   if constexpr (MetricsType::requested_bytes_enabled()) {
     PW_ASSERT(GetRequestedLayout(allocator, nullptr).status() !=

@@ -132,10 +132,13 @@ pw_cc_test(
     deps = [
         ":named_u32",
         "//pw_allocator",
+        "//pw_allocator:first_fit",
         "//pw_allocator:metrics",
         "//pw_allocator:testing",
         "//pw_allocator:tracking_allocator",
+        "//pw_metric:global",
         "//pw_metric:metric",
+        "//pw_polyfill",
     ],
 )
 

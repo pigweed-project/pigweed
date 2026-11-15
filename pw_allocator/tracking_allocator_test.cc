@@ -28,6 +28,7 @@
 #include "pw_allocator/testing.h"
 #include "pw_log/log.h"
 #include "pw_metric/metric.h"
+#include "pw_polyfill/language_feature_macros.h"
 #include "pw_result/result.h"
 #include "pw_status/status_with_size.h"
 #include "pw_unit_test/framework.h"
@@ -134,6 +135,183 @@ TEST_F(TrackingAllocatorTest, AddTrackingAllocatorAsChild) {
     EXPECT_EQ(&group, &child.metric_group());
     count += 1;
   });
+  EXPECT_EQ(count, 1);
+}
+
+TEST_F(TrackingAllocatorTest, ConstructWithGroupList) {
+  constexpr static pw::metric::Token kListToken = 2U;
+  constexpr static pw::metric::Token kParentToken = 3U;
+  constexpr static pw::metric::Token kChildToken = 4U;
+
+  pw::metric::GroupList groups;
+  TrackingAllocator<::pw::allocator::NoMetrics> tracked(
+      kListToken, allocator_, groups);
+  EXPECT_EQ(groups.size(), 1U);
+  EXPECT_EQ(groups.find(kListToken), &tracked.metric_group());
+
+  pw::metric::Group parent(kParentToken);
+  TrackingAllocator<::pw::allocator::NoMetrics> child(
+      kChildToken, allocator_, parent.children());
+  EXPECT_EQ(parent.children().size(), 1U);
+  EXPECT_EQ(parent.children().find(kChildToken), &child.metric_group());
+}
+
+struct DeferredMetrics : public ::pw::allocator::NoMetrics {
+  PW_ALLOCATOR_METRICS_INCLUDE(allocated_bytes);
+
+  void UpdateDeferred(const pw::Allocator& allocator) {
+    if (auto allocated = allocator.GetAllocatedBytes(); allocated.has_value()) {
+      allocated_bytes.Set(static_cast<uint32_t>(*allocated));
+    }
+  }
+};
+
+TEST_F(TrackingAllocatorTest, UpdateDeferred) {
+  TrackingAllocator<DeferredMetrics> tracker(kToken, allocator_);
+  void* ptr = tracker.Allocate(Layout::Of<uint32_t[2]>());
+  ASSERT_NE(ptr, nullptr);
+  EXPECT_EQ(tracker.metrics().allocated_bytes.value(), 0U);
+
+  tracker.UpdateDeferred();
+  EXPECT_GT(tracker.metrics().allocated_bytes.value(), 0U);
+
+  tracker.Deallocate(ptr);
+  tracker.UpdateDeferred();
+  EXPECT_EQ(tracker.metrics().allocated_bytes.value(), 0U);
+}
+
+struct CounterMetrics : public ::pw::allocator::NoMetrics {
+  PW_ALLOCATOR_METRICS_ENABLE(num_allocations);
+  PW_ALLOCATOR_METRICS_ENABLE(num_deallocations);
+  PW_ALLOCATOR_METRICS_ENABLE(num_failures);
+};
+
+using ConstinitBlockType = ::pw::allocator::FirstFitBlock<uint32_t>;
+using ConstinitBaseAllocator =
+    ::pw::allocator::FirstFitAllocator<ConstinitBlockType>;
+
+constexpr pw::metric::Token kConstinitSinglePhaseToken =
+    PW_METRIC_TOKEN("constinit_single_phase");
+constexpr pw::metric::Token kConstinitTwoPhaseToken =
+    PW_METRIC_TOKEN("constinit_two_phase");
+constexpr pw::metric::Token kConstinitParentToken =
+    PW_METRIC_TOKEN("constinit_parent");
+constexpr pw::metric::Token kConstinitCompositeToken =
+    PW_METRIC_TOKEN("constinit_composite");
+
+alignas(ConstinitBlockType::kAlignment)
+    PW_CONSTINIT std::array<std::byte, 128> constinit_single_phase_buffer{};
+PW_CONSTINIT ConstinitBaseAllocator constinit_single_phase_base;
+PW_CONSTINIT TrackingAllocator<CounterMetrics> constinit_single_phase_tracker(
+    kConstinitSinglePhaseToken,
+    constinit_single_phase_base,
+    ConstinitBaseAllocator::kCapabilities);
+
+alignas(ConstinitBlockType::kAlignment)
+    PW_CONSTINIT std::array<std::byte, 128> constinit_two_phase_buffer{};
+PW_CONSTINIT ConstinitBaseAllocator constinit_two_phase_base;
+PW_CONSTINIT TrackingAllocator<TestMetrics> constinit_two_phase_tracker(
+    kConstinitTwoPhaseToken, ConstinitBaseAllocator::kCapabilities);
+
+alignas(ConstinitBlockType::kAlignment)
+    PW_CONSTINIT std::array<std::byte, 128> constinit_external_buffer{};
+PW_CONSTINIT ConstinitBaseAllocator constinit_external_base;
+
+struct ConstinitAllocatorTree {
+  alignas(ConstinitBlockType::kAlignment) std::array<std::byte, 128> buffer{};
+  pw::metric::Group root{kConstinitParentToken};
+  ConstinitBaseAllocator base;
+  TrackingAllocator<CounterMetrics> tracker{
+      kConstinitCompositeToken,
+      constinit_external_base,
+      ConstinitBaseAllocator::kCapabilities,
+      root.children()};
+  TrackingAllocator<TestMetrics> two_phase_tracker{
+      kConstinitTwoPhaseToken,
+      ConstinitBaseAllocator::kCapabilities,
+      root.children()};
+};
+
+PW_CONSTINIT ConstinitAllocatorTree constinit_tree;
+
+TEST(TrackingAllocatorConstinitTest, SinglePhaseCounterMetrics) {
+  EXPECT_EQ(constinit_single_phase_tracker.capabilities(),
+            constinit_single_phase_base.capabilities());
+  ASSERT_FALSE(constinit_single_phase_tracker.metric_group().metrics().empty());
+  EXPECT_EQ(constinit_single_phase_tracker.metric_group().metrics().size(), 3U);
+
+  static bool initialized = false;
+  if (!initialized) {
+    constinit_single_phase_base.Init(constinit_single_phase_buffer);
+    initialized = true;
+  }
+
+  uint32_t prev_allocs =
+      constinit_single_phase_tracker.metrics().num_allocations.value();
+  uint32_t prev_deallocs =
+      constinit_single_phase_tracker.metrics().num_deallocations.value();
+
+  void* ptr =
+      constinit_single_phase_tracker.Allocate(Layout::Of<uint32_t[4]>());
+  ASSERT_NE(ptr, nullptr);
+  EXPECT_EQ(constinit_single_phase_tracker.metrics().num_allocations.value(),
+            prev_allocs + 1U);
+
+  constinit_single_phase_tracker.Deallocate(ptr);
+  EXPECT_EQ(constinit_single_phase_tracker.metrics().num_deallocations.value(),
+            prev_deallocs + 1U);
+}
+
+TEST(TrackingAllocatorConstinitTest, TwoPhaseAllMetrics) {
+  static bool initialized = false;
+  if (!initialized) {
+    constinit_two_phase_base.Init(constinit_two_phase_buffer);
+    constinit_two_phase_tracker.Init(constinit_two_phase_base);
+    initialized = true;
+  }
+
+  EXPECT_EQ(constinit_two_phase_tracker.capabilities(),
+            constinit_two_phase_base.capabilities());
+
+  void* ptr = constinit_two_phase_tracker.Allocate(Layout::Of<uint32_t[2]>());
+  ASSERT_NE(ptr, nullptr);
+  EXPECT_GT(constinit_two_phase_tracker.metrics().allocated_bytes.value(), 0U);
+
+  constinit_two_phase_tracker.Deallocate(ptr);
+  EXPECT_EQ(constinit_two_phase_tracker.metrics().allocated_bytes.value(), 0U);
+}
+
+TEST(TrackingAllocatorConstinitTest, CompositeTreeWithParentGroup) {
+  EXPECT_EQ(constinit_tree.root.children().size(), 2U);
+  EXPECT_EQ(constinit_tree.root.children().find(kConstinitCompositeToken),
+            &constinit_tree.tracker.metric_group());
+  EXPECT_EQ(constinit_tree.root.children().find(kConstinitTwoPhaseToken),
+            &constinit_tree.two_phase_tracker.metric_group());
+  EXPECT_EQ(constinit_tree.tracker.capabilities(),
+            constinit_external_base.capabilities());
+  EXPECT_EQ(constinit_tree.two_phase_tracker.capabilities(),
+            constinit_tree.base.capabilities());
+
+  static bool initialized = false;
+  if (!initialized) {
+    constinit_external_base.Init(constinit_external_buffer);
+    constinit_tree.base.Init(constinit_tree.buffer);
+    constinit_tree.two_phase_tracker.Init(constinit_tree.base);
+    initialized = true;
+  }
+
+  void* ptr1 = constinit_tree.tracker.Allocate(Layout::Of<uint32_t>());
+  ASSERT_NE(ptr1, nullptr);
+  constinit_tree.tracker.Deallocate(ptr1);
+
+  void* ptr2 =
+      constinit_tree.two_phase_tracker.Allocate(Layout::Of<uint32_t>());
+  ASSERT_NE(ptr2, nullptr);
+  EXPECT_GT(constinit_tree.two_phase_tracker.metrics().allocated_bytes.value(),
+            0U);
+  constinit_tree.two_phase_tracker.Deallocate(ptr2);
+  EXPECT_EQ(constinit_tree.two_phase_tracker.metrics().allocated_bytes.value(),
+            0U);
 }
 
 TEST_F(TrackingAllocatorTest, AllocateDeallocate) {

@@ -971,12 +971,15 @@ pw_add_test(pw_allocator.synchronized_allocator_test
   SOURCES
     synchronized_allocator_test.cc
   PRIVATE_DEPS
+    pw_allocator.first_fit
     pw_allocator.testing
     pw_allocator.test_harness
     pw_allocator.synchronized_allocator
     pw_allocator.sync_allocator_testing
+    pw_polyfill
     pw_sync.interrupt_spin_lock
     pw_sync.mutex
+    pw_sync.no_lock
   GROUPS
     modules
     pw_allocator
@@ -1016,6 +1019,7 @@ pw_add_test(pw_allocator.tracking_allocator_test
     pw_allocator.tracking_allocator
     pw_log
     pw_metric
+    pw_polyfill
   GROUPS
     modules
     pw_allocator

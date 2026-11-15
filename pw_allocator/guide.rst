@@ -424,6 +424,38 @@ the same underlying allocator:
    :start-after: [pw_allocator-examples-metrics-multiple_trackers]
    :end-before: [pw_allocator-examples-metrics-multiple_trackers]
 
+You can also register a ``TrackingAllocator`` directly with a
+``pw::metric::GroupList`` (such as ``pw::metric::global_groups`` or
+``parent_group.children()``) via its constructor:
+
+.. literalinclude:: examples/metrics.cc
+   :language: cpp
+   :linenos:
+   :start-after: [pw_allocator-examples-metrics-group_list]
+   :end-before: [pw_allocator-examples-metrics-group_list]
+
+For static allocators that must avoid dynamic static constructors,
+``TrackingAllocator`` supports constant initialization with ``PW_CONSTINIT``.
+When the metrics struct only enables counter metrics (such as
+``num_allocations``, ``num_deallocations``, or ``num_failures``), pass explicit
+capabilities for single-phase constant initialization:
+
+.. literalinclude:: examples/metrics.cc
+   :language: cpp
+   :linenos:
+   :start-after: [pw_allocator-examples-metrics-constinit]
+   :end-before: [pw_allocator-examples-metrics-constinit]
+
+When ``requested_bytes`` or ``allocated_bytes`` metrics are enabled, construct
+with ``TrackingAllocator(kToken, capabilities)`` under ``PW_CONSTINIT`` and call
+``tracker.Init(base_allocator)`` at early boot so runtime capability assertions
+are verified. Standalone ``PW_CONSTINIT`` trackers cannot register with an
+external global ``GroupList`` such as ``pw::metric::global_groups`` at compile
+time; instead, link them into external lists during early boot (for example
+``pw::metric::global_groups.push_front(tracker.metric_group())``) or group the
+parent ``pw::metric::Group`` and ``TrackingAllocator`` inside a single
+``PW_CONSTINIT`` struct.
+
 Measure fragmentation
 =====================
 If you are using a :cc:`BlockAllocator <pw::allocator::BlockAllocator>`,
