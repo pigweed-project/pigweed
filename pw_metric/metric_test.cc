@@ -17,7 +17,9 @@
 #include <cstdint>
 #include <limits>
 
+#include "pw_assert/assert.h"
 #include "pw_metric/config.h"
+#include "pw_polyfill/language_feature_macros.h"
 #include "pw_tokenizer/tokenize.h"
 #include "pw_unit_test/framework.h"
 
@@ -573,6 +575,46 @@ TEST(Metric, ListForEachWithFunctor) {
 
   Count c = group.metrics().for_each(Count());
   EXPECT_EQ(c.count, 2);
+}
+
+struct ConstinitGroupWithMetrics {
+  PW_METRIC_GROUP(root, "constinit_root");
+  PW_METRIC_GROUP(root, child, "constinit_child");
+  PW_METRIC(root, macro_counter, "macro_counter", 3u);
+  PW_METRIC(child, child_gauge, "child_gauge", 1.5f);
+
+  static constexpr Token kManualToken = PW_METRIC_TOKEN("manual_counter");
+  TypedMetric<uint32_t> manual_counter{kManualToken, 7u};
+
+  constexpr ConstinitGroupWithMetrics() {
+    root.Add(manual_counter);
+    PW_ASSERT(!root.metrics().empty());
+    PW_ASSERT(root.metrics().size() == 2u);
+    PW_ASSERT(root.children().size() == 1u);
+    PW_ASSERT(root.metrics().find(kManualToken) == &manual_counter);
+    PW_ASSERT(manual_counter.name() == kManualToken);
+    PW_ASSERT(manual_counter.type() == UntypedMetric::kTypeUint32);
+    PW_ASSERT(manual_counter.is_uint32());
+    PW_ASSERT(!manual_counter.is_float());
+    PW_ASSERT(child_gauge.is_float());
+  }
+};
+
+PW_CONSTINIT ConstinitGroupWithMetrics constinit_group;
+
+TEST(Metric, ConstinitGroupAndAdd) {
+  EXPECT_EQ(constinit_group.root.metrics().size(), 2u);
+  EXPECT_EQ(constinit_group.root.children().size(), 1u);
+  EXPECT_EQ(constinit_group.root.metrics().find(
+                ConstinitGroupWithMetrics::kManualToken),
+            &constinit_group.manual_counter);
+  EXPECT_EQ(constinit_group.macro_counter.value(), 3u);
+  EXPECT_EQ(constinit_group.manual_counter.value(), 7u);
+  EXPECT_EQ(constinit_group.child_gauge.value(), 1.5f);
+
+  constinit_group.manual_counter.Increment(2u);
+  EXPECT_EQ(constinit_group.manual_counter.value(), 9u);
+  constinit_group.manual_counter.Set(7u);
 }
 
 }  // namespace

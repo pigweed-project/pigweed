@@ -13,6 +13,9 @@
 // the License.
 #pragma once
 
+#include <cstddef>
+#include <iterator>
+
 #include "pw_containers/intrusive_forward_list.h"
 #include "pw_tokenizer/tokenize.h"
 
@@ -45,20 +48,20 @@ class ListWrapper {
 
   // Temporarily provide for backwards compatibility. Use push_front() since
   // order is not significant.
-  void push_back(reference value) { list_.push_front(value); }
-  void push_front(reference value) { list_.push_front(value); }
+  constexpr void push_back(reference value) { list_.push_front(value); }
+  constexpr void push_front(reference value) { list_.push_front(value); }
 
   // Expose specific methods required for metrics.
-  [[nodiscard]] bool empty() const { return list_.empty(); }
+  [[nodiscard]] constexpr bool empty() const { return list_.empty(); }
 
-  [[nodiscard]] size_t size() const {
+  [[nodiscard]] constexpr size_t size() const {
     return static_cast<size_t>(std::distance(list_.begin(), list_.end()));
   }
 
   /// Iterates over the list and calls the functor `f` with a reference to each
   /// item.
   template <typename F>
-  F for_each(F f) {
+  constexpr F for_each(F f) {
     for (auto& item : list_) {
       f(item);
     }
@@ -68,7 +71,7 @@ class ListWrapper {
   /// Iterates over the list and calls the functor `f` with a const reference to
   /// each item.
   template <typename F>
-  F for_each(F f) const {
+  constexpr F for_each(F f) const {
     for (const auto& item : list_) {
       f(item);
     }
@@ -79,7 +82,7 @@ class ListWrapper {
   ///
   /// @returns A pointer to the first matching item, or nullptr if no match is
   /// found.
-  pointer find(pw::tokenizer::Token token) {
+  constexpr pointer find(pw::tokenizer::Token token) {
     for (auto& item : list_) {
       if (item.name() == token) {
         return &item;
@@ -92,7 +95,7 @@ class ListWrapper {
   ///
   /// @returns A const pointer to the first matching item, or nullptr if no
   /// match is found.
-  const_pointer find(pw::tokenizer::Token token) const {
+  constexpr const_pointer find(pw::tokenizer::Token token) const {
     for (const auto& item : list_) {
       if (item.name() == token) {
         return &item;
@@ -112,8 +115,8 @@ class ListWrapper {
 
   using Item = typename IntrusiveForwardList<T>::Item;
 
-  IntrusiveForwardList<T>& list() { return list_; }
-  const IntrusiveForwardList<T>& list() const { return list_; }
+  constexpr IntrusiveForwardList<T>& list() { return list_; }
+  constexpr const IntrusiveForwardList<T>& list() const { return list_; }
 
   IntrusiveForwardList<T> list_;
 };
