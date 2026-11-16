@@ -106,8 +106,12 @@ class L2capChannelImpl {
   void SendEventLocked(L2capChannelEvent event)
       PW_EXCLUSIVE_LOCKS_REQUIRED(static_mutex_);
 
-  // Returns whether this object is stale, that is, whether it has been closed
-  // or its client has disconnected.
+  // Returns whether this object has been closed or its client has
+  // disconnected.
+  bool IsClosed() const PW_LOCKS_EXCLUDED(static_mutex_);
+
+  // Returns whether this object is closed and has no running callbacks, so it
+  // can be destroyed without waiting on the thread running a callback.
   bool IsStale() const PW_LOCKS_EXCLUDED(static_mutex_);
 
  private:

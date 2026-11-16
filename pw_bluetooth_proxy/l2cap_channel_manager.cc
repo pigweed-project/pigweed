@@ -299,6 +299,9 @@ Status L2capChannelManager::RegisterChannelLocked(
   L2capChannel* existing_remote =
       remote_it != channels_by_remote_cid_.end() ? remote_it->second : nullptr;
 
+  // Not `IsClosed()`: replacing a closed channel whose callback is still
+  // running would destroy it here and wait for that callback, which deadlocks
+  // if the callback is the one registering this channel.
   if ((existing_local != nullptr && !existing_local->IsStale()) ||
       (existing_remote != nullptr && !existing_remote->IsStale())) {
     PW_LOG_WARN(
@@ -472,7 +475,7 @@ L2capChannel* L2capChannelManager::FindChannelByLocalCidLocked(
     uint16_t connection_handle, uint16_t local_cid) PW_NO_LOCK_SAFETY_ANALYSIS {
   uint32_t key = L2capChannel::MakeKey(connection_handle, local_cid);
   auto it = channels_by_local_cid_.find(key);
-  if (it == channels_by_local_cid_.end() || it->second.IsStale()) {
+  if (it == channels_by_local_cid_.end() || it->second.IsClosed()) {
     return nullptr;
   }
   return &it->second;
@@ -483,7 +486,7 @@ L2capChannel* L2capChannelManager::FindChannelByRemoteCidLocked(
     uint16_t remote_cid) PW_NO_LOCK_SAFETY_ANALYSIS {
   uint32_t key = L2capChannel::MakeKey(connection_handle, remote_cid);
   auto it = channels_by_remote_cid_.find(key);
-  if (it == channels_by_remote_cid_.end() || it->second->IsStale()) {
+  if (it == channels_by_remote_cid_.end() || it->second->IsClosed()) {
     return nullptr;
   }
   return it->second;

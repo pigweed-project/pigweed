@@ -120,6 +120,9 @@ class L2capChannelImpl {
   /// @copydoc L2capChannel::IsStale
   bool IsStale() const;
 
+  /// Same as `IsStale()`.
+  bool IsClosed() const;
+
   /// Notifies the this object that the client channel has gone out of scope.
   void OnClientDisconnect();
 

@@ -408,6 +408,8 @@ class L2capChannel final : public internal::TxEngine::Delegate {
 
   [[nodiscard]] bool IsStale() const { return impl_.IsStale(); }
 
+  [[nodiscard]] bool IsClosed() const { return impl_.IsClosed(); }
+
   //-------------
   // Keys for maps
   //-------------

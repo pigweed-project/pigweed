@@ -2922,11 +2922,13 @@ TEST_F(L2capCocTest, ConcurrentDeletionDuringSendEvent) {
   pw::Function<void(H4PacketWithH4&&)> send_to_controller_fn(
       [](H4PacketWithH4&&) {});
 
+  allocator::test::AllocatorForTest<4096> test_allocator;
+  allocator::SynchronizedAllocator<sync::Mutex> allocator(test_allocator);
   ProxyHost proxy(std::move(send_to_host_fn),
                   std::move(send_to_controller_fn),
                   /*le_acl_credits_to_reserve=*/10,
                   /*br_edr_acl_credits_to_reserve=*/0,
-                  &pw::allocator::GetLibCAllocator());
+                  &allocator);
   StartDispatcherOnCurrentThread(proxy);
 
   PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(proxy, 10));
@@ -2934,49 +2936,18 @@ TEST_F(L2capCocTest, ConcurrentDeletionDuringSendEvent) {
       proxy, kHandle, emboss::StatusCode::SUCCESS));
 
   struct RaceState {
+    Allocator* allocator = nullptr;
+    size_t allocated_before_stale = 0;
     std::array<uint8_t, 4> tx_data = {1, 2, 3, 4};
     std::optional<L2capCoc> stale_coc;
     std::optional<L2capCoc> active_coc;
     sync::ThreadNotification thread_ready;
     sync::ThreadNotification client_reset_done;
     sync::ThreadNotification write_starting;
-    std::atomic<bool> drain_finished{false};
+    sync::ThreadNotification drain_finished;
     int events_received = 0;
   } state;
-
-  state.stale_coc.emplace(
-      BuildCoc(proxy,
-               CocParameters{
-                   .handle = kHandle,
-                   .local_cid = kStaleLocalCid,
-                   .remote_cid = kStaleRemoteCid,
-                   .tx_credits = 1,
-                   .receive_fn = [](multibuf::MultiBuf&&) {},
-                   .event_fn =
-                       [&state](L2capChannelEvent event) {
-                         EXPECT_EQ(event, L2capChannelEvent::kRxInvalid);
-                         ++state.events_received;
-                         // Disconnect client handle while SendEvent is
-                         // executing, marking the underlying L2capChannel as
-                         // stale.
-                         state.stale_coc.reset();
-                         state.client_reset_done.release();
-                         state.write_starting.acquire();
-
-                         // Allow the drain thread to attempt to reap and delete
-                         // the stale channel while SendEvent is still in
-                         // progress.
-                         for (int i = 0; i < 1000; ++i) {
-                           pw::this_thread::yield();
-                         }
-
-                         // Because SendEvent holds a BorrowedL2capChannel,
-                         // ~L2capChannel on the drain thread must block in
-                         // BlockWhileBorrowed() until SendEvent finishes, so
-                         // `drain_finished` must still be false here.
-                         EXPECT_FALSE(state.drain_finished.load());
-                       },
-               }));
+  state.allocator = &allocator;
 
   state.active_coc.emplace(
       BuildCoc(proxy,
@@ -2990,6 +2961,39 @@ TEST_F(L2capCocTest, ConcurrentDeletionDuringSendEvent) {
                    .event_fn = [](L2capChannelEvent) {},
                }));
 
+  state.allocated_before_stale = allocator.GetAllocated();
+  state.stale_coc.emplace(
+      BuildCoc(proxy,
+               CocParameters{
+                   .handle = kHandle,
+                   .local_cid = kStaleLocalCid,
+                   .remote_cid = kStaleRemoteCid,
+                   .tx_credits = 1,
+                   .receive_fn = [](multibuf::MultiBuf&&) {},
+                   .event_fn =
+                       [&state](L2capChannelEvent event) {
+                         EXPECT_EQ(event, L2capChannelEvent::kRxInvalid);
+                         ++state.events_received;
+                         // Disconnect client handle while SendEvent is
+                         // executing. ClientCallbackGuard keeps IsStale()
+                         // false and holds a BorrowedL2capChannel until
+                         // SendEvent finishes, so the drain thread can run a
+                         // full drain pass without deleting the channel out
+                         // from under SendEvent or blocking on
+                         // BlockWhileBorrowed().
+                         state.stale_coc.reset();
+                         state.client_reset_done.release();
+                         state.write_starting.acquire();
+                         state.drain_finished.acquire();
+                         // The drain on `drain_thread` ran while this callback
+                         // was still active (`!IsStale()`), so `stale_coc` must
+                         // not have been reaped yet.
+                         EXPECT_GT(state.allocator->GetAllocated(),
+                                   state.allocated_before_stale);
+                       },
+               }));
+  ASSERT_GT(allocator.GetAllocated(), state.allocated_before_stale);
+
   pw::thread::test::TestThreadContext context;
   pw::Thread drain_thread(context.options(), [&state]() {
     state.thread_ready.release();
@@ -3000,7 +3004,7 @@ TEST_F(L2capCocTest, ConcurrentDeletionDuringSendEvent) {
     PW_ASSERT(mbuf.has_value());
     state.write_starting.release();
     std::ignore = state.active_coc->Write(std::move(*mbuf));
-    state.drain_finished.store(true);
+    state.drain_finished.release();
   });
   state.thread_ready.acquire();
 
@@ -3034,7 +3038,9 @@ TEST_F(L2capCocTest, ConcurrentDeletionDuringSendEvent) {
 
   drain_thread.join();
   EXPECT_EQ(state.events_received, 1);
-  EXPECT_TRUE(state.drain_finished.load());
+  // Once `SendEvent` returned, `~ClientCallbackGuard` marked the drain as
+  // needed and `HandleAclFromController`'s trailing drain reaped `stale_coc`.
+  EXPECT_EQ(allocator.GetAllocated(), state.allocated_before_stale);
 }
 #endif  // PW_BLUETOOTH_PROXY_ASYNC == 0
 #endif  // PW_THREAD_JOINING_ENABLED

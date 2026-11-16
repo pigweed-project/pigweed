@@ -6922,6 +6922,133 @@ TEST_F(ClientChannelDisconnectTest,
 
 #endif  // PW_THREAD_JOINING_ENABLED
 
+TEST_F(ProxyHostTest, ReentrantChannelDestructionInCallbacksDoesNotDeadlock) {
+  ProxyHost proxy([](H4PacketWithHci&&) {},
+                  [](H4PacketWithH4&&) {},
+                  1,
+                  0,
+                  GetProxyHostAllocator());
+  PW_TEST_ASSERT_OK(SendLeReadBufferResponseFromController(proxy, 1));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kConnectionHandle, emboss::StatusCode::SUCCESS));
+
+  constexpr uint16_t kRxCid = 0x0041;
+  constexpr uint16_t kEventCid = 0x0042;
+  // The callbacks capture a single pointer so that they fit in a
+  // `pw::Function`.
+  using TestClassPtr = decltype(this);
+  struct {
+    TestClassPtr test;
+    ProxyHost* proxy = nullptr;
+    int callbacks_completed = 0;
+    std::optional<BasicL2capChannel> rx_channel;
+    std::optional<BasicL2capChannel> event_channel;
+  } state;
+  state.test = this;
+  state.proxy = &proxy;
+  state.rx_channel = BuildBasicL2capChannel(
+      proxy,
+      {.handle = kConnectionHandle,
+       .local_cid = kRxCid,
+       .remote_cid = kRxCid,
+       .payload_from_controller_fn = [&state](multibuf::MultiBuf&&) {
+         state.rx_channel.reset();
+         // `rx_channel` is closed, but this callback is still running, so it is
+         // not yet stale and re-acquiring `kRxCid` must return ALREADY_EXISTS
+         // rather than deadlocking on eviction.
+         EXPECT_EQ(state.test
+                       ->BuildBasicL2capChannelWithResult(
+                           *state.proxy,
+                           {.handle = kConnectionHandle,
+                            .local_cid = kRxCid,
+                            .remote_cid = kRxCid})
+                       .status(),
+                   Status::AlreadyExists());
+         PW_TEST_EXPECT_OK(
+             state.event_channel->Write(state.test->MakeEmptyMultiBuf())
+                 .status);
+         ++state.callbacks_completed;
+         return std::nullopt;
+       }});
+  state.event_channel =
+      BuildBasicL2capChannel(proxy,
+                             {.handle = kConnectionHandle,
+                              .local_cid = kEventCid,
+                              .remote_cid = kEventCid,
+                              .event_fn = [&state](L2capChannelEvent) {
+                                state.event_channel.reset();
+                                ++state.callbacks_completed;
+                              }});
+
+  constexpr std::array<uint8_t, 2> kPayload = {0x01, 0x02};
+  SendL2capBFrame(proxy, kConnectionHandle, kPayload, kPayload.size(), kRxCid);
+  PW_TEST_EXPECT_OK(SendDisconnectionCompleteEvent(proxy, kConnectionHandle));
+  EXPECT_FALSE(state.rx_channel.has_value());
+  EXPECT_FALSE(state.event_channel.has_value());
+  EXPECT_EQ(state.callbacks_completed, 2);
+}
+
+TEST_F(ProxyHostTest, ClosedChannelWithRunningCallbackIsExcludedFromLookup) {
+  using TestClassPtr = decltype(this);
+  struct {
+    TestClassPtr test;
+    ProxyHost* proxy = nullptr;
+    int forwarded_to_host = 0;
+    int forwarded_to_controller = 0;
+    std::optional<BasicL2capChannel> channel;
+  } state;
+  state.test = this;
+  ProxyHost proxy(
+      [&state](H4PacketWithHci&& packet) {
+        if (packet.GetH4Type() == emboss::H4PacketType::ACL_DATA) {
+          ++state.forwarded_to_host;
+        }
+      },
+      [&state](H4PacketWithH4&& packet) {
+        if (packet.GetH4Type() == emboss::H4PacketType::ACL_DATA) {
+          ++state.forwarded_to_controller;
+        }
+      },
+      /*le_acl_credits_to_reserve=*/0,
+      /*br_edr_acl_credits_to_reserve=*/0,
+      GetProxyHostAllocator());
+  state.proxy = &proxy;
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      proxy, kConnectionHandle, emboss::StatusCode::SUCCESS));
+
+  constexpr uint16_t kLocalCid = 0x0041;
+  constexpr uint16_t kRemoteCid = 0x0042;
+  static constexpr std::array<uint8_t, 2> kPayload = {0x01, 0x02};
+  state.channel = BuildBasicL2capChannel(
+      proxy,
+      {.handle = kConnectionHandle,
+       .local_cid = kLocalCid,
+       .remote_cid = kRemoteCid,
+       .event_fn = [&state](L2capChannelEvent) {
+         state.channel.reset();
+         // `channel` is now closed (`IsClosed()`), but this callback is still
+         // running (`!IsStale()`). Lookups by local or remote CID must already
+         // exclude it so arriving fragments are forwarded rather than starting
+         // recombination on the closed channel.
+         state.test->SendL2capBFrame(*state.proxy,
+                                     kConnectionHandle,
+                                     kPayload,
+                                     kPayload.size() * 2,
+                                     kLocalCid);
+         Result<BFrameWithStorage> host_fragment =
+             SetupBFrame(kConnectionHandle, kRemoteCid, kPayload.size());
+         PW_TEST_ASSERT_OK(host_fragment);
+         host_fragment->writer.pdu_length().Write(kPayload.size() * 2);
+         state.proxy->HandleH4HciFromHost(H4PacketWithH4{
+             emboss::H4PacketType::ACL_DATA, host_fragment->acl.hci_span()});
+       }});
+
+  state.channel->Close();
+  EXPECT_FALSE(state.channel.has_value());
+  EXPECT_EQ(state.forwarded_to_host, 1);
+  EXPECT_EQ(state.forwarded_to_controller, 1);
+}
+
 #endif  // PW_BLUETOOTH_PROXY_ASYNC == 0
 }  // namespace
 }  // namespace pw::bluetooth::proxy

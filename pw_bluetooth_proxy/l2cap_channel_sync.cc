@@ -85,11 +85,14 @@ L2capChannelImpl::ClientCallbackGuard::~ClientCallbackGuard() {
       break;
     }
   }
-  // Finish a client detach that `Close()` deferred while callbacks ran.
-  if (impl->closed_ && impl->active_callbacks_ == nullptr &&
-      impl->client_ != nullptr) {
-    impl->client_->channel_ = nullptr;
-    impl->client_ = nullptr;
+  if (impl->closed_ && impl->active_callbacks_ == nullptr) {
+    // Finish a client detach that `Close()` deferred while callbacks ran.
+    if (impl->client_ != nullptr) {
+      impl->client_->channel_ = nullptr;
+      impl->client_ = nullptr;
+    }
+    // The channel just became stale; have the drain reap it.
+    impl->ReportNewTxPacketsOrCredits();
   }
   // Signal while still holding the lock: the waiter destroys the notification
   // as soon as it reacquires the lock and sees no cross-thread callbacks.
@@ -228,9 +231,14 @@ void L2capChannelImpl::ReportNewTxPacketsOrCredits() {
 
 void L2capChannelImpl::ClearQueue() { payload_queue_.clear(); }
 
-bool L2capChannelImpl::IsStale() const {
+bool L2capChannelImpl::IsClosed() const {
   std::lock_guard lock(L2capChannelImpl::mutex());
   return closed_;
+}
+
+bool L2capChannelImpl::IsStale() const {
+  std::lock_guard lock(L2capChannelImpl::mutex());
+  return closed_ && active_callbacks_ == nullptr;
 }
 
 bool L2capChannelImpl::PayloadQueueEmpty() const {

@@ -183,6 +183,8 @@ bool L2capChannelImpl::IsStale() const {
   return request_handle_.has_value() && !request_handle_->is_open();
 }
 
+bool L2capChannelImpl::IsClosed() const { return IsStale(); }
+
 async2::Poll<> L2capChannelImpl::Task::DoPend(async2::Context& context) {
   while (true) {
     if (!future_.is_pendable()) {
