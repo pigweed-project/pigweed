@@ -31,6 +31,11 @@ remember:
   descriptively. The test suite name often corresponds to the class or module
   being tested, and the test case name describes the specific behavior being
   tested.
+- **Focused Tests:** Focus each test on one behavior with minimal setup and
+  assertions. Instead of multi-"paragraph" tests separated by comments, split
+  independent scenarios into separate `TEST` cases named after each comment.
+  Longer tests are fine for one behavior or a sequence of related state checks
+  and mutations from one setup.
 
 ### C++ Style Guide (Condensed)
 

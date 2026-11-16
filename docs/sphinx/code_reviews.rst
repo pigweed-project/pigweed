@@ -163,6 +163,11 @@ New behavior has a test; a bug fix has a regression test; a contract has a
 negative-compilation or death test where practical. Tests should assert on
 behavior, not on implementation details that a refactor would change.
 
+Keep each test focused on one behavior with minimal setup and assertions. Flag
+multi-"paragraph" tests separated by comments that cover independent scenarios
+-- split them into separate tests named after each comment. Longer tests are
+fine for one behavior or related state checks and mutations from one setup.
+
 .. _docs-code_reviews-checklist-commit:
 
 Commit message

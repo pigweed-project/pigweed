@@ -66,8 +66,9 @@ Every comment or finding MUST pass these calibration filters:
      symbol outside `pw` namespace, unprefixed macro, or Doxygen mismatch.
    - `[build]` — Missing `BUILD.bazel` / `BUILD.gn` / `CMakeLists.txt` parity,
      missing visibility/deps, or broken negative compilation test (`PW_NC_TEST`).
-   - `[test]` — Missing unit test for new behavior/bugfix, or use of raw
-     `EXPECT_EQ(status, pw::OkStatus())` instead of `PW_TEST_EXPECT_OK`.
+   - `[test]` — Missing unit test for new behavior/bugfix, unfocused
+     multi-scenario test, or use of raw `EXPECT_EQ(status, pw::OkStatus())`
+     instead of `PW_TEST_EXPECT_OK`.
    - `nit:` — Optional, minor readability or naming polish.
 4. **Nit Budget (Max 3)**: Emit at most **3 `nit:` comments** across the entire
    CL. If there are blocking `[bug]` or `[embedded/size]` issues, prioritize
@@ -186,8 +187,9 @@ these six Pigweed dimensions:
   CQ breakages!
 
 #### 4. Test Rigor & Negative Compilation Tests
-- Every bugfix or behavior change requires a `pw_unit_test` (`*_test.cc`) test
-  case.
+- Every bugfix or behavior change requires a focused `pw_unit_test`
+  (`*_test.cc`) test case; apply `docs/sphinx/code_reviews.rst`
+  `#docs-code-reviews-checklist-tests`.
 - Assertions on `pw::Status` / `pw::Result` should use `PW_TEST_EXPECT_OK` and
   `PW_TEST_ASSERT_OK`.
 - Template/constexpr API constraints should include `PW_NC_TEST` negative
