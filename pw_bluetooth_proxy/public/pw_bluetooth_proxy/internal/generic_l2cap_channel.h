@@ -50,6 +50,19 @@ namespace internal {
 /// that its callbacks acquire, or from a thread that a callback waits on.
 /// Destroying a channel from within one of its own callbacks is allowed; it
 /// then waits only for callbacks running on other threads.
+///
+/// In async mode (`PW_BLUETOOTH_PROXY_ASYNC != 0`), callbacks run on the
+/// dispatcher thread, except that `~ProxyHost()` sends close events on the
+/// thread that destroys the proxy. Destroying or move-assigning an open channel
+/// on any other thread blocks until the dispatcher thread finishes what it is
+/// running, which includes any callback of this channel that has already
+/// started, and possibly other pending tasks. No callbacks run after that. The
+/// dispatcher must be running. Do not destroy or move-assign a channel while
+/// holding a lock that any task or callback on the dispatcher thread acquires,
+/// or from a thread that one of them waits on. A callback that called `Close()`
+/// on its own channel is not waited for, because the channel is no longer open.
+/// Destroying or move-assigning a channel on the dispatcher thread, including
+/// from within one of its own callbacks, does not block.
 class GenericL2capChannel {
  public:
   GenericL2capChannel(const GenericL2capChannel& other) = delete;

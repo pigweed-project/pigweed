@@ -78,6 +78,12 @@ class GenericL2capChannelImpl {
   GenericL2capChannelImpl(L2capChannel& channel,
                           L2capChannelManagerImpl& manager);
 
+  /// Disconnects from the internal channel, which stops its callbacks.
+  ///
+  /// Off the dispatcher thread, this blocks until a callback that is already
+  /// running on the dispatcher thread returns.
+  void Disconnect();
+
   /// Sends the request to the internal channel and notifies the dispatcher that
   /// the internal channel task has been awakened.
   Status Send(Request&& request) const;

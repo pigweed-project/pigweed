@@ -17,6 +17,7 @@
 #if PW_BLUETOOTH_PROXY_ASYNC != 0
 
 #include "pw_assert/check.h"
+#include "pw_async2/func_task.h"
 #include "pw_bluetooth_proxy/internal/generic_l2cap_channel_async.h"
 #include "pw_bluetooth_proxy/internal/l2cap_channel_manager.h"
 #include "pw_bluetooth_proxy/internal/l2cap_channel_manager_async.h"
@@ -39,13 +40,12 @@ GenericL2capChannelImpl& GenericL2capChannelImpl::operator=(
     return *this;
   }
 
+  Disconnect();
+
   channel_ = std::exchange(other.channel_, nullptr);
   dispatcher_ = std::exchange(other.dispatcher_, nullptr);
   dispatcher_thread_id_ = std::move(other.dispatcher_thread_id_);
 
-  if (request_handle_.is_open()) {
-    request_handle_.Close();
-  }
   request_handle_ = std::move(other.request_handle_);
   request_sender_ = std::move(other.request_sender_);
 
@@ -56,10 +56,22 @@ GenericL2capChannelImpl& GenericL2capChannelImpl::operator=(
   return *this;
 }
 
-GenericL2capChannelImpl::~GenericL2capChannelImpl() {
-  if (request_handle_.is_open()) {
-    request_handle_.Close();
+GenericL2capChannelImpl::~GenericL2capChannelImpl() { Disconnect(); }
+
+void GenericL2capChannelImpl::Disconnect() {
+  if (!request_handle_.is_open()) {
+    return;
   }
+  // No callback starts once the dispatcher thread sees the closed handle.
+  request_handle_.Close();
+  if (this_thread::get_id() == dispatcher_thread_id_) {
+    return;
+  }
+  // A callback may have started on the dispatcher thread before the handle was
+  // closed. The dispatcher runs this task only after that callback returns.
+  async2::RunOnceTask task([] {});
+  dispatcher_->Post(task);
+  task.BlockingJoin();
 }
 
 Status GenericL2capChannelImpl::Init() {

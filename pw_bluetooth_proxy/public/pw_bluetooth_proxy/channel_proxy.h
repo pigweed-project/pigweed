@@ -27,6 +27,17 @@ namespace pw::bluetooth::proxy {
 /// callbacks acquire, or from a thread that a callback waits on. Destroying it
 /// from within one of its own callbacks is allowed; it then waits only for
 /// callbacks running on other threads.
+///
+/// In async mode (`PW_BLUETOOTH_PROXY_ASYNC != 0`), callbacks run on the
+/// dispatcher thread, except that `~ProxyHost()` sends close events on the
+/// thread that destroys the proxy. Destroying an open `ChannelProxy` on any
+/// other thread blocks until the dispatcher thread finishes what it is running,
+/// which includes any callback of this channel that has already started, and
+/// possibly other pending tasks. No callbacks run after that. The dispatcher
+/// must be running. Do not destroy it while holding a lock that any task or
+/// callback on the dispatcher thread acquires, or from a thread that one of
+/// them waits on. Destroying it on the dispatcher thread, including from
+/// within one of its own callbacks, does not block.
 class ChannelProxy {
  public:
   virtual ~ChannelProxy() = default;
