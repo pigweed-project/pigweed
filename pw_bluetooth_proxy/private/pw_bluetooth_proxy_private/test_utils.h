@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <variant>
 #include <vector>
@@ -245,6 +246,11 @@ class ProxyHostTestDispatcher final {
 
   sync::ThreadNotification rx_;
   sync::ThreadNotification tx_;
+
+  // Count the dispatcher thread's runs, so that `Run` can tell a run that
+  // started after it was called from one that was already in progress.
+  std::atomic<uint32_t> runs_started_{0};
+  std::atomic<uint32_t> runs_completed_{0};
 
   mutable sync::Mutex mutex_;
   std::optional<Thread::id> id_ PW_GUARDED_BY(mutex_);

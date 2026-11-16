@@ -50,10 +50,13 @@ void ProxyHostTestDispatcher::Run() {
   if (IsRunningOnThisThread()) {
     dispatcher_.RunUntilStalled();
   } else {
-    // Clear any latch set by a previously completed run of the dispatcher.
-    std::ignore = tx_.try_acquire();
-    rx_.release();
-    tx_.acquire();
+    // Wait for a run that starts after this call. A run that is already in
+    // progress may finish without handling work queued just before this call.
+    const uint32_t needed_run = runs_started_.load() + 1;
+    do {
+      rx_.release();
+      tx_.acquire();
+    } while (runs_completed_.load() < needed_run);
   }
 }
 
@@ -76,7 +79,9 @@ void ProxyHostTestDispatcher::StartOnNewThread(ProxyHost& proxy) {
         std::lock_guard lock(mutex_);
         stop = !id_.has_value();
       }
+      const uint32_t run = runs_started_.fetch_add(1) + 1;
       dispatcher_.RunUntilStalled();
+      runs_completed_.store(run);
       tx_.release();
       if (stop) {
         break;
