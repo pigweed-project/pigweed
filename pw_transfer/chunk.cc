@@ -22,6 +22,7 @@
 #include "pw_log/rate_limited.h"
 #include "pw_protobuf/decoder.h"
 #include "pw_protobuf/serialized_size.h"
+#include "pw_status/status.h"
 #include "pw_status/try.h"
 #include "pw_transfer/internal/config.h"
 
@@ -153,7 +154,7 @@ Result<Chunk> Chunk::Parse(ConstByteSpan message) {
 
       case ProtoChunk::Fields::kStatus:
         PW_TRY(decoder.ReadUint32(&value));
-        chunk.set_status(static_cast<Status::Code>(value));
+        chunk.set_status(StatusFromCodeOrUnknown(value));
         break;
 
       case ProtoChunk::Fields::kWindowEndOffset:

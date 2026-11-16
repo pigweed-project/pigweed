@@ -95,6 +95,8 @@ const char* pw_StatusString(pw_Status status);
 
 }  // extern "C"
 
+#include <type_traits>
+
 #include "pw_enum/to_string.h"      // IWYU pragma: keep
 #include "pw_status/status_base.h"  // IWYU pragma: export
 
@@ -429,6 +431,33 @@ class _PW_STATUS_NO_DISCARD Status final
 /// [OK](../../pw_status/reference.html#c.OK) for details on interacting with
 /// this status code in other languages.
 [[nodiscard]] constexpr Status OkStatus() noexcept { return Status(); }
+
+/// Creates a `Status` from a raw status code, mapping unrecognized or
+/// out-of-range values to `Status::Unknown()`.
+///
+/// Use this instead of casting to `Status::Code` when decoding status codes
+/// from external sources such as wire protocols, persistent storage, or C APIs.
+/// Casting an out-of-range integer directly to `Status::Code` (`pw_Status`)
+/// produces a `Status` with no corresponding enumerator and is undefined
+/// behavior if the value exceeds the enum's range.
+///
+/// Accepts any integer type (except `bool`) as well as `Status::Code`.
+template <
+    typename T,
+    typename = std::enable_if_t<
+        (std::is_integral_v<T> && !std::is_same_v<std::remove_cv_t<T>, bool>) ||
+        std::is_same_v<std::remove_cv_t<T>, Status::Code>>>
+[[nodiscard]] constexpr Status StatusFromCodeOrUnknown(T code) noexcept {
+  if constexpr (std::is_enum_v<T>) {
+    return StatusFromCodeOrUnknown(
+        static_cast<std::underlying_type_t<T>>(code));
+  } else {
+    using Unsigned = std::common_type_t<std::make_unsigned_t<T>, unsigned int>;
+    return static_cast<Unsigned>(code) <= static_cast<Unsigned>(PW_STATUS_LAST)
+               ? Status(static_cast<Status::Code>(code))
+               : Status::Unknown();
+  }
+}
 
 namespace internal {
 

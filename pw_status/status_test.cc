@@ -14,7 +14,10 @@
 
 #include "pw_status/status.h"
 
+#include <cstdint>
+#include <limits>
 #include <type_traits>
+#include <utility>
 
 #include "pw_enum/to_string.h"
 #include "pw_status/try.h"
@@ -219,6 +222,54 @@ TEST(Status, ConvertToStatus) {
   static_assert(internal::ConvertToStatus(PW_STATUS_INTERNAL) ==
                 Status::Internal());
 }
+
+template <typename T, typename = void>
+constexpr bool kCanConvertCode = false;
+
+template <typename T>
+constexpr bool kCanConvertCode<
+    T,
+    std::void_t<decltype(StatusFromCodeOrUnknown(std::declval<T>()))>> = true;
+
+enum class OtherEnum { kZero = 0 };
+
+static_assert(kCanConvertCode<int>);
+static_assert(kCanConvertCode<uint32_t>);
+static_assert(kCanConvertCode<Status::Code>);
+static_assert(!kCanConvertCode<bool>);
+static_assert(!kCanConvertCode<float>);
+static_assert(!kCanConvertCode<Status>);
+static_assert(!kCanConvertCode<OtherEnum>);
+
+PW_CONSTEXPR_TEST(Status, StatusFromCodeOrUnknown, {
+  for (int code = PW_STATUS_OK; code <= PW_STATUS_LAST; ++code) {
+    const Status expected(static_cast<Status::Code>(code));
+    PW_TEST_EXPECT_EQ(StatusFromCodeOrUnknown(code), expected);
+    PW_TEST_EXPECT_EQ(StatusFromCodeOrUnknown(static_cast<uint32_t>(code)),
+                      expected);
+    PW_TEST_EXPECT_EQ(StatusFromCodeOrUnknown(static_cast<Status::Code>(code)),
+                      expected);
+  }
+
+  // Out-of-range positive values (including values whose low bits alias OK).
+  PW_TEST_EXPECT_EQ(StatusFromCodeOrUnknown(PW_STATUS_LAST + 1),
+                    Status::Unknown());
+  PW_TEST_EXPECT_EQ(StatusFromCodeOrUnknown(kInvalidCode), Status::Unknown());
+  PW_TEST_EXPECT_EQ(StatusFromCodeOrUnknown(32u), Status::Unknown());
+  PW_TEST_EXPECT_EQ(StatusFromCodeOrUnknown(uint64_t{1} << 32),
+                    Status::Unknown());
+  PW_TEST_EXPECT_EQ(
+      StatusFromCodeOrUnknown(std::numeric_limits<uint32_t>::max()),
+      Status::Unknown());
+
+  // Negative values.
+  PW_TEST_EXPECT_EQ(StatusFromCodeOrUnknown(int8_t{-1}), Status::Unknown());
+  PW_TEST_EXPECT_EQ(StatusFromCodeOrUnknown(-1), Status::Unknown());
+  PW_TEST_EXPECT_EQ(StatusFromCodeOrUnknown(-32), Status::Unknown());
+  PW_TEST_EXPECT_EQ(
+      StatusFromCodeOrUnknown(std::numeric_limits<int64_t>::min()),
+      Status::Unknown());
+});
 
 // Functions for executing the C pw_Status tests.
 extern "C" {

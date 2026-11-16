@@ -14,6 +14,10 @@
 
 #include "pw_transfer/internal/chunk.h"
 
+#include <algorithm>
+#include <array>
+#include <cstddef>
+
 #include "pw_bytes/array.h"
 #include "pw_unit_test/framework.h"
 
@@ -87,6 +91,30 @@ TEST(Chunk, Parse_TerminatingChunkWithoutStatus_Fails) {
 
   auto parse_result = Chunk::Parse(encode_result.value());
   EXPECT_EQ(parse_result.status(), Status::DataLoss());
+}
+
+TEST(Chunk, Parse_OutOfRangeStatusIsUnknown) {
+  Chunk chunk(ProtocolVersion::kVersionTwo, Chunk::Type::kCompletion);
+  chunk.set_session_id(42).set_status(Status::NotFound());
+
+  std::array<std::byte, 64> buffer;
+  auto encode_result = chunk.Encode(buffer);
+  ASSERT_EQ(encode_result.status(), OkStatus());
+
+  // Replace the encoded status (field 8, a varint) with a value that is not a
+  // status code.
+  constexpr auto kEncodedStatus = bytes::Array<8 << 3, PW_STATUS_NOT_FOUND>();
+  const auto end =
+      buffer.begin() + static_cast<ptrdiff_t>(encode_result->size());
+  auto status_field = std::search(
+      buffer.begin(), end, kEncodedStatus.begin(), kEncodedStatus.end());
+  ASSERT_NE(status_field, end);
+  status_field[1] = std::byte{100};
+
+  auto parse_result = Chunk::Parse(encode_result.value());
+  ASSERT_EQ(parse_result.status(), OkStatus());
+  ASSERT_TRUE(parse_result->status().has_value());
+  EXPECT_EQ(*parse_result->status(), Status::Unknown());
 }
 
 }  // namespace

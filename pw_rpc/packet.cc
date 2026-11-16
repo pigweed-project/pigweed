@@ -16,6 +16,7 @@
 
 #include "pw_log/log.h"
 #include "pw_protobuf/decoder.h"
+#include "pw_status/status.h"
 
 namespace pw::rpc::internal {
 
@@ -65,7 +66,7 @@ Result<Packet> Packet::FromBuffer(ConstByteSpan data) {
         uint32_t value;
         // A decode error will propagate from Next() and terminate the loop.
         decoder.ReadUint32(&value).IgnoreError();
-        packet.set_status(static_cast<Status::Code>(value));
+        packet.set_status(StatusFromCodeOrUnknown(value));
         break;
       }
 

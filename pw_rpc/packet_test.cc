@@ -113,6 +113,39 @@ TEST(Packet, Decode_ValidPacket) {
       std::memcmp(packet.payload().data(), kPayload.data(), kPayload.size()));
 }
 
+constexpr uint32_t kStatusKey = FieldKey(6, protobuf::WireType::kVarint);
+
+TEST(Packet, Decode_Status) {
+  const auto encoded = bytes::Concat(
+      kEncoded, bytes::Array<kStatusKey, uint32_t{PW_STATUS_NOT_FOUND}>());
+  auto result = Packet::FromBuffer(encoded);
+  ASSERT_TRUE(result.ok());
+  EXPECT_EQ(Status::NotFound(), result.value().status());
+}
+
+TEST(Packet, Decode_LastStatusCode) {
+  const auto encoded = bytes::Concat(
+      kEncoded, bytes::Array<kStatusKey, uint32_t{PW_STATUS_LAST}>());
+  auto result = Packet::FromBuffer(encoded);
+  ASSERT_TRUE(result.ok());
+  EXPECT_EQ(Status(PW_STATUS_LAST), result.value().status());
+}
+
+TEST(Packet, Decode_OutOfRangeStatusIsUnknown) {
+  const auto one_past_last = bytes::Concat(
+      kEncoded, bytes::Array<kStatusKey, uint32_t{PW_STATUS_LAST} + 1>());
+  auto result = Packet::FromBuffer(one_past_last);
+  ASSERT_TRUE(result.ok());
+  EXPECT_EQ(Status::Unknown(), result.value().status());
+
+  // 32 has the same low 5 bits as OK.
+  const auto aliases_ok =
+      bytes::Concat(kEncoded, bytes::Array<kStatusKey, 32>());
+  result = Packet::FromBuffer(aliases_ok);
+  ASSERT_TRUE(result.ok());
+  EXPECT_EQ(Status::Unknown(), result.value().status());
+}
+
 TEST(Packet, Decode_InvalidPacket) {
   byte bad_data[] = {byte{0xFF}, byte{0x00}, byte{0x00}, byte{0xFF}};
   EXPECT_EQ(Status::DataLoss(), Packet::FromBuffer(bad_data).status());
