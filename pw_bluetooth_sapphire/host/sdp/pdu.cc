@@ -694,13 +694,6 @@ fit::result<Error<>> ServiceAttributeResponse::Parse(const ByteBuffer& buf) {
     return ToResult(HostError::kPacketMalformed);
   }
 
-  if (cont_state_view.empty()) {
-    continuation_state_ = nullptr;
-  } else {
-    continuation_state_ = NewBuffer(cont_state_view.size());
-    continuation_state_->Write(cont_state_view);
-  }
-
   size_t expected_size = read_size + attribute_list_byte_count +
                          cont_state_view.size() + sizeof(uint8_t);
   if (buf.size() != expected_size) {
@@ -713,40 +706,56 @@ fit::result<Error<>> ServiceAttributeResponse::Parse(const ByteBuffer& buf) {
   }
 
   auto attribute_list_bytes = buf.view(read_size, attribute_list_byte_count);
-  if (partial_response_ || !ContinuationState().empty()) {
+  if (attribute_list_bytes.empty()) {
+    bt_log(TRACE, "sdp", "Empty attribute list is not allowed");
+    partial_response_.reset();
+    continuation_state_ = nullptr;
+    return ToResult(HostError::kPacketMalformed);
+  }
+
+  if (partial_response_.has_value() || !cont_state_view.empty()) {
     // Append to the incomplete buffer.
-    size_t new_partial_size = attribute_list_byte_count;
-    if (partial_response_) {
-      new_partial_size += partial_response_->size();
-    }
-    // We currently don't support more than approx 10 packets of the max size.
+    size_t old_partial_size =
+        partial_response_.has_value() ? partial_response_->size() : 0;
+    size_t new_partial_size = old_partial_size + attribute_list_byte_count;
+    // Drop responses that exceed the maximum supported attribute list size.
     if (new_partial_size > kMaxSupportedAttributeListBytes) {
       bt_log(INFO,
              "sdp",
              "ServiceAttributeResponse exceeds supported size (%zu), dropping",
              new_partial_size);
-      partial_response_ = nullptr;
+      partial_response_.reset();
+      continuation_state_ = nullptr;
       return ToResult(HostError::kNotSupported);
     }
 
-    auto new_partial = NewBuffer(new_partial_size);
-    if (partial_response_) {
-      new_partial->Write(partial_response_->view());
-      new_partial->Write(attribute_list_bytes, partial_response_->size());
-    } else {
-      new_partial->Write(attribute_list_bytes);
+    if (!partial_response_.has_value()) {
+      partial_response_.emplace();
     }
-    partial_response_ = std::move(new_partial);
-    if (continuation_state_) {
+    if (!partial_response_->expand(new_partial_size)) {
+      bt_log(WARN,
+             "sdp",
+             "ServiceAttributeResponse failed to allocate %zu bytes, dropping",
+             new_partial_size);
+      partial_response_.reset();
+      continuation_state_ = nullptr;
+      return ToResult(HostError::kOutOfMemory);
+    }
+    partial_response_->Write(attribute_list_bytes, old_partial_size);
+    if (!cont_state_view.empty()) {
+      continuation_state_ = NewBuffer(cont_state_view.size());
+      continuation_state_->Write(cont_state_view);
       // This is incomplete, we can't parse it yet.
       bt_log(TRACE, "sdp", "Continuation state, returning in progress");
       return ToResult(HostError::kInProgress);
     }
     attribute_list_bytes = partial_response_->view();
   }
+  continuation_state_ = nullptr;
 
   DataElement attribute_list;
   size_t elem_size = DataElement::Read(&attribute_list, attribute_list_bytes);
+  partial_response_.reset();
   if ((elem_size == 0) ||
       (attribute_list.type() != DataElement::Type::kSequence)) {
     bt_log(
@@ -1076,7 +1085,7 @@ fit::result<Error<>> ServiceSearchAttributeResponse::Parse(
   if (complete() && !attribute_lists_.empty()) {
     // This response was previously complete and non-empty
     bt_log(TRACE, "sdp", "can't parse into a complete response");
-    PW_DCHECK(!partial_response_);
+    PW_DCHECK(!partial_response_.has_value());
     return ToResult(HostError::kNotReady);
   }
 
@@ -1103,47 +1112,57 @@ fit::result<Error<>> ServiceSearchAttributeResponse::Parse(
     return ToResult(HostError::kPacketMalformed);
   }
 
-  if (cont_state_view.empty()) {
+  auto attribute_lists_bytes = buf.view(read_size, attribute_lists_byte_count);
+  if (attribute_lists_bytes.empty()) {
+    bt_log(TRACE, "sdp", "empty attribute lists is not allowed");
+    partial_response_.reset();
     continuation_state_ = nullptr;
-  } else {
-    continuation_state_ = NewBuffer(cont_state_view.size());
-    continuation_state_->Write(cont_state_view);
+    return ToResult(HostError::kPacketMalformed);
   }
 
-  auto attribute_lists_bytes = buf.view(read_size, attribute_lists_byte_count);
-  if (partial_response_ || !ContinuationState().empty()) {
+  if (partial_response_.has_value() || !cont_state_view.empty()) {
     // Append to the incomplete buffer.
-    size_t new_partial_size = attribute_lists_byte_count;
-    if (partial_response_) {
-      new_partial_size += partial_response_->size();
-    }
-    // We currently don't support more than approx 10 packets of the max size.
+    size_t old_partial_size =
+        partial_response_.has_value() ? partial_response_->size() : 0;
+    size_t new_partial_size = old_partial_size + attribute_lists_byte_count;
+    // Drop responses that exceed the maximum supported attribute list size.
     if (new_partial_size > kMaxSupportedAttributeListBytes) {
       bt_log(INFO,
              "sdp",
              "ServiceSearchAttributeResponse exceeds supported size, dropping");
-      partial_response_ = nullptr;
+      partial_response_.reset();
+      continuation_state_ = nullptr;
       return ToResult(HostError::kNotSupported);
     }
 
-    auto new_partial = NewBuffer(new_partial_size);
-    if (partial_response_) {
-      new_partial->Write(partial_response_->view());
-      new_partial->Write(attribute_lists_bytes, partial_response_->size());
-    } else {
-      new_partial->Write(attribute_lists_bytes);
+    if (!partial_response_.has_value()) {
+      partial_response_.emplace();
     }
-    partial_response_ = std::move(new_partial);
-    if (continuation_state_) {
+    if (!partial_response_->expand(new_partial_size)) {
+      bt_log(WARN,
+             "sdp",
+             "ServiceSearchAttributeResponse failed to allocate %zu bytes, "
+             "dropping",
+             new_partial_size);
+      partial_response_.reset();
+      continuation_state_ = nullptr;
+      return ToResult(HostError::kOutOfMemory);
+    }
+    partial_response_->Write(attribute_lists_bytes, old_partial_size);
+    if (!cont_state_view.empty()) {
+      continuation_state_ = NewBuffer(cont_state_view.size());
+      continuation_state_->Write(cont_state_view);
       // This is incomplete, we can't parse it yet.
       bt_log(TRACE, "sdp", "continuation state found, returning in progress");
       return ToResult(HostError::kInProgress);
     }
     attribute_lists_bytes = partial_response_->view();
   }
+  continuation_state_ = nullptr;
 
   DataElement attribute_lists;
   size_t elem_size = DataElement::Read(&attribute_lists, attribute_lists_bytes);
+  partial_response_.reset();
   if ((elem_size == 0) ||
       (attribute_lists.type() != DataElement::Type::kSequence)) {
     bt_log(TRACE, "sdp", "couldn't parse attribute lists or wasn't a sequence");
@@ -1198,7 +1217,6 @@ fit::result<Error<>> ServiceSearchAttributeResponse::Parse(
       idx += 2;
     }
   }
-  partial_response_ = nullptr;
   return fit::ok();
 }
 

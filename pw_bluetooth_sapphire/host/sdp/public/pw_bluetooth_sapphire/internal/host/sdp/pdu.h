@@ -39,9 +39,10 @@ inline constexpr size_t kMinMaximumAttributeByteCount = 0x0007;
 inline constexpr size_t kMaxAttributeRangesInRequest = 520;
 
 // The maximum amount of Attribute list data we will store when parsing a
-// response to ServiceAttribute or ServiceSearchAttribute responses. 640kb ought
-// to be enough for anybody.
-inline constexpr size_t kMaxSupportedAttributeListBytes = 655360;
+// response to ServiceAttribute or ServiceSearchAttribute responses. Bounded to
+// a single max-MTU SDU so that a peer cannot drive the reassembly buffer
+// beyond a constrained MCU heap.
+inline constexpr size_t kMaxSupportedAttributeListBytes = 65535;
 
 class Request {
  public:
@@ -357,7 +358,7 @@ class ServiceAttributeResponse : public Response {
   //
   // This contains the partial attribute list response if there is continuation
   // state.
-  MutableByteBufferPtr partial_response_;
+  std::optional<DynamicByteBuffer> partial_response_;
 
   MutableByteBufferPtr continuation_state_;
 
@@ -472,7 +473,7 @@ class ServiceSearchAttributeResponse : public Response {
   //
   // This contains the partial attribute list response if there is continuation
   // state.
-  MutableByteBufferPtr partial_response_;
+  std::optional<DynamicByteBuffer> partial_response_;
 
   MutableByteBufferPtr continuation_state_;
 

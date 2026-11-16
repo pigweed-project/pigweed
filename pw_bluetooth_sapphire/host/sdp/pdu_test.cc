@@ -2171,17 +2171,13 @@ DynamicByteBuffer MakeMaliciousResponse(uint16_t advertised_total,
 //    ServiceHandle is 4 bytes, enforcing handle accumulation <=
 //    TotalServiceRecordCount guarantees that the total memory accumulated in
 //    service_record_handle_list_ across all rounds can never exceed
-//    65,535 * 4 = 262,140 bytes (~256 KiB), inherently capping memory well
-//    below the project-wide SDP attribute list accumulation cap
-//    (kMaxSupportedAttributeListBytes = 640 KiB) enforced by sibling parsers.
+//    65,535 * 4 = 262,140 bytes (~256 KiB), inherently capping memory.
 TEST(PDUTest, ServiceSearchResponseBoundedContinuationGrowth) {
   // Attacker advertises exactly one record but ships ~16 K handles per packet
   // (fills a max-MTU 65 535-byte L2CAP SDU at 4 B/handle) and always sets a
   // continuation token so the client keeps asking for more.
   constexpr uint16_t kAdvertisedTotal = 1;
   constexpr uint16_t kHandlesPerRound = 16368;  // 0x3FF0
-  // Enough rounds to blow well past the 640 KiB sibling cap while keeping the
-  // test fast (~12 rounds * 64 KiB = ~768 KiB of uint32_t).
   constexpr size_t kRounds = 12;
 
   const DynamicByteBuffer attacker_packet =
@@ -2258,6 +2254,105 @@ TEST(PDUTest, ServiceSearchAttributeResponseRejectsExcessiveSequenceElements) {
   EXPECT_EQ(
       ToResult(HostError::kPacketMalformed),
       excessive_response.Parse(make_packet(DataElement::kMaxElements + 1)));
+}
+
+DynamicByteBuffer MakeAttributeContinuationFragment(uint16_t payload_bytes,
+                                                    bool with_continuation) {
+  // Use a 2-byte continuation state so that a 0-byte payload fragment still
+  // meets ServiceSearchAttributeResponse::Parse's minimum packet size (5 B).
+  const size_t cont_len = with_continuation ? 2u : 0u;
+  const size_t total =
+      sizeof(uint16_t) + payload_bytes + sizeof(uint8_t) + cont_len;
+  DynamicByteBuffer buf(total);
+  buf.Fill(0x41);
+  buf.WriteObj(pw::bytes::ConvertOrderTo(cpp20::endian::big, payload_bytes),
+               /*pos=*/0);
+  buf[sizeof(uint16_t) + payload_bytes] = static_cast<uint8_t>(cont_len);
+  return buf;
+}
+
+TEST(PDUTest, ServiceSearchAttributeResponseReassemblyCappedAtMaxSdu) {
+  constexpr uint16_t kLargeFragmentBytes = 65000;
+  constexpr uint16_t kRemainingAllowedBytes =
+      static_cast<uint16_t>(kMaxSupportedAttributeListBytes) -
+      kLargeFragmentBytes;
+
+  ServiceSearchAttributeResponse resp;
+  const DynamicByteBuffer large_frag = MakeAttributeContinuationFragment(
+      kLargeFragmentBytes, /*with_continuation=*/true);
+
+  // First 65,000-byte fragment is within kMaxSupportedAttributeListBytes.
+  EXPECT_EQ(ToResult(HostError::kInProgress), resp.Parse(large_frag));
+  EXPECT_FALSE(resp.ContinuationState().empty());
+
+  // Filling up to exactly kMaxSupportedAttributeListBytes (65,535) succeeds.
+  const DynamicByteBuffer exact_fit_frag = MakeAttributeContinuationFragment(
+      kRemainingAllowedBytes, /*with_continuation=*/true);
+  EXPECT_EQ(ToResult(HostError::kInProgress), resp.Parse(exact_fit_frag));
+  EXPECT_FALSE(resp.ContinuationState().empty());
+
+  // One additional byte exceeds kMaxSupportedAttributeListBytes and drops both
+  // the partial response and continuation state.
+  const DynamicByteBuffer overflow_frag =
+      MakeAttributeContinuationFragment(1, /*with_continuation=*/true);
+  EXPECT_EQ(ToResult(HostError::kNotSupported), resp.Parse(overflow_frag));
+  EXPECT_TRUE(resp.ContinuationState().empty());
+}
+
+TEST(PDUTest, ServiceAttributeResponseReassemblyCappedAtMaxSdu) {
+  constexpr uint16_t kLargeFragmentBytes = 65000;
+  constexpr uint16_t kRemainingAllowedBytes =
+      static_cast<uint16_t>(kMaxSupportedAttributeListBytes) -
+      kLargeFragmentBytes;
+
+  ServiceAttributeResponse resp;
+  const DynamicByteBuffer large_frag = MakeAttributeContinuationFragment(
+      kLargeFragmentBytes, /*with_continuation=*/true);
+
+  EXPECT_EQ(ToResult(HostError::kInProgress), resp.Parse(large_frag));
+  EXPECT_FALSE(resp.ContinuationState().empty());
+
+  const DynamicByteBuffer exact_fit_frag = MakeAttributeContinuationFragment(
+      kRemainingAllowedBytes, /*with_continuation=*/true);
+  EXPECT_EQ(ToResult(HostError::kInProgress), resp.Parse(exact_fit_frag));
+  EXPECT_FALSE(resp.ContinuationState().empty());
+
+  const DynamicByteBuffer overflow_frag =
+      MakeAttributeContinuationFragment(1, /*with_continuation=*/true);
+  EXPECT_EQ(ToResult(HostError::kNotSupported), resp.Parse(overflow_frag));
+  EXPECT_TRUE(resp.ContinuationState().empty());
+}
+
+TEST(PDUTest, RejectsEmptyAttributeContinuationFragments) {
+  const DynamicByteBuffer empty_frag =
+      MakeAttributeContinuationFragment(0, /*with_continuation=*/true);
+  const DynamicByteBuffer valid_frag =
+      MakeAttributeContinuationFragment(16, /*with_continuation=*/true);
+
+  ServiceSearchAttributeResponse search_attr_initial;
+  EXPECT_EQ(ToResult(HostError::kPacketMalformed),
+            search_attr_initial.Parse(empty_frag));
+  EXPECT_TRUE(search_attr_initial.ContinuationState().empty());
+
+  ServiceSearchAttributeResponse search_attr_followup;
+  EXPECT_EQ(ToResult(HostError::kInProgress),
+            search_attr_followup.Parse(valid_frag));
+  EXPECT_FALSE(search_attr_followup.ContinuationState().empty());
+  EXPECT_EQ(ToResult(HostError::kPacketMalformed),
+            search_attr_followup.Parse(empty_frag));
+  EXPECT_TRUE(search_attr_followup.ContinuationState().empty());
+
+  ServiceAttributeResponse attr_initial;
+  EXPECT_EQ(ToResult(HostError::kPacketMalformed),
+            attr_initial.Parse(empty_frag));
+  EXPECT_TRUE(attr_initial.ContinuationState().empty());
+
+  ServiceAttributeResponse attr_followup;
+  EXPECT_EQ(ToResult(HostError::kInProgress), attr_followup.Parse(valid_frag));
+  EXPECT_FALSE(attr_followup.ContinuationState().empty());
+  EXPECT_EQ(ToResult(HostError::kPacketMalformed),
+            attr_followup.Parse(empty_frag));
+  EXPECT_TRUE(attr_followup.ContinuationState().empty());
 }
 
 }  // namespace
