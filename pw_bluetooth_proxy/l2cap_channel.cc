@@ -140,6 +140,14 @@ StatusWithMultiBuf L2capChannel::Write(multibuf::MultiBuf&& payload) {
 }
 
 bool L2capChannel::HandlePduFromController(pw::span<uint8_t> l2cap_pdu) {
+#if PW_BLUETOOTH_PROXY_ASYNC == 0
+  internal::L2capChannelImpl::ClientCallbackGuard callback_guard(impl_);
+  if (!callback_guard.active()) {
+    // Forward the PDU, as happens once a closed channel is no longer found.
+    return false;
+  }
+#endif  // PW_BLUETOOTH_PROXY_ASYNC == 0
+
   if (state() != State::kRunning) {
     impl_.SendEvent(L2capChannelEvent::kRxWhileStopped);
     return true;
@@ -541,6 +549,14 @@ internal::TxEngine& L2capChannel::tx_engine() {
 }
 
 bool L2capChannel::HandlePduFromHost(pw::span<uint8_t> l2cap_pdu) {
+#if PW_BLUETOOTH_PROXY_ASYNC == 0
+  internal::L2capChannelImpl::ClientCallbackGuard callback_guard(impl_);
+  if (!callback_guard.active()) {
+    // Forward the PDU, as happens once a closed channel is no longer found.
+    return false;
+  }
+#endif  // PW_BLUETOOTH_PROXY_ASYNC == 0
+
   internal::TxEngine::HandlePduFromHostReturnValue result;
   {
     std::lock_guard lock(impl_.mutex_);

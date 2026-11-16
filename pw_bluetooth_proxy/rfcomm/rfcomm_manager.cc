@@ -72,6 +72,18 @@ Result<RfcommChannel> RfcommManager::DoAcquireRfcommChannel(
   // If the connection is not found, create a new connection state and L2CAP
   // channel proxy.
   if (it == connections_.end()) {
+    // Insert before creating the proxy so a failed insert never destroys a
+    // live proxy under `connections_mutex_`, which its callbacks acquire.
+    auto emplace_result = connections_.try_emplace(connection_handle,
+                                                   connection_handle,
+                                                   rx_config.cid,
+                                                   tx_config.cid,
+                                                   allocator_);
+    if (!emplace_result.has_value()) {
+      return Status::ResourceExhausted();
+    }
+    it = emplace_result.value().first;
+
     OptionalBufferReceiveFunction from_controller_fn =
         [this](multibuf::MultiBuf&& payload,
                ConnectionHandle handle,
@@ -94,18 +106,11 @@ Result<RfcommChannel> RfcommManager::DoAcquireRfcommChannel(
         });
 
     if (!proxy_result.ok()) {
+      // No proxy is attached yet, so this destroys no proxy under the lock.
+      connections_.erase(it);
       return proxy_result.status();
     }
 
-    auto emplace_result = connections_.try_emplace(connection_handle,
-                                                   connection_handle,
-                                                   rx_config.cid,
-                                                   tx_config.cid,
-                                                   allocator_);
-    if (!emplace_result.has_value()) {
-      return Status::ResourceExhausted();
-    }
-    it = emplace_result.value().first;
     it->second.l2cap_channel_proxy = std::move(proxy_result).value();
     PW_LOG_INFO("New RFCOMM connection state created for connection handle %hu",
                 static_cast<uint16_t>(connection_handle));

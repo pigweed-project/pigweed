@@ -107,6 +107,7 @@ cc_library_static {
     defaults: [
         "pw_android_common_backends",
         "pw_android_common_target_support",
+        "pw_thread",
     ],
 
     // LINT.IfChange

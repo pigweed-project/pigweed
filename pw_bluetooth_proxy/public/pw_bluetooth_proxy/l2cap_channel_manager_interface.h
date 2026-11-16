@@ -80,6 +80,13 @@ class L2capChannelManagerInterface {
   ///                                       Must outlive the channel and remain
   ///                                       valid until the channel destructor
   ///                                       returns.
+  ///
+  /// In sync mode (`PW_BLUETOOTH_PROXY_ASYNC == 0`), destroying the returned
+  /// `ChannelProxy` blocks until its callbacks running on other threads return.
+  /// Do not destroy it while holding a lock that its callbacks acquire, or from
+  /// a thread that a callback waits on. Destroying it from within one of its
+  /// own callbacks is allowed.
+  ///
   /// @returns @Result{the channel}
   /// * @INVALID_ARGUMENT: Arguments are invalid. Check the logs.
   /// * @UNAVAILABLE: A channel could not be created because no memory was
@@ -120,6 +127,12 @@ class L2capChannelManagerInterface {
   ///                                   Must outlive the channel and remain
   ///                                   valid until the channel destructor
   ///                                   returns.
+  ///
+  /// In sync mode (`PW_BLUETOOTH_PROXY_ASYNC == 0`), destroying the returned
+  /// `ChannelProxy` blocks until its callbacks running on other threads return.
+  /// Do not destroy it while holding a lock that its callbacks acquire, or from
+  /// a thread that a callback waits on. Destroying it from within one of its
+  /// own callbacks is allowed.
   ///
   /// @returns @Result{the channel}
   /// * @INVALID_ARGUMENT: Arguments are invalid. Check the logs.

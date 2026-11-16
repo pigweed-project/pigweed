@@ -43,6 +43,13 @@ namespace internal {
 /// L2CAP channels are implemented using two types: an "internal" type that is
 /// and managed by the L2capChannelManager, and a client-facing channel that
 /// provides the public channel interface.
+///
+/// In sync mode (`PW_BLUETOOTH_PROXY_ASYNC == 0`), destroying or move-assigning
+/// a channel blocks until its callbacks running on other threads return, and
+/// no callbacks run after that. Do not destroy a channel while holding a lock
+/// that its callbacks acquire, or from a thread that a callback waits on.
+/// Destroying a channel from within one of its own callbacks is allowed; it
+/// then waits only for callbacks running on other threads.
 class GenericL2capChannel {
  public:
   GenericL2capChannel(const GenericL2capChannel& other) = delete;

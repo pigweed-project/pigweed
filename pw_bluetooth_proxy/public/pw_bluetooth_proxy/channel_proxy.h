@@ -20,6 +20,13 @@
 namespace pw::bluetooth::proxy {
 
 /// ChannelProxy is the client API for an intercepted L2CAP channel.
+///
+/// In sync mode (`PW_BLUETOOTH_PROXY_ASYNC == 0`), destroying a `ChannelProxy`
+/// blocks until its callbacks running on other threads return, and no
+/// callbacks run after that. Do not destroy it while holding a lock that its
+/// callbacks acquire, or from a thread that a callback waits on. Destroying it
+/// from within one of its own callbacks is allowed; it then waits only for
+/// callbacks running on other threads.
 class ChannelProxy {
  public:
   virtual ~ChannelProxy() = default;

@@ -24,6 +24,7 @@
 #include "pw_bluetooth_proxy/internal/l2cap_channel_manager.h"
 #include "pw_log/log.h"
 #include "pw_status/status.h"
+#include "pw_thread/id.h"
 
 namespace pw::bluetooth::proxy::internal {
 
@@ -59,6 +60,77 @@ L2capChannel* BorrowedL2capChannel::operator->() { return &impl_->channel_; }
 
 L2capChannel& BorrowedL2capChannel::operator*() { return impl_->channel_; }
 
+L2capChannelImpl::ClientCallbackGuard::ClientCallbackGuard(
+    L2capChannelImpl& impl) {
+  std::lock_guard lock(L2capChannelImpl::mutex());
+  if (impl.closed_) {
+    return;
+  }
+  // Borrow first so the channel outlives the unlink in the destructor.
+  borrowed_ = BorrowedL2capChannel(impl);
+  callback_ = {this_thread::get_id(), impl.active_callbacks_};
+  impl.active_callbacks_ = &callback_;
+}
+
+L2capChannelImpl::ClientCallbackGuard::~ClientCallbackGuard() {
+  L2capChannelImpl* impl = borrowed_.impl_;
+  if (impl == nullptr) {
+    return;
+  }
+  std::lock_guard lock(L2capChannelImpl::mutex());
+  for (ActiveCallback** cur = &impl->active_callbacks_; *cur != nullptr;
+       cur = &(*cur)->next) {
+    if (*cur == &callback_) {
+      *cur = callback_.next;
+      break;
+    }
+  }
+  // Finish a client detach that `Close()` deferred while callbacks ran.
+  if (impl->closed_ && impl->active_callbacks_ == nullptr &&
+      impl->client_ != nullptr) {
+    impl->client_->channel_ = nullptr;
+    impl->client_ = nullptr;
+  }
+  // Signal while still holding the lock: the waiter destroys the notification
+  // as soon as it reacquires the lock and sees no cross-thread callbacks.
+  if (impl->disconnect_waiter_ != nullptr) {
+    impl->disconnect_waiter_->release();
+  }
+}
+
+bool L2capChannelImpl::HasCrossThreadCallbackLocked(
+    thread::Id caller_id) const {
+  for (const ActiveCallback* cb = active_callbacks_; cb != nullptr;
+       cb = cb->next) {
+    if (cb->thread_id != caller_id) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void L2capChannelImpl::DisconnectClientLocked(
+    std::unique_lock<sync::Mutex>& lock) PW_NO_LOCK_SAFETY_ANALYSIS {
+  closed_ = true;
+  client_ = nullptr;
+  const thread::Id caller_id = this_thread::get_id();
+  if (!HasCrossThreadCallbackLocked(caller_id)) {
+    return;
+  }
+  // Self-borrow while `static_mutex_` is unlocked so a concurrent drain cannot
+  // destroy `*this` while we are parked on `waiter`.
+  BorrowedL2capChannel borrowed(*this);
+  sync::ThreadNotification waiter;
+  PW_DCHECK(disconnect_waiter_ == nullptr);
+  disconnect_waiter_ = &waiter;
+  do {
+    lock.unlock();
+    waiter.acquire();
+    lock.lock();
+  } while (HasCrossThreadCallbackLocked(caller_id));
+  disconnect_waiter_ = nullptr;
+}
+
 void L2capChannelImpl::BlockWhileBorrowed(
     std::unique_lock<internal::Mutex>& lock) PW_NO_LOCK_SAFETY_ANALYSIS {
   while (num_borrows_ != 0) {
@@ -70,11 +142,14 @@ void L2capChannelImpl::BlockWhileBorrowed(
 
 void L2capChannelImpl::Close() {
   std::lock_guard lock(L2capChannelImpl::mutex());
-  if (client_.has_value() && *client_ != nullptr) {
-    (*client_)->channel_ = nullptr;
+  closed_ = true;
+  // Leave the client attached while callbacks run, so a client destroyed
+  // meanwhile still finds this channel and waits for them;
+  // `~ClientCallbackGuard()` detaches it.
+  if (active_callbacks_ == nullptr && client_ != nullptr) {
+    client_->channel_ = nullptr;
+    client_ = nullptr;
   }
-  // Always set to null to mark channel as stale, even if it was not acquired.
-  client_ = nullptr;
 }
 
 StatusWithMultiBuf L2capChannelImpl::Write(multibuf::MultiBuf&& payload)
@@ -155,7 +230,7 @@ void L2capChannelImpl::ClearQueue() { payload_queue_.clear(); }
 
 bool L2capChannelImpl::IsStale() const {
   std::lock_guard lock(L2capChannelImpl::mutex());
-  return client_.has_value() && *client_ == nullptr;
+  return closed_;
 }
 
 bool L2capChannelImpl::PayloadQueueEmpty() const {
@@ -164,13 +239,14 @@ bool L2capChannelImpl::PayloadQueueEmpty() const {
 }
 
 void L2capChannelImpl::SendEvent(L2capChannelEvent event) {
-  BorrowedL2capChannel borrowed;
-  {
-    std::lock_guard lock(L2capChannelImpl::mutex());
-    if (!client_.has_value() || *client_ == nullptr) {
-      return;
-    }
-    borrowed = BorrowedL2capChannel(*this);
+  // Internal channels have no `event_fn_`.
+  if (!channel_.event_fn_) {
+    return;
+  }
+  // Closed channels suppress events.
+  ClientCallbackGuard callback_guard(*this);
+  if (!callback_guard.active()) {
+    return;
   }
 
   // We don't log kWriteAvailable since they happen often. Optimally we would
@@ -179,14 +255,12 @@ void L2capChannelImpl::SendEvent(L2capChannelEvent event) {
     PW_LOG_INFO(
         "btproxy: L2capChannel::SendEvent -  connection: %#x, "
         "local_cid: %#x, event: %u,",
-        borrowed->connection_handle(),
-        borrowed->local_cid(),
+        channel_.connection_handle(),
+        channel_.local_cid(),
         cpp23::to_underlying(event));
   }
 
-  if (borrowed->event_fn_) {
-    borrowed->event_fn_(event);
-  }
+  channel_.event_fn_(event);
 }
 
 }  // namespace pw::bluetooth::proxy::internal

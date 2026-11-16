@@ -815,7 +815,6 @@ void L2capChannelManager::CreateSilentCreditBasedFlowControlChannel(
     const ConnectionOrientedChannelConfig& tx_config) {
   uint32_t key = L2capChannel::MakeKey(cpp23::to_underlying(connection_handle),
                                        rx_config.cid);
-  ChannelEventCallback no_op_event_fn = [](L2capChannelEvent) {};
   MultiBufReceiveFunction no_op_receive_fn = [](multibuf::MultiBuf) {};
 
   auto silent_node = CreateChannel(key,
@@ -824,7 +823,7 @@ void L2capChannelManager::CreateSilentCreditBasedFlowControlChannel(
                                    AclTransportType::kLe,
                                    rx_config.cid,
                                    tx_config.cid,
-                                   std::move(no_op_event_fn),
+                                   /*event_fn=*/nullptr,
                                    rx_config.allow_data_loss);
   if (!silent_node.ok()) {
     PW_LOG_ERROR(
@@ -863,7 +862,6 @@ void L2capChannelManager::CreateSilentBasicChannel(
     AclTransportType transport) {
   uint32_t key =
       L2capChannel::MakeKey(cpp23::to_underlying(connection_handle), local_cid);
-  ChannelEventCallback no_op_event_fn = [](L2capChannelEvent) {};
   BufferReceiveFunction no_op_payload_from_controller_fn =
       [](ConstByteSpan, ConnectionHandle, uint16_t, uint16_t) { return true; };
   BufferReceiveFunction no_op_payload_from_host_fn =
@@ -875,7 +873,7 @@ void L2capChannelManager::CreateSilentBasicChannel(
                                    transport,
                                    local_cid,
                                    remote_cid,
-                                   std::move(no_op_event_fn));
+                                   /*event_fn=*/nullptr);
   if (!silent_node.ok()) {
     PW_LOG_ERROR("Failed to create silent basic mode L2CAP channel %#x: %s",
                  local_cid,

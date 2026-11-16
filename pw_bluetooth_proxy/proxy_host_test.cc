@@ -17,6 +17,8 @@
 #include <sys/types.h>
 
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <mutex>
 #include <span>
@@ -47,6 +49,8 @@
 #include "pw_span/span.h"
 #include "pw_status/status.h"
 #include "pw_sync/mutex.h"
+#include "pw_sync/thread_notification.h"
+#include "pw_thread/sleep.h"
 #include "pw_thread/test_thread_context.h"
 #include "pw_thread/thread.h"
 #include "pw_unit_test/framework.h"
@@ -6756,6 +6760,167 @@ TEST_F(ProxyHostTest, WriteAvailableCallbackCanAcquireChannel) {
   EXPECT_EQ(state.write_available_count, 1);
   EXPECT_TRUE(state.aux_channel.has_value());
 }
+
+#if PW_THREAD_JOINING_ENABLED
+
+// Destroying or move-assigning a client channel must not return while one of
+// the channel's callbacks is still running on another thread.
+class ClientChannelDisconnectTest : public ProxyHostTest {
+ protected:
+  static constexpr uint16_t kCid = 0x0040;
+  static constexpr std::array<uint8_t, 2> kPayload = {0xAA, 0xBB};
+
+  void SetUp() override {
+    PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+        proxy_, kConnectionHandle, emboss::StatusCode::SUCCESS));
+  }
+
+  void SendRxPdu() {
+    SendL2capBFrame(proxy_, kConnectionHandle, kPayload, kPayload.size(), kCid);
+  }
+
+  void InitChannel(Function<void()> on_event = nullptr) {
+    on_event_ = std::move(on_event);
+    channel_ = BuildBasicL2capChannel(proxy_,
+                                      {.handle = kConnectionHandle,
+                                       .local_cid = kCid,
+                                       .remote_cid = kCid,
+                                       .payload_from_controller_fn =
+                                           [this](multibuf::MultiBuf&&) {
+                                             callbacks_.fetch_add(1);
+                                             callback_entered_.release();
+                                             release_callback_.acquire();
+                                             return std::nullopt;
+                                           },
+                                       .event_fn =
+                                           [this](L2capChannelEvent) {
+                                             callbacks_.fetch_add(1);
+                                             if (on_event_) {
+                                               on_event_();
+                                             }
+                                           }});
+  }
+
+  // Blocks an Rx callback of `channel_` on one thread, then runs `disconnect`
+  // on a second thread. Checks that `disconnect` returns only after the Rx
+  // callback is released, and that the channel gets no callbacks afterward.
+  // `on_event`, if set, runs whenever the channel gets an event.
+  void ExpectDisconnectWaitsForRxCallback(Function<void()> disconnect,
+                                          Function<void()> on_event = nullptr) {
+    InitChannel(std::move(on_event));
+
+    thread::test::TestThreadContext rx_context;
+    Thread rx_thread(rx_context.options(), [this] { SendRxPdu(); });
+    callback_entered_.acquire();
+
+    disconnect_ = std::move(disconnect);
+    thread::test::TestThreadContext disconnect_context;
+    Thread disconnect_thread(disconnect_context.options(), [this] {
+      disconnect_();
+      disconnect_returned_.store(true);
+    });
+    // Gives a disconnect that fails to wait time to return. A missing wait can
+    // only make this pass spuriously, never fail spuriously.
+    this_thread::sleep_for(std::chrono::milliseconds(10));
+    EXPECT_FALSE(disconnect_returned_.load());
+
+    release_callback_.release();
+    disconnect_thread.join();
+    rx_thread.join();
+
+    // The disconnected channel gets neither Rx payloads nor events.
+    const int callbacks_before = callbacks_.load();
+    SendRxPdu();
+    PW_TEST_EXPECT_OK(
+        SendDisconnectionCompleteEvent(proxy_, kConnectionHandle));
+    EXPECT_EQ(callbacks_.load(), callbacks_before);
+  }
+
+  // Used by the channel's callbacks, so these outlive `proxy_` and `channel_`.
+  sync::ThreadNotification callback_entered_;
+  sync::ThreadNotification release_callback_;
+  std::atomic<int> callbacks_ = 0;
+  Function<void()> on_event_;
+
+  ProxyHost proxy_{[](H4PacketWithHci&&) {},
+                   [](H4PacketWithH4&&) {},
+                   /*le_acl_credits_to_reserve=*/0,
+                   /*br_edr_acl_credits_to_reserve=*/0,
+                   GetProxyHostAllocator()};
+  std::optional<BasicL2capChannel> channel_;
+
+  // Members rather than locals so that the lambdas that use them capture only
+  // `this`. A `pw::Function` holds a single pointer by default.
+  Function<void()> disconnect_;
+  std::atomic<bool> disconnect_returned_ = false;
+  std::optional<BasicL2capChannel> replacement_;
+};
+
+TEST_F(ClientChannelDisconnectTest, DestroyWaitsForCallbackOnOtherThread) {
+  ExpectDisconnectWaitsForRxCallback([this] { channel_.reset(); });
+}
+
+TEST_F(ClientChannelDisconnectTest, MoveAssignWaitsForCallbackOnOtherThread) {
+  replacement_ = BuildBasicL2capChannel(proxy_,
+                                        {.handle = kConnectionHandle,
+                                         .local_cid = kCid + 1,
+                                         .remote_cid = kCid + 1});
+  ExpectDisconnectWaitsForRxCallback(
+      [this] { *channel_ = std::move(*replacement_); });
+}
+
+// A channel destroyed from inside its own callback must not wait for that
+// callback, which would deadlock, but must still wait for the Rx callback
+// running on the other thread.
+TEST_F(ClientChannelDisconnectTest,
+       DestroyInOwnCallbackWaitsOnlyForCallbackOnOtherThread) {
+  // `Close()` sends `kChannelClosedByOther` on the calling thread, and the
+  // event callback then destroys the channel.
+  ExpectDisconnectWaitsForRxCallback([this] { channel_->Close(); },
+                                     [this] { channel_.reset(); });
+  EXPECT_FALSE(channel_.has_value());
+}
+
+// `Close()` defers detaching the client while a callback is running, so a
+// client destroyed after `Close()` returns still waits for the callback.
+TEST_F(ClientChannelDisconnectTest,
+       DestroyAfterCloseWaitsForCallbackOnOtherThread) {
+  ExpectDisconnectWaitsForRxCallback([this] {
+    channel_->Close();
+    channel_.reset();
+  });
+  EXPECT_FALSE(channel_.has_value());
+}
+
+// If `Close()` returns while a callback is running and the client outlives the
+// callback, `~ClientCallbackGuard()` finishes detaching the client when the
+// callback returns.
+TEST_F(ClientChannelDisconnectTest,
+       CloseDuringCallbackDetachesClientWhenCallbackReturns) {
+  InitChannel();
+
+  thread::test::TestThreadContext rx_context;
+  Thread rx_thread(rx_context.options(), [this] { SendRxPdu(); });
+  callback_entered_.acquire();
+
+  channel_->Close();
+  // `Close()` deferred detaching `channel_` while the Rx callback ran.
+  EXPECT_NE(channel_->InternalForTesting(), nullptr);
+
+  release_callback_.release();
+  rx_thread.join();
+  // `~ClientCallbackGuard()` detached `channel_` when the callback returned.
+  EXPECT_EQ(channel_->InternalForTesting(), nullptr);
+
+  channel_.reset();
+
+  const int callbacks_before = callbacks_.load();
+  SendRxPdu();
+  PW_TEST_EXPECT_OK(SendDisconnectionCompleteEvent(proxy_, kConnectionHandle));
+  EXPECT_EQ(callbacks_.load(), callbacks_before);
+}
+
+#endif  // PW_THREAD_JOINING_ENABLED
 
 #endif  // PW_BLUETOOTH_PROXY_ASYNC == 0
 }  // namespace

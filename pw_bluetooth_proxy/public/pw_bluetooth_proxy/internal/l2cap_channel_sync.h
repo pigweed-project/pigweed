@@ -29,6 +29,7 @@
 #include "pw_status/status.h"
 #include "pw_sync/mutex.h"
 #include "pw_sync/thread_notification.h"
+#include "pw_thread/id.h"
 
 namespace pw::bluetooth::proxy {
 
@@ -105,8 +106,8 @@ class L2capChannelImpl {
   void SendEventLocked(L2capChannelEvent event)
       PW_EXCLUSIVE_LOCKS_REQUIRED(static_mutex_);
 
-  // Returns whether this object is stale, that is, whether it is an acquired
-  // channel whose client has disconnected.
+  // Returns whether this object is stale, that is, whether it has been closed
+  // or its client has disconnected.
   bool IsStale() const PW_LOCKS_EXCLUDED(static_mutex_);
 
  private:
@@ -114,12 +115,51 @@ class L2capChannelImpl {
   friend class BorrowedL2capChannel;
   friend class GenericL2capChannelImpl;
 
+  struct ActiveCallback {
+    thread::Id thread_id;
+    ActiveCallback* next = nullptr;
+  };
+
+  /// Registers a running channel callback (`from_controller_fn_`,
+  /// `from_host_fn_`, or `event_fn_`) so a client disconnecting on another
+  /// thread waits for it. Inactive if the channel is already closed, in which
+  /// case the callback must not run.
+  class ClientCallbackGuard {
+   public:
+    explicit ClientCallbackGuard(L2capChannelImpl& impl)
+        PW_LOCKS_EXCLUDED(static_mutex_, mutex_);
+    ClientCallbackGuard(const ClientCallbackGuard&) = delete;
+    ClientCallbackGuard& operator=(const ClientCallbackGuard&) = delete;
+    ClientCallbackGuard(ClientCallbackGuard&&) = delete;
+    ClientCallbackGuard& operator=(ClientCallbackGuard&&) = delete;
+    ~ClientCallbackGuard() PW_LOCKS_EXCLUDED(static_mutex_, mutex_);
+
+    bool active() const { return borrowed_.impl_ != nullptr; }
+
+   private:
+    // Declared first so it is destroyed last, releasing the borrow only after
+    // the destructor body has unlinked `callback_`.
+    BorrowedL2capChannel borrowed_;
+    ActiveCallback callback_{};
+  };
+
   explicit L2capChannelImpl(L2capChannel& channel) : channel_(channel) {}
 
   /// Completes initialization of the channel details.
   ///
   /// Trivially succeeds when using sync mode.
   constexpr Status Init() { return OkStatus(); }
+
+  /// Returns whether a callback is running on a thread other than `caller_id`.
+  bool HasCrossThreadCallbackLocked(thread::Id caller_id) const
+      PW_EXCLUSIVE_LOCKS_REQUIRED(static_mutex_);
+
+  /// Disconnects the client and waits for callbacks running on other threads
+  /// to return, releasing `lock` (`static_mutex_`) while waiting. Callbacks on
+  /// the calling thread are not waited for.
+  ///
+  /// The caller must not hold any lock that the channel's callbacks acquire.
+  void DisconnectClientLocked(std::unique_lock<sync::Mutex>& lock);
 
   /// Blocks until notified that the number of borrows has reached zero.
   ///
@@ -165,10 +205,18 @@ class L2capChannelImpl {
 
   L2capChannel& channel_;
 
-  // Holds a pointer to the acquired client channel. Channels that are not
-  // acquired, e.g. signaling channels, will not have a value. Channels that
-  // have been disconnected will have a null value.
-  std::optional<GenericL2capChannelImpl*> client_ PW_GUARDED_BY(static_mutex_);
+  // Pointer to the acquired client channel while connected, or nullptr for
+  // internal channels (e.g. signaling channels) and disconnected channels.
+  GenericL2capChannelImpl* client_ PW_GUARDED_BY(static_mutex_) = nullptr;
+
+  // Running callbacks, linked through `ClientCallbackGuard`s on their stacks,
+  // so a disconnect can tell callbacks on other threads from re-entrant ones.
+  ActiveCallback* active_callbacks_ PW_GUARDED_BY(static_mutex_) = nullptr;
+
+  // Set while `DisconnectClientLocked()` waits. At most one, since only one
+  // client owns a channel.
+  sync::ThreadNotification* disconnect_waiter_ PW_GUARDED_BY(static_mutex_) =
+      nullptr;
 
   // Stores client Tx payload buffers.
   InlineQueue<multibuf::MultiBuf, kQueueCapacity> payload_queue_
@@ -180,6 +228,9 @@ class L2capChannelImpl {
 
   /// The number of outstanding `BorrowedL2capChannel` objects for this object.
   uint8_t num_borrows_ PW_GUARDED_BY(mutex_) = 0;
+
+  // Set by `Close()` or a client disconnect; stops new callbacks from running.
+  bool closed_ PW_GUARDED_BY(static_mutex_) = false;
 
   /// Used to unblock the destructor when the number of borrows drops to zero.
   sync::ThreadNotification notification_;

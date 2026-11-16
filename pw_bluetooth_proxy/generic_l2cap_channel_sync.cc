@@ -17,6 +17,7 @@
 #if PW_BLUETOOTH_PROXY_ASYNC == 0
 
 #include <mutex>
+#include <utility>
 
 #include "pw_assert/check.h"
 #include "pw_bluetooth_proxy/internal/generic_l2cap_channel.h"
@@ -33,14 +34,14 @@ GenericL2capChannelImpl::GenericL2capChannelImpl(L2capChannel& channel)
 }
 
 GenericL2capChannelImpl& GenericL2capChannelImpl::operator=(
-    GenericL2capChannelImpl&& other) {
+    GenericL2capChannelImpl&& other) PW_NO_LOCK_SAFETY_ANALYSIS {
   if (this == &other) {
     return *this;
   }
 
-  std::lock_guard lock(L2capChannelImpl::mutex());
+  std::unique_lock lock(L2capChannelImpl::mutex());
   if (channel_ != nullptr) {
-    channel_->impl_.client_ = nullptr;
+    std::exchange(channel_, nullptr)->impl_.DisconnectClientLocked(lock);
   }
   channel_ = std::exchange(other.channel_, nullptr);
   if (channel_ != nullptr) {
@@ -50,9 +51,9 @@ GenericL2capChannelImpl& GenericL2capChannelImpl::operator=(
 }
 
 GenericL2capChannelImpl::~GenericL2capChannelImpl() {
-  std::lock_guard lock(L2capChannelImpl::mutex());
+  std::unique_lock lock(L2capChannelImpl::mutex());
   if (channel_ != nullptr) {
-    channel_->impl_.client_ = nullptr;
+    std::exchange(channel_, nullptr)->impl_.DisconnectClientLocked(lock);
   }
 }
 

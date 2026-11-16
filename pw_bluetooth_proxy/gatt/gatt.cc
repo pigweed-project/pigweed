@@ -498,6 +498,9 @@ void Gatt::OnL2capEvent(L2capChannelEvent event,
 void Gatt::OnChannelClosedEvent(ConnectionHandle connection_handle) {
   ClientMap closing_clients(allocator_);
   ServerMap closing_servers(allocator_);
+  // Destroyed after the locks are released, since destroying it waits for
+  // channel callbacks that acquire them.
+  UniquePtr<ChannelProxy> closing_channel;
 
   {
     std::lock_guard queue_lock(delegate_mutex_);
@@ -511,6 +514,7 @@ void Gatt::OnChannelClosedEvent(ConnectionHandle connection_handle) {
     Connection& conn = conn_iter->second;
     closing_clients.swap(conn.clients);
     closing_servers.swap(conn.servers);
+    closing_channel = std::move(conn.att_channel);
 
     connections_.erase(conn_iter);
 
