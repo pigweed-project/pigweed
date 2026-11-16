@@ -66,4 +66,4 @@ Some examples of popular DAQ devices are
    Design <design>
    daq_cli
    daq_lib
-   Backends <backends/docs>
+   Backends <py/pw_daq/backends/docs>

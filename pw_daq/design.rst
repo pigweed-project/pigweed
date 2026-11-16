@@ -15,11 +15,13 @@ consistent set of functionality. Examples of blocks are UART, DigitalIO, PWM,
 ADC, DAC, etc.
 
 Each block provides a set of :ref:`endpoints <module-pw_daq-design-endpoints>`,
-which can either be an Event or an Action. Events are emitted when a relevant
-physical event or block state change occurs and may carry an associated output
-value. Actions may be invoked with an input value (``InValue``). Actions either
-cause some physical action (possibly leading to an Event) or change the state
-of the block.
+which can be an Attribute, a Signal, or an Action. Attributes represent
+configuration options or properties of a block that can be set at creation or
+queried and modified at runtime. Signals emit an Event when a relevant physical
+event or block state change occurs and may carry an associated output value.
+Actions may be invoked with an input value (``InValue``). Actions either cause
+some physical action (possibly leading to a Signal emitting an Event) or change
+the state of the block.
 
 .. mermaid::
 
@@ -61,14 +63,34 @@ and outputs, but a backend could reasonably tie ``digital0`` to a single pin.
 Instances of blocks are named using the ``<block_type><N>`` format, where
 ``<block_type>`` is one of the types listed below and ``<N>`` is a number
 representing the index of the peripheral or function, e.g. ``uart1`` or
-``digital0``. The mapping between index number and actual hardware is defined
-by the backend in use.
+``digital0``. How virtual blocks and resources map to actual hardware on a
+concrete device is described in the device's
+:ref:`capabilities <module-pw_daq-design-capabilities>`.
+
+.. _module-pw_daq-design-endpoints:
+
+Endpoints
+=========
+Endpoints are Attributes, Signals, or Actions associated with a Block. Endpoints
+are specified using the following notation: ``<block>.<endpoint>``, where
+``<block>`` is the specific name of the owning block, e.g. ``digital1``, and
+``<endpoint>`` is the name of the Attribute, Signal, or Action, e.g. ``pull`` or
+``write``. So in these examples, the Endpoints would be noted as:
+``digital1.pull`` or ``digital1.write``.
+
+.. note::
+
+   A leading ``.`` is used in documentation to indicate an Attribute, Signal, or
+   Action outside the context of a specific Block. When specified on the command
+   line, however, an Attribute, Signal, or Action will always be paired with a
+   Block to form a complete endpoint.
 
 Attributes
 ----------
-Blocks may have attributes associated with them—essentially configuration
-options that can be set at creation or changed dynamically (depending on the
-backend in use), such as a UART block's baud rate.
+Attributes are Endpoints that represent configuration options or properties
+associated with a Block—options that can be set at creation or changed
+dynamically according to the attribute's ``mutability`` trait in the abstract
+DAQ specification, such as a UART block's baud rate.
 
 Attributes may have a limited set of valid values. These values will be defined
 below in :ref:`module-pw_daq-design-block-details`.
@@ -82,7 +104,7 @@ Traits
 ^^^^^^
 Attributes can have "traits". Traits define the specific abilities and
 interactions an attribute can have. The below table defines all traits defined
-by the abstract DAQ. Additional traits may be defined by a backend.
+by the abstract DAQ.
 
 .. list-table::
    :header-rows: 1
@@ -111,37 +133,38 @@ by the abstract DAQ. Additional traits may be defined by a backend.
    specified. ``const`` attributes do not have a default as they cannot be
    changed, even at block creation.
 
-The abstract DAQ defines traits for all attributes; each backend may be less
-restrictive than what the abstract DAQ defines, for example allowing an
-attribute to be modified at run-time when it is marked as ``init``. However, a
-backend should not be *more* restrictive than the abstract DAQ. This ensures a
-moderate level of interoperability between different backends. In either case,
-any divergence from the abstract DAQ interface should be well documented.
+The abstract DAQ defines the attribute specification—supported attributes,
+value types, defaults, and ``mutability`` traits—for each block, and backends
+must adhere to this specification without adding custom attributes or relaxing
+or tightening ``mutability`` traits. Where an attribute's valid value set is
+backend-specific (for example, values marked ``BED`` such as supported UART
+baud rates, or valid pin indices), the backend defines the supported values and
+reports them via ``capabilities``.
 
-.. _module-pw_daq-design-endpoints:
-
-Endpoints
-=========
-Endpoints are either Events or Actions associated with a Block. Endpoints are
-specified using the following notation: ``<block>.<endpoint>``, where
-``<block>`` is the specific name of the owning block, e.g. ``digital1``, and
-``.<endpoint>`` is the name of the Event or Action, e.g. ``.write``. So in this
-example, the Endpoint would be noted as: ``digital1.write``.
+Pins
+^^^^
+There are many attributes that define which "pins" a block interacts with. The
+abstract DAQ defines virtual pins using the ``p<N>`` notation (e.g. ``p0``,
+``p1``, ``p2``), where ``<N>`` is a non-negative integer starting at ``0`` up
+to some backend-defined maximum. Not all indices need to correspond to a valid
+virtual pin, and the mapping between a virtual pin and the actual hardware pin
+or terminal is defined in the device's
+:ref:`capabilities <module-pw_daq-design-capabilities>`.
 
 .. note::
 
-   The leading ``.`` is used in documentation to indicate an Event or Action
-   outside the context of a specific Block. When specified on the command line,
-   however, the Action or Event will always be paired with a Block to form a
-   complete endpoint.
+   Don't assume that the abstract DAQ virtual pin (e.g. ``p0``) has the same
+   number as the real DAQ's physical pin numbers. Inspect the device
+   ``capabilities`` to determine the mapping from virtual pins to real hardware
+   resources.
 
-Events
-------
-Events are Endpoints that are "emitted" when a change of state happens in the
-associated Block or some hardware event occurs. Event endpoints generate Event
-instances, which are the actual occurrence.
+Signals
+-------
+Signals are Endpoints that emit an "Event" when a change of state happens in
+the associated Block or some hardware event occurs. Signal endpoints generate
+Events, which represent each actual occurrence of the signal.
 
-An Event instance contains three pieces of information:
+An Event contains three pieces of information:
 
 1. The timestamp (in local DAQ time) at which the event occurred.
 2. The endpoint that created the event (including the block index).
@@ -162,17 +185,20 @@ An Event instance contains three pieces of information:
    * Timestamps are guaranteed to be monotonic except across a reset or power
      cycle.
 
-A DAQ device logs Event instances as they occur. The size of this log depends
-on the concrete DAQ being used.
+A DAQ device logs Events as they occur. The size of this log depends on the
+concrete DAQ being used.
 
 Actions
 -------
 Actions are Endpoints that may be invoked either directly via ``do`` or via
 ``on`` triggers. They represent an action that the block may take.
 
-Actions may accept a single input value (``InValue``) as an argument and return
-a resulting value, for example ``uart0.tx`` takes a character (or byte) as
-input and returns a ``bool`` to indicate success or failure.
+Actions may accept a single input value (``InValue``) as an argument and always
+report success or failure. On success, an Action may also return an additional
+resulting value (``Result``). For example, ``uart0.tx`` takes a character (or
+byte) as input and reports success or failure with no additional result value,
+while ``digital0.read`` reports success or failure and returns the current pin
+``state`` on success.
 
 If an action is invoked via an ``on`` trigger the returned result is discarded.
 
@@ -185,18 +211,46 @@ details on the backend design, API, and supported backends.
 
 .. important::
 
-   While a backend can be less restrictive than the abstract DAQ, it cannot be
-   more restrictive. For example, if the abstract DAQ declares an attribute as
-   ``init``, the backend can allow run-time modification (less restrictive) but
-   cannot change it to ``const``. Either way, the backend should document
-   divergence from the abstract DAQ.
+   Backends must adhere to the abstract DAQ attribute specification—including
+   supported attributes, value types, defaults, and ``mutability`` traits—for
+   each supported block. Backends must not relax or tighten attribute
+   ``mutability`` traits (for example, allowing run-time modification of an
+   ``init`` attribute or making an ``init`` attribute ``const``) or add custom,
+   non-spec attributes.
 
 Backend defined (``BED``)
 -------------------------
-If a block, attribute, endpoint, trait, etc. is not specified by the abstract
-DAQ and is expected to be defined by the backend in use, it will be marked as
-``BED``. If an attribute is marked ``BED``, the backend also defines whether and
-what the default value is.
+When the valid value set for an attribute or endpoint defined by the abstract
+DAQ depends on the concrete hardware or backend in use, it is marked as ``BED``
+in the specification (for example, supported UART ``.baudrate`` values).
+Backend-specific value sets, virtual pin assignments, and device-specific error
+codes are defined by the backend—and configured/reported via
+:ref:`capabilities <module-pw_daq-design-capabilities>` or documented by the
+backend—without adding custom attributes or traits to the abstract DAQ
+specification.
+
+.. _module-pw_daq-design-capabilities:
+
+Capabilities
+------------
+Each configured DAQ device defines a ``capabilities`` mapping that describes:
+
+* **Device-specific capabilities**: Which virtual DAQ blocks (such as
+  ``digital0`` or ``uart0``) the device supports.
+* **Hardware resources**: The concrete physical resources on the target DAQ
+  hardware (such as physical GPIO pins or hardware peripherals).
+* **Virtual resource mapping**: How virtual DAQ blocks and virtual resources
+  (such as abstract pin indices) map to real hardware resources.
+* **Backend-defined configuration options** (``BED``): Device-specific Backend
+  Defined values and constraints (such as ``const`` virtual pin assignments or
+  supported attribute values).
+
+While the exact schema and resource identifiers within ``capabilities`` are
+backend-specific, ``capabilities`` always focuses on how the virtual DAQ
+device's blocks and resources map to real hardware resources on the target
+device. Backends receive ``capabilities`` through device configuration (via
+``configure()``) and use that mapping to instantiate and control blocks on the
+real hardware.
 
 Notation
 ========
@@ -208,7 +262,7 @@ Blocks and their Endpoints.
    classDiagram
       class block {
          attribute [traits]
-         > event(outvalue)
+         > signal(outvalue)
          < action(invalue) result
       }
 
@@ -229,20 +283,24 @@ An abstract DAQ device supports these commands:
 
 **Endpoint Commands:**
 
-* ``on`` - When the specified Event occurs, invoke the supplied Action.
-* ``listen`` - Stream new Events from the given event endpoint.
+* ``on`` - When the specified Signal emits an Event, invoke the supplied Action.
+* ``listen`` - Stream new Events from the given Signal endpoint.
+* ``wait`` - Wait for one new Event from the given Signal endpoint.
 * ``do`` - Invoke the specified Action and return the result.
 
 **Log Commands:**
 
 * ``dump`` - Dump all Event logs from the DAQ device.
 * ``clear`` - Clear all Event logs.
-* ``usage`` - Get stats on log usage and capacity.
 
 **Device Commands:**
 
-* ``info`` - List information about the connected DAQ device or backend.
-* ``capabilities`` - List all capabilities of the DAQ.
+* ``info`` - List information about the connected DAQ device or backend,
+  including log usage and capacity if available.
+* ``capabilities`` - List all capabilities of the DAQ, including supported
+  virtual blocks, hardware resources, virtual-to-real resource mappings, and
+  ``BED`` configuration options. Does not require a connection to the DAQ
+  device, though it may require the backend to be configured.
 * ``reset`` - Reset the DAQ device state.
 
 Additional commands may be supported by specific DAQ backends. See the backend
@@ -250,11 +308,11 @@ specific documentation for details.
 
 .. note::
 
-   ``on`` commands can only be triggered using Events, not Actions.
+   ``on`` commands can only be triggered using Signals, not Actions.
 
 .. note::
 
-   ``do`` commands can only invoke Actions, not Events.
+   ``do`` commands can only invoke Actions, not Signals.
 
 .. _module-pw_daq-design-block-details:
 
@@ -281,15 +339,16 @@ The blocks supported by the abstract DAQ device are:
 
 Digital
 -------
-Represents a digital GPIO which may be either input, output, or open drain. In
-input and output mode, the pin may take on either ``high`` or ``low`` states.
+Represents a digital GPIO which may be either input, output, or open drain. Pin
+states in the abstract DAQ are represented as ``active`` or ``inactive``.
 
 .. note::
 
-   In open drain mode, the terminology is ``active`` or ``inactive`` since the
-   actual physical voltage on the pin is typically inverted. However, throughout
-   the documentation we use ``high`` and ``active`` and ``low`` and
-   ``inactive`` interchangeably.
+   In standard input and output mode, ``active`` corresponds to logic high and
+   ``inactive`` corresponds to logic low. In open drain mode, ``active`` pulls
+   the pin low and ``inactive`` releases it (high-impedance). Frontends such as
+   ``daq-cli`` may accept convenience aliases (e.g. ``high`` and ``low``) and
+   convert them to ``active`` and ``inactive``.
 
 .. mermaid::
 
@@ -302,7 +361,8 @@ input and output mode, the pin may take on either ``high`` or ``low`` states.
          > change(state)
          > risingedge()
          > fallingedge()
-         < write(state) success
+         < write(state)
+         < toggle()
          < read() state
       }
 
@@ -313,53 +373,53 @@ Attributes
 
    * - Attribute
      - Traits
-     - Values
+     - Values / Type
      - Description
-   * - ``pin``
+   * - ``.pin``
      - ``const``
-     - ``BED``
-     - The pin identifier (e.g. ``14`` or ``"DIO0"``) associated with this
-       block.
-   * - ``direction``
+     - ``pin``
+     - The virtual pin (e.g. ``p0``) associated with this block. The mapping
+       between virtual pins and actual hardware pins or terminals is defined in
+       the device's ``capabilities``.
+   * - ``.direction``
      - ``init``
      - ``in``, ``out``, ``opendrain``
      - The direction of the digital block.
-   * - ``initial``
+   * - ``.initial``
      - ``init``
-     - ``high`` or ``active``, ``low``\* or ``inactive``\*
+     - ``active``, ``inactive``\*
      - The initial value of the pin. Only valid in output or open drain mode.
-   * - ``pull``
+   * - ``.pull``
      - ``none``
      - ``up``, ``down``, ``none``\*
      - Pull-up or pull-down setting. Only valid in input or open drain mode.
 
-Endpoints
-^^^^^^^^^
-The following tables define the valid Events and Actions supported by a Digital
-GPIO block.
-
+Signals
+^^^^^^^
 .. list-table::
    :header-rows: 1
 
-   * - Event
+   * - Signal
      - OutValue
      - Description
    * - ``.change``
      - ``state``
      - Indicates the pin state changed. OutValue indicates whether the new
-       state is ``high`` (``active``) or ``low`` (``inactive``). Valid for
-       input, output, and open drain modes. Note: In open drain mode, external
-       pin state changes do not trigger an event, only internal ``active`` <->
-       ``inactive`` changes emit an event.
+       state is ``active`` or ``inactive``. Valid for input, output, and open
+       drain modes. Note: In open drain mode, external pin state changes do not
+       trigger an event, only internal ``active`` <-> ``inactive`` changes emit
+       an event.
    * - ``.risingedge``
      - N/A
-     - Indicates the digital input went from low to high. Only valid for input
-       mode.
+     - Indicates the digital input transitioned from ``inactive`` (logic low)
+       to ``active`` (logic high). Only valid for input mode.
    * - ``.fallingedge``
      - N/A
-     - Indicates the digital input went from high to low. Only valid for input
-       mode.
+     - Indicates the digital input transitioned from ``active`` (logic high)
+       to ``inactive`` (logic low). Only valid for input mode.
 
+Actions
+^^^^^^^
 .. list-table::
    :header-rows: 1
 
@@ -369,16 +429,20 @@ GPIO block.
      - Description
    * - ``.write``
      - ``state``
-     - ``success``
-     - Write the new state to the pin. InValue is the new state to write:
-       ``high`` (output mode) or ``active`` (open drain mode) and ``low``
-       (output mode) or ``inactive`` (open drain mode). Only valid for output
-       and open drain mode.
+     - N/A
+     - Write the new state to the pin. InValue is the new state to write
+       (``active`` or ``inactive``). Only valid for output and open drain mode.
+   * - ``.toggle``
+     - N/A
+     - N/A
+     - Toggle the state of the pin (``active`` <-> ``inactive``). Only valid
+       for output and open drain mode.
    * - ``.read``
      - N/A
      - ``state``
-     - Read the current state of the pin. Valid in all modes. In open drain mode
-       returns the drive state, not the pin state.
+     - Read the current state of the pin (``active`` or ``inactive``). Valid in
+       all modes. In open drain mode returns the drive state, not the pin
+       state.
 
 ADC
 ---
@@ -402,28 +466,27 @@ TBD
          > started()
          > stopped(count)
          < sample() value
-         < start() success
-         < stop() success
+         < start()
+         < stop()
       }
 
 Attributes
 ^^^^^^^^^^
 
-Endpoints
-^^^^^^^^^
-The following tables define the valid Events and Actions supported by an ADC
-block.
-
+Signals
+^^^^^^^
 .. list-table::
    :header-rows: 1
 
-   * - Event
+   * - Signal
      - OutValue
      - Description
    * - TBD
      - TBD
      - TBD
 
+Actions
+^^^^^^^
 .. list-table::
    :header-rows: 1
 
@@ -452,27 +515,26 @@ TBD
          vrefneg [const]
          databits [const]
          > conversion(value)
-         < convert(value) success
+         < convert(value)
       }
 
 Attributes
 ^^^^^^^^^^
 
-Endpoints
-^^^^^^^^^
-The following tables define the valid Events and Actions supported by a DAC
-block.
-
+Signals
+^^^^^^^
 .. list-table::
    :header-rows: 1
 
-   * - Event
+   * - Signal
      - OutValue
      - Description
    * - TBD
      - TBD
      - TBD
 
+Actions
+^^^^^^^
 .. list-table::
    :header-rows: 1
 
@@ -495,21 +557,20 @@ TBD
 Attributes
 ^^^^^^^^^^
 
-Endpoints
-^^^^^^^^^
-The following tables define the valid Events and Actions supported by a PWM
-block.
-
+Signals
+^^^^^^^
 .. list-table::
    :header-rows: 1
 
-   * - Event
+   * - Signal
      - OutValue
      - Description
    * - TBD
      - TBD
      - TBD
 
+Actions
+^^^^^^^
 .. list-table::
    :header-rows: 1
 
@@ -541,7 +602,7 @@ Represents a UART peripheral which may have both RX and TX capabilities.
          > sent(character)
          > break()
          > error(error)
-         < tx(character) success
+         < tx(character)
       }
 
 Attributes
@@ -551,49 +612,44 @@ Attributes
 
    * - Attribute
      - Traits
-     - Values
+     - Values / Type
      - Description
-   * - ``txpin``
+   * - ``.txpin``
      - ``const``
-     - ``BED``
-     - The pin identifier (e.g. ``4`` or ``"DIO0"``) used for sending
-       characters.
-   * - ``rxpin``
+     - ``pin``
+     - The virtual pin (e.g. ``p2``) used for sending characters.
+   * - ``.rxpin``
      - ``const``
-     - ``BED``
-     - The pin identifier (e.g. ``5`` or ``"DIO1"``) used for receiving
-       characters.
-   * - ``baudrate``
+     - ``pin``
+     - The virtual pin (e.g. ``p3``) used for receiving characters.
+   * - ``.baudrate``
      - ``init``
      - ``BED``
      - The baud rate to configure. Not all baud rates may be supported.
-   * - ``databits``
+   * - ``.databits``
      - ``init``
      - ``7``, ``8``\*, ``9``
      - The number of data bits in a byte.
-   * - ``parity``
+   * - ``.parity``
      - ``init``
      - ``odd``, ``even``, ``none``\*
      - Whether a parity bit is included.
-   * - ``stopbits``
+   * - ``.stopbits``
      - ``init``
      - ``1``\*, ``2``
      - The number of stop bits framing a byte.
-   * - ``loopback``
+   * - ``.loopback``
      - ``init``
      - ``true``, ``false``\*
      - Whether to automatically loop received characters back to the transmit
        channel.
 
-Endpoints
-^^^^^^^^^
-The following tables define the valid Events and Actions supported by a UART
-block.
-
+Signals
+^^^^^^^
 .. list-table::
    :header-rows: 1
 
-   * - Event
+   * - Signal
      - OutValue
      - Description
    * - ``.rx``
@@ -613,6 +669,8 @@ block.
        definition of the error code returned is specific to the backend and DAQ
        device.
 
+Actions
+^^^^^^^
 .. list-table::
    :header-rows: 1
 
@@ -622,7 +680,7 @@ block.
      - Description
    * - ``.tx``
      - ``character``
-     - ``success``
+     - N/A
      - Write the given character to the TX channel.
 
 SPI
@@ -635,21 +693,20 @@ TBD
 Attributes
 ^^^^^^^^^^
 
-Endpoints
-^^^^^^^^^
-The following tables define the valid Events and Actions supported by a SPI
-block.
-
+Signals
+^^^^^^^
 .. list-table::
    :header-rows: 1
 
-   * - Event
+   * - Signal
      - OutValue
      - Description
    * - TBD
      - TBD
      - TBD
 
+Actions
+^^^^^^^
 .. list-table::
    :header-rows: 1
 
@@ -672,21 +729,20 @@ TBD
 Attributes
 ^^^^^^^^^^
 
-Endpoints
-^^^^^^^^^
-The following tables define the valid Events and Actions supported by an I2C
-block.
-
+Signals
+^^^^^^^
 .. list-table::
    :header-rows: 1
 
-   * - Event
+   * - Signal
      - OutValue
      - Description
    * - TBD
      - TBD
      - TBD
 
+Actions
+^^^^^^^
 .. list-table::
    :header-rows: 1
 
@@ -709,21 +765,20 @@ TBD
 Attributes
 ^^^^^^^^^^
 
-Endpoints
-^^^^^^^^^
-The following tables define the valid Events and Actions supported by a Timer
-block.
-
+Signals
+^^^^^^^
 .. list-table::
    :header-rows: 1
 
-   * - Event
+   * - Signal
      - OutValue
      - Description
    * - TBD
      - TBD
      - TBD
 
+Actions
+^^^^^^^
 .. list-table::
    :header-rows: 1
 
@@ -746,21 +801,20 @@ TBD
 Attributes
 ^^^^^^^^^^
 
-Endpoints
-^^^^^^^^^
-The following tables define the valid Events and Actions supported by a
-Stopwatch block.
-
+Signals
+^^^^^^^
 .. list-table::
    :header-rows: 1
 
-   * - Event
+   * - Signal
      - OutValue
      - Description
    * - TBD
      - TBD
      - TBD
 
+Actions
+^^^^^^^
 .. list-table::
    :header-rows: 1
 
@@ -783,21 +837,20 @@ TBD
 Attributes
 ^^^^^^^^^^
 
-Endpoints
-^^^^^^^^^
-The following tables define the valid Events and Actions supported by a LUT
-block.
-
+Signals
+^^^^^^^
 .. list-table::
    :header-rows: 1
 
-   * - Event
+   * - Signal
      - OutValue
      - Description
    * - TBD
      - TBD
      - TBD
 
+Actions
+^^^^^^^
 .. list-table::
    :header-rows: 1
 

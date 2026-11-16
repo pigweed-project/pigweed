@@ -3,4 +3,7 @@
 ====
 mock
 ====
+.. pigweed-module-subpage::
+   :name: pw_daq
+
 TBD

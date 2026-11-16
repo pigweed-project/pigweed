@@ -3,6 +3,9 @@
 =======
 dhalsim
 =======
+.. pigweed-module-subpage::
+   :name: pw_daq
+
 Dhalsim is a DAQ and device simulation application which runs on the rp2 family
 of Raspberry Pi microcontrollers. Currently, it supports running on the Pigweed
 RP2350 HIL board and the Pico 2.
@@ -70,7 +73,6 @@ Examples
    $ daq-cli create uart0 --baudrate=115200 --loopback
    $ daq-cli do uart0.tx a
    $ daq-cli listen -n 1 uart0.rx
-   $ daq-cli usage
    $ daq-cli dump -
    $ daq-cli clear
    $ daq-cli info

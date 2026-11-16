@@ -27,7 +27,7 @@ sphinx_docs_library(
         "design.rst",
         "docs.rst",
         "module.toml",
-        "//pw_daq/backends:docs",
+        "//pw_daq/py:docs",
     ],
     target_compatible_with = incompatible_with_mcu(),
     visibility = ["//visibility:public"],

@@ -1,0 +1,101 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
+load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
+load("//pw_build:python.bzl", "pw_py_library", "pw_py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+licenses(["notice"])
+
+pw_py_library(
+    name = "common",
+    srcs = [
+        "pw_daq/common.py",
+    ],
+    imports = ["."],
+)
+
+pw_py_library(
+    name = "backend",
+    srcs = [
+        "pw_daq/backend.py",
+        "pw_daq/backends/__init__.py",
+    ],
+    imports = ["."],
+    deps = [
+        ":common",
+    ],
+)
+
+pw_py_library(
+    name = "mock_daq",
+    srcs = [
+        "pw_daq/backends/mock_daq/__init__.py",
+        "pw_daq/backends/mock_daq/mock_backend.py",
+    ],
+    imports = ["."],
+    deps = [
+        ":backend",
+        ":common",
+        ":pw_daq",
+    ],
+)
+
+pw_py_library(
+    name = "pw_daq",
+    srcs = [
+        "pw_daq/__init__.py",
+        "pw_daq/lib.py",
+    ],
+    data = [
+        "pw_daq/py.typed",
+    ],
+    imports = ["."],
+    deps = [
+        ":backend",
+        ":common",
+    ],
+)
+
+alias(
+    name = "py",
+    actual = ":pw_daq",
+)
+
+pw_py_test(
+    name = "lib_test",
+    size = "small",
+    srcs = [
+        "lib_test.py",
+    ],
+    deps = [
+        ":backend",
+        ":common",
+        ":mock_daq",
+        ":pw_daq",
+    ],
+)
+
+sphinx_docs_library(
+    name = "docs",
+    srcs = [
+        "pw_daq/backends/dhalsim_daq/docs.rst",
+        "pw_daq/backends/docs.rst",
+        "pw_daq/backends/mock_daq/docs.rst",
+    ],
+    target_compatible_with = incompatible_with_mcu(),
+    visibility = ["//visibility:public"],
+)

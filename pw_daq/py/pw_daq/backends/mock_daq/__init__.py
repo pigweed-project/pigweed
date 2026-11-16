@@ -11,21 +11,10 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
+"""Mock DAQ backend package."""
 
-load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
-load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
+__path__ = __import__("pkgutil").extend_path(__path__, __name__)
 
-package(default_visibility = ["//visibility:private"])
+from pw_daq.backends.mock_daq.mock_backend import MockBackend
 
-licenses(["notice"])
-
-sphinx_docs_library(
-    name = "docs",
-    srcs = [
-        "docs.rst",
-        "//pw_daq/backends/dhalsim:docs",
-        "//pw_daq/backends/mock:docs",
-    ],
-    target_compatible_with = incompatible_with_mcu(),
-    visibility = ["//visibility:public"],
-)
+__all__ = ["MockBackend"]

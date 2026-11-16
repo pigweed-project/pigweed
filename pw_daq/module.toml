@@ -13,7 +13,7 @@
 # the License.
 
 status = "experimental"
-languages = []
+languages = ["Python"]
 
 [category]
 id = "test"

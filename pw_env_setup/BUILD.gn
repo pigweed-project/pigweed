@@ -111,6 +111,9 @@ pw_python_group("python") {
     # every package listed in :core_pigweed_python_packages
     ":pip_install_pigweed_package",
 
+    # Experimental packages not yet bundled into the PyPI 'pigweed' package
+    "$dir_pw_daq/py",
+
     # Standalone scripts
     # These targets are included here in order to ensure they are linted.
     "$dir_pw_emu/py:mock_emu",
