@@ -21,19 +21,30 @@ import unittest
 from unittest.mock import patch
 
 from pw_module.create import (
+    PromptChoice,
+    _add_to_docs_build,
+    _add_to_module_metadata,
     _add_to_pigweed_modules_file,
+    _add_to_root_cmakelists,
     _BazelBuildFile,
     _BuildFile,
     _BUILD_FILES,
+    _CcLanguageGenerator,
+    _check_module_name,
     _CmakeBuildFile,
     _ConfigErrors,
+    _create_module,
     _GnBuildFile,
     _gn_tool,
     _ModuleConfig,
+    _ModuleContext,
     _ModuleName,
     _OutputFile,
+    _prompt_overwrite,
     _PythonLanguageGenerator,
+    _read_root_owners,
 )
+import pw_module.check
 
 
 def _mock_context(is_upstream: bool = True) -> SimpleNamespace:
@@ -420,6 +431,358 @@ class TestPythonModuleCreation(unittest.TestCase):
 
             self.assertFalse((tmp_path / 'py' / 'BUILD.gn').exists())
             self.assertTrue((tmp_path / 'py' / 'BUILD.bazel').exists())
+
+
+class TestModuleName(unittest.TestCase):
+    """Tests module name parsing and validation."""
+
+    def test_valid_module_names(self):
+        """Tests parsing valid top-level and nested module names."""
+        name = _ModuleName.parse('pw_foo')
+        self.assertIsNotNone(name)
+        assert name is not None
+        self.assertEqual(name.prefix, 'pw')
+        self.assertEqual(name.main, 'foo')
+        self.assertEqual(name.full, 'pw_foo')
+        self.assertEqual(name.path, 'pw_foo')
+        self.assertEqual(name.default_namespace, 'pw::foo')
+        self.assertEqual(name.header_line, '======')
+
+        nested = _ModuleName.parse('dir/sub/custom_bar_baz2')
+        self.assertIsNotNone(nested)
+        assert nested is not None
+        self.assertEqual(nested.prefix, 'custom')
+        self.assertEqual(nested.main, 'bar_baz2')
+        self.assertEqual(nested.full, 'custom_bar_baz2')
+        self.assertEqual(nested.path, 'dir/sub/custom_bar_baz2')
+        self.assertEqual(nested.default_namespace, 'custom::bar_baz2')
+
+    def test_invalid_module_names(self):
+        for bad in (
+            'foo',
+            'p_foo',
+            'pw__foo',
+            'pw_foo_',
+            '_pw_foo',
+            'pw_foo-bar',
+            '12_foo',
+        ):
+            with self.subTest(bad=bad):
+                self.assertIsNone(_ModuleName.parse(bad))
+
+    def test_check_module_name_upstream_vs_downstream(self):
+        self.assertIsNotNone(_check_module_name('pw_foo', is_upstream=True))
+        self.assertIsNone(_check_module_name('app_foo', is_upstream=True))
+        self.assertIsNotNone(_check_module_name('app_foo', is_upstream=False))
+
+
+class TestCcModuleCreation(unittest.TestCase):
+    """Tests C++ module source and header generation."""
+
+    def test_cc_source_files_creation_upstream(self):
+        """Tests C++ file generation for an upstream module."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            module_name = _ModuleName.parse('pw_foo_bar')
+            assert module_name is not None
+            ctx = _ModuleContext(
+                name=module_name,
+                dir=tmp_path,
+                root_build_files=[],
+                sub_build_files=[],
+                build_systems=['bazel', 'gn', 'cmake'],
+                is_upstream=True,
+            )
+            generator = _CcLanguageGenerator(ctx)
+
+            with (
+                patch('pw_module.create._prompt_overwrite', return_value=True),
+                patch('pw_module.create._report_write_file'),
+            ):
+                generator.create_source_files()
+
+            header = tmp_path / 'public' / 'pw_foo_bar' / 'foo_bar.h'
+            source = tmp_path / 'foo_bar.cc'
+            test = tmp_path / 'foo_bar_test.cc'
+
+            self.assertTrue(header.exists())
+            self.assertTrue(source.exists())
+            self.assertTrue(test.exists())
+
+            header_text = header.read_text()
+            self.assertIn('// Copyright', header_text)
+            self.assertIn('#pragma once', header_text)
+            self.assertIn('namespace pw::foo_bar {', header_text)
+
+            source_text = source.read_text()
+            self.assertIn('#include "pw_foo_bar/foo_bar.h"', source_text)
+            self.assertIn('int magic = 42;', source_text)
+
+            test_text = test.read_text()
+            self.assertIn('#include "pw_foo_bar/foo_bar.h"', test_text)
+            self.assertIn('TEST(FooBar, GeneratesCorrectly)', test_text)
+
+    def test_cc_source_files_creation_downstream(self):
+        """Tests C++ file generation for a downstream module."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            module_name = _ModuleName.parse('app_widget')
+            assert module_name is not None
+            ctx = _ModuleContext(
+                name=module_name,
+                dir=tmp_path,
+                root_build_files=[],
+                sub_build_files=[],
+                build_systems=['bazel'],
+                is_upstream=False,
+            )
+            generator = _CcLanguageGenerator(ctx)
+
+            with (
+                patch('pw_module.create._prompt_overwrite', return_value=True),
+                patch('pw_module.create._report_write_file'),
+            ):
+                generator.create_source_files()
+
+            header = tmp_path / 'public' / 'app_widget' / 'widget.h'
+            self.assertNotIn('Copyright', header.read_text())
+            self.assertIn('namespace app::widget {', header.read_text())
+
+
+class TestUpstreamIntegration(unittest.TestCase):
+    """Tests upstream registration helpers."""
+
+    def test_add_to_module_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            (tmp_path / 'pw_foo').mkdir()
+            module_name = _ModuleName.parse('pw_foo')
+            assert module_name is not None
+
+            with patch('pw_module.create._project_root', return_value=tmp_path):
+                created = _add_to_module_metadata(
+                    tmp_path, module_name, ['cc', 'py']
+                )
+                self.assertTrue(created)
+                created_again = _add_to_module_metadata(
+                    tmp_path, module_name, ['cc', 'py']
+                )
+                self.assertFalse(created_again)
+
+            toml_text = (tmp_path / 'pw_foo' / 'module.toml').read_text()
+            self.assertIn('status = "experimental"', toml_text)
+            self.assertIn('languages = ["C++", "Python"]', toml_text)
+
+    def test_add_to_docs_build(self):
+        """Tests inserting a module docs target into docs/sphinx/BUILD.bazel."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            sphinx_dir = tmp_path / 'docs' / 'sphinx'
+            sphinx_dir.mkdir(parents=True)
+            build_file = sphinx_dir / 'BUILD.bazel'
+            build_file.write_text(
+                'sphinx_docs_library(\n'
+                '    srcs = [\n'
+                '        # start (sentinel for pw module create)\n'
+                '        "//pw_alpha:docs",\n'
+                '        "//pw_zeta:docs",\n'
+                '        # end (sentinel for pw module create)\n'
+                '    ],\n'
+                ')\n'
+            )
+
+            module_name = _ModuleName.parse('pw_beta')
+            assert module_name is not None
+            with patch('pw_module.create._project_root', return_value=tmp_path):
+                _add_to_docs_build(tmp_path, module_name)
+                # Calling a second time is a no-op.
+                _add_to_docs_build(tmp_path, module_name)
+
+            self.assertEqual(
+                build_file.read_text(),
+                'sphinx_docs_library(\n'
+                '    srcs = [\n'
+                '        # start (sentinel for pw module create)\n'
+                '        "//pw_alpha:docs",\n'
+                '        "//pw_beta:docs",\n'
+                '        "//pw_zeta:docs",\n'
+                '        # end (sentinel for pw module create)\n'
+                '    ],\n'
+                ')\n',
+            )
+
+    def test_add_to_root_cmakelists(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            cmake_file = tmp_path / 'CMakeLists.txt'
+            cmake_file.write_text(
+                '# Header\n'
+                'add_subdirectory(pw_alpha EXCLUDE_FROM_ALL)\n'
+                'add_subdirectory(pw_zeta EXCLUDE_FROM_ALL)\n'
+            )
+
+            module_name = _ModuleName.parse('pw_beta')
+            assert module_name is not None
+            with patch('pw_module.create._project_root', return_value=tmp_path):
+                _add_to_root_cmakelists(tmp_path, module_name)
+                _add_to_root_cmakelists(tmp_path, module_name)
+
+            self.assertEqual(
+                cmake_file.read_text(),
+                '# Header\n'
+                'add_subdirectory(pw_alpha EXCLUDE_FROM_ALL)\n'
+                'add_subdirectory(pw_beta EXCLUDE_FROM_ALL)\n'
+                'add_subdirectory(pw_zeta EXCLUDE_FROM_ALL)\n',
+            )
+
+    def test_read_root_owners(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            (tmp_path / 'OWNERS').write_text(
+                '# Top-level comment\n'
+                'alice@example.com  # inline comment\n'
+                '\n'
+                'bob@example.com\n'
+            )
+            self.assertEqual(
+                list(_read_root_owners(tmp_path)),
+                ['alice@example.com', 'bob@example.com'],
+            )
+
+
+class TestPromptOverwrite(unittest.TestCase):
+    """Tests file overwrite prompting and diff display."""
+
+    def test_prompt_overwrite_flows(self):
+        """Tests new, identical, diff+overwrite, and skip overwrite flows."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            target = tmp_path / 'file.txt'
+
+            with patch('pw_module.create._project_root', return_value=tmp_path):
+                # Non-existent file -> True without prompting.
+                self.assertTrue(_prompt_overwrite(target, 'hello\n'))
+
+                # Identical file -> False without prompting.
+                target.write_text('hello\n', encoding='utf-8')
+                self.assertFalse(_prompt_overwrite(target, 'hello\n'))
+
+                # Different file -> user chooses DIFF then YES.
+                with (
+                    patch(
+                        'pw_module.create._prompt_user',
+                        side_effect=[PromptChoice.DIFF, PromptChoice.YES],
+                    ) as mock_prompt,
+                    patch('pw_module.create._print_diff') as mock_diff,
+                ):
+                    self.assertTrue(_prompt_overwrite(target, 'updated\n'))
+                    self.assertEqual(mock_prompt.call_count, 2)
+                    mock_diff.assert_called_once()
+
+                # Different file -> user chooses NO.
+                with patch(
+                    'pw_module.create._prompt_user',
+                    return_value=PromptChoice.NO,
+                ):
+                    self.assertFalse(_prompt_overwrite(target, 'updated\n'))
+
+
+class TestEndToEndCreateModule(unittest.TestCase):
+    """End-to-end integration tests for _create_module."""
+
+    def test_end_to_end_upstream_module_creation_and_check(self):
+        """Tests creating an upstream module and verifying it passes check."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            (tmp_path / 'PIGWEED_MODULES').write_text('pw_alpha\npw_zeta\n')
+            (tmp_path / 'pw_build').mkdir()
+            (tmp_path / 'OWNERS').write_text('root@google.com\n')
+            (tmp_path / 'CMakeLists.txt').write_text(
+                'add_subdirectory(pw_alpha EXCLUDE_FROM_ALL)\n'
+                'add_subdirectory(pw_zeta EXCLUDE_FROM_ALL)\n'
+            )
+            sphinx_dir = tmp_path / 'docs' / 'sphinx'
+            sphinx_dir.mkdir(parents=True)
+            (sphinx_dir / 'BUILD.bazel').write_text(
+                '    srcs = [\n'
+                '        # start (sentinel for pw module create)\n'
+                '        "//pw_alpha:docs",\n'
+                '        "//pw_zeta:docs",\n'
+                '        # end (sentinel for pw module create)\n'
+                '    ],\n'
+            )
+
+            with (
+                patch('pw_module.create._project_root', return_value=tmp_path),
+                patch('pw_module.create._is_upstream', return_value=True),
+                patch('pw_env_setup.config_file.load', return_value={}),
+            ):
+                _create_module(
+                    module='pw_beta',
+                    languages=['cc', 'py'],
+                    build_systems=['bazel', 'cmake', 'gn'],
+                    owners=['second@google.com', 'root@google.com'],
+                )
+
+            mod_dir = tmp_path / 'pw_beta'
+            self.assertTrue((mod_dir / 'docs.rst').is_file())
+            self.assertTrue((mod_dir / 'module.toml').is_file())
+            self.assertTrue((mod_dir / 'OWNERS').is_file())
+            self.assertEqual(
+                (mod_dir / 'OWNERS').read_text(),
+                'root@google.com\nsecond@google.com\n',
+            )
+            self.assertTrue((mod_dir / 'BUILD.bazel').is_file())
+            self.assertTrue((mod_dir / 'BUILD.gn').is_file())
+            self.assertTrue((mod_dir / 'CMakeLists.txt').is_file())
+            self.assertTrue((mod_dir / 'public/pw_beta/beta.h').is_file())
+            self.assertTrue((mod_dir / 'beta.cc').is_file())
+            self.assertTrue((mod_dir / 'beta_test.cc').is_file())
+            self.assertTrue((mod_dir / 'py/pw_beta/__init__.py').is_file())
+            self.assertTrue((mod_dir / 'py/beta_test.py').is_file())
+            self.assertTrue((mod_dir / 'py/BUILD.bazel').is_file())
+            self.assertTrue((mod_dir / 'py/BUILD.gn').is_file())
+
+            # PWCK001 checks for setup.py when Python files exist; add stub to
+            # verify PWCK002-PWCK005 pass on a newly created module.
+            (mod_dir / 'py/setup.py').write_text('')
+            self.assertTrue(pw_module.check.check_module(str(mod_dir)))
+
+    def test_owners_validation_errors(self):
+        """Tests --owners validation for count, email format, and root OWNER."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            (tmp_path / 'OWNERS').write_text('root@google.com\n')
+
+            with (
+                patch('pw_module.create._project_root', return_value=tmp_path),
+                patch('pw_module.create._is_upstream', return_value=True),
+                patch('pw_env_setup.config_file.load', return_value={}),
+            ):
+                # Fewer than 2 owners -> sys.exit(1)
+                with self.assertRaises(SystemExit):
+                    _create_module(
+                        module='pw_beta',
+                        languages=['cc'],
+                        build_systems=['bazel'],
+                        owners=['root@google.com'],
+                    )
+                # Invalid email -> sys.exit(1)
+                with self.assertRaises(SystemExit):
+                    _create_module(
+                        module='pw_beta',
+                        languages=['cc'],
+                        build_systems=['bazel'],
+                        owners=['root@google.com', 'not-an-email'],
+                    )
+                # No root owner -> sys.exit(1)
+                with self.assertRaises(SystemExit):
+                    _create_module(
+                        module='pw_beta',
+                        languages=['cc'],
+                        build_systems=['bazel'],
+                        owners=['a@google.com', 'b@google.com'],
+                    )
 
 
 if __name__ == '__main__':

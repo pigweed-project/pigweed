@@ -133,6 +133,42 @@ class TestWithTempDirectory(unittest.TestCase):
         self.create_file('pw_foo/public/fake/fake.h')
         self.assert_issue(checker, 'multiple', directory=module_name)
 
+    def test_pwck005_public_overrides_headers(self):
+        checker = pw_module.check.check_has_public_or_override_headers
+        module_name = 'pw_foo'
+
+        self.create_file('pw_foo/implementation.cc')
+        self.create_file('pw_foo/implementation_test.cc')
+        self.create_file('pw_foo/public_overrides/pw_bar/bar.h')
+        # PWCK005 also requires len(glob('public/*')) == 1.
+        self.create_file('pw_foo/public/pw_foo/.keep')
+        self.assert_no_issues(checker, directory=module_name)
+
+    def test_check_module_nonexistent_dir(self):
+        missing_dir = str(pathlib.Path(self.test_dir, 'does_not_exist'))
+        self.assertFalse(pw_module.check.check_module(missing_dir))
+        self.assertEqual(pw_module.check.check_modules([missing_dir]), 1)
+
+    def test_check_modules_passing_and_failing(self):
+        # Create a valid module (docs + C++ header + C++ source + C++ test).
+        self.create_file('pw_good/docs.rst')
+        self.create_file('pw_good/public/pw_good/good.h')
+        self.create_file('pw_good/good.cc')
+        self.create_file('pw_good/good_test.cc')
+
+        # Create an invalid module (missing docs.rst).
+        self.create_file('pw_bad/public/pw_bad/bad.h')
+        self.create_file('pw_bad/bad.cc')
+        self.create_file('pw_bad/bad_test.cc')
+
+        good_dir = str(pathlib.Path(self.test_dir, 'pw_good'))
+        bad_dir = str(pathlib.Path(self.test_dir, 'pw_bad'))
+
+        self.assertTrue(pw_module.check.check_module(good_dir))
+        self.assertFalse(pw_module.check.check_module(bad_dir))
+        self.assertEqual(pw_module.check.check_modules([good_dir]), 0)
+        self.assertEqual(pw_module.check.check_modules([good_dir, bad_dir]), 1)
+
 
 if __name__ == '__main__':
     import sys

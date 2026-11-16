@@ -21,12 +21,8 @@ pw_python_package("py") {
     "pyproject.toml",
     "setup.cfg",
   ]
-  sources = [
-    "{{ module.name.full }}/__init__.py",
-  ]
-  tests = [
-    "{{ module.name.main }}_test.py",
-  ]
+  sources = [ "{{ module.name.full }}/__init__.py" ]
+  tests = [ "{{ module.name.main }}_test.py" ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
   ruff_toml = "$dir_pigweed/.ruff.toml"
