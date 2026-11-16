@@ -25,8 +25,9 @@
 #include "pw_async2/poll.h"
 #include "pw_async2/task.h"
 #include "pw_async2/try.h"
+#include "pw_containers/internal/maybe.h"
+#include "pw_containers/internal/tag.h"
 #include "pw_containers/optional_tuple.h"
-#include "pw_memory/construct_at.h"
 #include "pw_polyfill/language_feature_macros.h"
 #include "pw_preprocessor/compiler.h"
 
@@ -142,38 +143,6 @@ class InPlaceSelectFuture {
 template <typename... Futures>
 InPlaceSelectFuture(Futures&...) -> InPlaceSelectFuture<Futures...>;
 
-// Stand-in for `pw::containers::internal::Maybe<Tuple>` until
-// https://pwrev.dev/522188 lands.
-template <typename Tuple, bool = std::is_trivially_destructible_v<Tuple>>
-union SelectFutureUnion {
-  constexpr SelectFutureUnion() : no_futures{} {}
-
-  template <typename... Futures>
-  explicit constexpr SelectFutureUnion(std::in_place_t,
-                                       Futures&&... sub_futures)
-      : futures(std::forward<Futures>(sub_futures)...) {}
-
-  ~SelectFutureUnion() = default;
-
-  char no_futures;
-  Tuple futures;
-};
-
-template <typename Tuple>
-union SelectFutureUnion<Tuple, false> {
-  constexpr SelectFutureUnion() : no_futures{} {}
-
-  template <typename... Futures>
-  explicit constexpr SelectFutureUnion(std::in_place_t,
-                                       Futures&&... sub_futures)
-      : futures(std::forward<Futures>(sub_futures)...) {}
-
-  PW_CONSTEXPR_CPP20 ~SelectFutureUnion() {}
-
-  char no_futures;
-  Tuple futures;
-};
-
 template <typename Tuple, bool = std::is_trivially_destructible_v<Tuple>>
 struct SelectFutureStorage;
 
@@ -182,12 +151,13 @@ struct SelectFutureStorage;
 // separate flag is needed to track their lifetime.
 template <typename Tuple>
 struct SelectFutureMembers {
-  constexpr SelectFutureMembers() = default;
+  constexpr SelectFutureMembers()
+      : storage(containers::internal::NullPlaceholder::InternalUseOnly()) {}
 
   template <typename... Futures>
   explicit constexpr SelectFutureMembers(std::in_place_t,
                                          Futures&&... sub_futures)
-      : storage(std::in_place, std::forward<Futures>(sub_futures)...),
+      : storage(std::forward<Futures>(sub_futures)...),
         state(FutureState::kPending) {}
 
   SelectFutureMembers(const SelectFutureMembers&) = delete;
@@ -196,18 +166,18 @@ struct SelectFutureMembers {
   SelectFutureMembers& operator=(SelectFutureMembers&&) = delete;
   ~SelectFutureMembers() = default;
 
-  constexpr Tuple& futures() { return storage.futures; }
+  constexpr Tuple& futures() { return storage.value; }
 
   void Complete() {
     state.MarkComplete();
     // Destroy (and thereby cancel) all sub-futures.
-    std::destroy_at(&storage.futures);
+    std::destroy_at(std::addressof(storage.value));
   }
 
   PW_CONSTEXPR_CPP20 void Reset() {
     if (state.is_pendable()) {
       state = FutureState();
-      std::destroy_at(&storage.futures);
+      std::destroy_at(std::addressof(storage.value));
     }
   }
 
@@ -215,9 +185,9 @@ struct SelectFutureMembers {
   // sub-futures. The sub-futures in `this` must not be alive.
   PW_CONSTEXPR_CPP20 void MoveFrom(SelectFutureMembers& other) {
     if (other.state.is_pendable()) {
-      pw::construct_at(&storage.futures, std::move(other.storage.futures));
+      storage.Construct(std::move(other.storage.value));
       state = std::move(other.state);
-      std::destroy_at(&other.storage.futures);
+      std::destroy_at(std::addressof(other.storage.value));
     } else {
       state = std::move(other.state);
     }
@@ -239,7 +209,7 @@ struct SelectFutureMembers {
     }
   }
 
-  SelectFutureUnion<Tuple> storage;
+  containers::internal::Maybe<Tuple> storage;
   FutureState state;
 };
 

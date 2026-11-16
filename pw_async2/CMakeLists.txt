@@ -562,8 +562,9 @@ pw_add_library(pw_async2.select INTERFACE
   PUBLIC_DEPS
     pw_assert.assert
     pw_async2
+    pw_containers._maybe
+    pw_containers._tag
     pw_containers.optional_tuple
-    pw_memory.construct_at
     pw_polyfill
     pw_preprocessor
 )

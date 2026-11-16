@@ -802,8 +802,9 @@ cc_library(
     deps = [
         ":pw_async2",
         "//pw_assert:assert",
+        "//pw_containers:maybe",
         "//pw_containers:optional_tuple",
-        "//pw_memory:construct_at",
+        "//pw_containers:tag",
         "//pw_polyfill",
         "//pw_preprocessor",
     ],
