@@ -893,12 +893,20 @@ func TestPush_Stack_PartialFailure(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			SetTestProfile(t, "pigweed")
-			_, _ = stackScheduleFixture(t, true)
+			server, _ := stackScheduleFixture(t, true)
 
 			args := append([]string{"pr", "push", "--base", "main", "--stack"}, tc.args...)
 			_, err := executeCommand(RootCmd, args...)
 			if err == nil {
 				t.Fatal("expected an error when the top change's flow fails, got nil")
+			}
+			// The top change's 500 is retried; the bottom change is
+			// not scheduled again.
+			if n := server.CallCount("POST", "/changes/123456/flows"); n != len(scheduleRetryDelays)+1 {
+				t.Errorf("expected %d attempts on the top change, got %d", len(scheduleRetryDelays)+1, n)
+			}
+			if n := server.CallCount("POST", "/changes/111111/flows"); n != 1 {
+				t.Errorf("expected the bottom change to be scheduled once, got %d", n)
 			}
 			var flowErr *ScheduleFlowError
 			if !errors.As(err, &flowErr) {

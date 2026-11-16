@@ -162,6 +162,8 @@ func init() {
 	scheduleNowFn = func() time.Time {
 		return time.Date(2026, 9, 30, 19, 0, 0, 0, time.UTC) // 12:00 PM PDT
 	}
+	// Never wait between scheduled submit flow retries in tests.
+	scheduleSleepFn = func(context.Context, time.Duration) error { return nil }
 }
 
 // preserveRootCmdState snapshots the RootCmd state that Execute() mutates

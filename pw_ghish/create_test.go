@@ -24,6 +24,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestDefaultBranch(t *testing.T) {
@@ -724,10 +727,15 @@ func TestCreate_Nightly_FlowFailureIsNotACreateFailure(t *testing.T) {
 	server.OnJSON("GET", "/changes/"+changeID, http.StatusOK, DefaultMockChange(123456, WithChangeID(changeID), WithLabels("Code-Review", "Commit-Queue")))
 
 	mockGit := NewMockGit(t).WithBranch("main")
+	sleeps := recordScheduleSleeps(t)
 
 	_, err := executeCommand(RootCmd, "pr", "create", "--nightly")
 	if err == nil {
 		t.Fatal("expected an error when the change has no auto-submit label, got nil")
+	}
+	// A missing label cannot appear on retry.
+	if len(*sleeps) != 0 {
+		t.Errorf("expected no retries, got delays %v", *sleeps)
 	}
 	if !mockGit.HasCall("push") {
 		t.Fatalf("expected the push to have happened, got calls: %v", mockGit.Calls)
@@ -767,6 +775,95 @@ func TestCreate_Nightly_FlowsNotEnabled(t *testing.T) {
 	var notEnabled *FlowsNotEnabledError
 	if !errors.As(err, &notEnabled) {
 		t.Fatalf("expected it to wrap a *FlowsNotEnabledError, got: %v", err)
+	}
+	if n := server.CallCount("POST", "/changes/123456/flows"); n != 0 {
+		t.Errorf("expected no flows to be created, got %d", n)
+	}
+	// 405 means no flow service; asking again cannot change that.
+	if n := server.CallCount("GET", "/changes/123456/is-flows-enabled"); n != 1 {
+		t.Errorf("expected is-flows-enabled to be asked once, got %d", n)
+	}
+}
+
+// recordScheduleSleeps replaces scheduleSleepFn for the test and returns the
+// delays it is asked to wait.
+func recordScheduleSleeps(t *testing.T) *[]time.Duration {
+	t.Helper()
+	var sleeps []time.Duration
+	orig := scheduleSleepFn
+	t.Cleanup(func() { scheduleSleepFn = orig })
+	scheduleSleepFn = func(_ context.Context, d time.Duration) error {
+		sleeps = append(sleeps, d)
+		return nil
+	}
+	return &sleeps
+}
+
+// nightlyReplicationFixture serves a just-created change whose
+// is-flows-enabled answers 404, as a Gerrit mirror the change has not
+// replicated to yet does, for the first notFound requests.
+func nightlyReplicationFixture(t *testing.T, notFound int) *MockGerritServer {
+	t.Helper()
+	SetTestProfile(t, "pigweed")
+	changeID := "I0000000000000000000000000000000000000001"
+	server := NewMockGerritServer(t)
+	server.OnJSON("GET", "/changes/", http.StatusOK, []map[string]any{})
+	server.OnJSON("GET", "/changes/"+changeID, http.StatusOK, DefaultMockChange(123456, WithChangeID(changeID), WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit")))
+	server.OnFlows(123456)
+	calls := 0
+	server.On("GET", "/changes/123456/is-flows-enabled", func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls <= notFound {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		server.RespondJSON(w, http.StatusOK, map[string]any{"enabled": true})
+	})
+	server.OnJSON("POST", "/changes/123456/flows", http.StatusCreated, map[string]any{})
+	NewMockGit(t).WithBranch("main")
+	return server
+}
+
+// A change that has not replicated yet is retried with backoff until the
+// schedule succeeds.
+func TestCreate_Nightly_RetriesWhileReplicating(t *testing.T) {
+	server := nightlyReplicationFixture(t, 2)
+	sleeps := recordScheduleSleeps(t)
+
+	output, err := executeCommand(RootCmd, "pr", "create", "--nightly")
+	if err != nil {
+		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
+	}
+	if diff := cmp.Diff([]time.Duration{time.Second, 2 * time.Second}, *sleeps); diff != "" {
+		t.Errorf("retry delays mismatch (-want +got):\n%s", diff)
+	}
+	if n := server.CallCount("POST", "/changes/123456/flows"); n != 1 {
+		t.Errorf("expected one flow to be created, got %d", n)
+	}
+	for _, want := range []string{"retrying in 1s", "Created submit flow for Change 123456"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("output missing %q, got: %s", want, output)
+		}
+	}
+}
+
+// Retries stop after 1s, 2s, 4s, and 8s, and the last error is reported as a
+// schedule failure, not a create failure.
+func TestCreate_Nightly_RetriesGiveUp(t *testing.T) {
+	server := nightlyReplicationFixture(t, 100)
+	sleeps := recordScheduleSleeps(t)
+
+	_, err := executeCommand(RootCmd, "pr", "create", "--nightly")
+	var flowErr *ScheduleFlowError
+	if !errors.As(err, &flowErr) {
+		t.Fatalf("expected a *ScheduleFlowError, got %T: %v", err, err)
+	}
+	want := []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second}
+	if diff := cmp.Diff(want, *sleeps); diff != "" {
+		t.Errorf("retry delays mismatch (-want +got):\n%s", diff)
+	}
+	if n := server.CallCount("GET", "/changes/123456/is-flows-enabled"); n != len(want)+1 {
+		t.Errorf("expected %d is-flows-enabled requests, got %d", len(want)+1, n)
 	}
 	if n := server.CallCount("POST", "/changes/123456/flows"); n != 0 {
 		t.Errorf("expected no flows to be created, got %d", n)

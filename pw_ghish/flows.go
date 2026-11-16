@@ -17,6 +17,7 @@ package pw_ghish
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -518,6 +519,9 @@ type FlowsNotEnabledError struct {
 	ChangeNum int
 	// Reason says how Gerrit indicated that flows are unavailable.
 	Reason string
+	// Err is the Gerrit error the reason was read from, or nil if Gerrit
+	// answered {"enabled": false}.
+	Err error
 }
 
 func (e *FlowsNotEnabledError) Error() string {
@@ -529,6 +533,8 @@ func (e *FlowsNotEnabledError) Error() string {
 		"  %s pr merge %d --cq",
 		e.Host, e.Reason, e.ChangeNum, root, e.ChangeNum, root, e.ChangeNum)
 }
+
+func (e *FlowsNotEnabledError) Unwrap() error { return e.Err }
 
 // isFlowsEnabledInfo is the response of GET /changes/<id>/is-flows-enabled.
 type isFlowsEnabledInfo struct {
@@ -551,9 +557,9 @@ func checkFlowsEnabled(ctx context.Context, client *GerritClient, host string, c
 	if err != nil {
 		switch {
 		case IsGerritHTTPStatus(err, http.StatusMethodNotAllowed):
-			return &FlowsNotEnabledError{Host: host, ChangeNum: changeNum, Reason: "no flow service is installed"}
+			return &FlowsNotEnabledError{Host: host, ChangeNum: changeNum, Reason: "no flow service is installed", Err: err}
 		case IsGerritHTTPStatus(err, http.StatusNotFound):
-			return &FlowsNotEnabledError{Host: host, ChangeNum: changeNum, Reason: "the server predates Gerrit 3.13, which added flows"}
+			return &FlowsNotEnabledError{Host: host, ChangeNum: changeNum, Reason: "the server predates Gerrit 3.13, which added flows", Err: err}
 		}
 		return FormatGerritError(err, action, strconv.Itoa(changeNum), host)
 	}
@@ -630,12 +636,73 @@ func scheduleSubmitFlowForPush(cmd *cobra.Command, chCtx *ChangeContext, opts Pu
 			return &ScheduleFlowError{Done: done, Retry: scheduleRetryCommand(opts, ""), Err: err}
 		}
 	}
-	scheduled, err := chCtx.CreateScheduledSubmitFlow(opts.ChangeNumber, opts.SubmitAt, DefaultScheduleTimezone)
+	scheduled, err := retryScheduleFlow(cmd, chCtx, func() (ScheduledSubmitFlow, error) {
+		return chCtx.CreateScheduledSubmitFlow(opts.ChangeNumber, opts.SubmitAt, DefaultScheduleTimezone)
+	})
 	if err != nil {
 		return &ScheduleFlowError{Done: done, Retry: scheduleRetryCommand(opts, chCtx.ChangeID), Err: err}
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), scheduled.Summary())
 	return nil
+}
+
+// scheduleRetryDelays are the waits between attempts to schedule a submit flow
+// right after a push. It is a var so tests can inspect it.
+var scheduleRetryDelays = []time.Duration{1 * time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second}
+
+// scheduleSleepFn waits d, or returns ctx.Err() if ctx is done first. It is a
+// var so tests do not sleep.
+var scheduleSleepFn = func(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
+// retryScheduleFlow runs schedule, retrying with backoff (scheduleRetryDelays)
+// while it fails with a transient Gerrit error (see isTransientScheduleError).
+//
+// A change pushed moments ago may not have replicated yet to the Gerrit
+// mirror that serves the next REST request, which then answers 404 for the
+// change, its flows, or is-flows-enabled. Retrying the whole schedule is safe:
+// it replaces any submit flow an earlier attempt created rather than adding
+// to it (see deleteScheduledSubmitFlows).
+func retryScheduleFlow(cmd *cobra.Command, chCtx *ChangeContext, schedule func() (ScheduledSubmitFlow, error)) (ScheduledSubmitFlow, error) {
+	ctx := chCtx.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	for attempt := 0; ; attempt++ {
+		scheduled, err := schedule()
+		if err == nil || attempt >= len(scheduleRetryDelays) || !isTransientScheduleError(err) {
+			return scheduled, err
+		}
+		delay := scheduleRetryDelays[attempt]
+		slog.Debug("scheduling submit flow failed, retrying", "attempt", attempt+1, "delay", delay, "err", err)
+		fmt.Fprintf(cmd.ErrOrStderr(), "%s Scheduling the submit flow failed, possibly because Gerrit is still replicating the change; retrying in %s.\n", GlyphWarn, delay)
+		if sleepErr := scheduleSleepFn(ctx, delay); sleepErr != nil {
+			return scheduled, fmt.Errorf("%w (retries stopped: %v)", err, sleepErr)
+		}
+	}
+}
+
+// isTransientScheduleError reports whether err comes from a Gerrit response
+// that may succeed if retried: 404 (the change has not replicated yet), 429,
+// or 5xx. Errors that cannot change on retry, such as a missing auto-submit
+// label, authentication failures, or a host without a flow service (405),
+// are not retried.
+func isTransientScheduleError(err error) bool {
+	apiErr, ok := errors.AsType[*GerritAPIError](err)
+	if !ok {
+		return false
+	}
+	return apiErr.StatusCode == http.StatusNotFound ||
+		apiErr.StatusCode == http.StatusTooManyRequests ||
+		apiErr.StatusCode >= http.StatusInternalServerError
 }
 
 // stackScheduleSpacing is how far apart --nightly and --submit-at schedule
@@ -672,15 +739,19 @@ func scheduleSubmitFlowForStack(cmd *cobra.Command, opts PushOptions, done strin
 
 	for i, id := range ids {
 		chCtx, err := ResolveChangeContext(cmd, []string{id})
-		if err == nil && i == 0 && opts.SubmitAt == "" {
-			var nightly []scheduleSlot
-			if nightly, err = stackScheduleSlots(chCtx, "", len(ids), DefaultScheduleTimezone); err == nil {
-				slots = nightly
-			}
-		}
 		if err == nil {
 			var scheduled ScheduledSubmitFlow
-			if scheduled, err = chCtx.createScheduledSubmitFlow(0, slots[i].Time, slots[i].Day, DefaultScheduleTimezone); err == nil {
+			scheduled, err = retryScheduleFlow(cmd, chCtx, func() (ScheduledSubmitFlow, error) {
+				if i == 0 && opts.SubmitAt == "" {
+					nightly, err := stackScheduleSlots(chCtx, "", len(ids), DefaultScheduleTimezone)
+					if err != nil {
+						return ScheduledSubmitFlow{}, err
+					}
+					slots = nightly
+				}
+				return chCtx.createScheduledSubmitFlow(0, slots[i].Time, slots[i].Day, DefaultScheduleTimezone)
+			})
+			if err == nil {
 				fmt.Fprintln(cmd.OutOrStdout(), scheduled.Summary())
 				continue
 			}

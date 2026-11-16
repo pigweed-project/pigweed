@@ -576,6 +576,10 @@ enabled for the change before modifying it, and fails with a suggested
 ``pr create`` can only ask once the change exists, so on a host without flows
 the change is created and only the schedule fails.
 
+A change that was just pushed may not have replicated to every Gerrit mirror
+yet, so ``pr create`` and ``pr push`` retry scheduling after 1, 2, 4, and 8
+seconds while Gerrit answers 404, 429, or 5xx.
+
 .. _module-pw_ghish-pr-cq-auto:
 
 Disambiguating ``--cq``, ``--auto``, and ``pr merge``
