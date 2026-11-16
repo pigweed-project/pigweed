@@ -47,6 +47,7 @@ a rollback anchor before any mutating Git command:
 ```bash
 PRE_FRESHEN_SHA=$(git rev-parse HEAD)
 echo "PRE_FRESHEN_SHA=${PRE_FRESHEN_SHA}"
+git fetch origin
 ./gh sense
 ```
 

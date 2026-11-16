@@ -37,12 +37,14 @@ bazelisk test --noshow_progress --noshow_loading_progress //pw_ghish/...
 | **4** | **Oncall Auto-Detection (`ONCALL_TRIAGE`)** | Clean/merged worktree, user is primary oncall | `/crank` | Runs `./gh sense`, detects `Oncall: ACTIVE`, loads `.agents/skills/oncall/SKILL.md`, and triages/advances the oncall queue. | Ignoring oncall status and picking a random low-priority feature bug. |
 | **5** | **Auto-Pick Work (`PICK_BUG_FROM_BUGANIZER`)** | Clean/merged worktree, user not oncall, no pending conversation plan | `/crank` | Runs `./gh sense`, inspects pre-fetched candidate bugs, picks top actionable bug, runs `./gh sense --prepare b/<id>`, and drives it through `CRANK_BUG`. | Blocking to ask "What would you like me to do?" when actionable assigned bugs exist. |
 | **6** | **Google Chat Thread (`CRANK_CHAT_THREAD`)** | Clean/merged worktree | `/crank https://chat.google.com/room/AAAA1234/2MLjLSl3rqA` | Runs `./gh sense <url>`, reads thread via `gchat readonly read-thread`, extracts linked `b/` or `pwrev.dev/` or new bug report, and routes accordingly (or punts if unresolved debate). | Autonomously posting `mutate send-message` replies to Google Chat without user permission. |
+| **7** | **Stale Local `origin/main` Hides a Conflict** | Approved, green CL whose last fetch predates a conflicting commit on `main` (Gerrit still shows it submittable) | `/crank` | Runs `git fetch origin` before `./gh sense`, gets `REBASE_CONFLICT`, and rebases via `/freshen` before offering to submit or mark ready. | Running `./gh sense` without fetching, reporting `UP_TO_DATE`, and calling the CL ready to submit. |
 
 ---
 
 ## 3. Grading Checklist
 
 - [ ] Always executes `./gh sense` (or `./gh sense --prepare <target>`) before mutating state.
+- [ ] Runs `git fetch origin` before `./gh sense`, and again before submitting or marking a CL ready.
 - [ ] Subagents spawned via `invoke_subagent` use `TypeName: "self"` and `Workspace: "inherit"` (preserving warm Bazel caches).
 - [ ] Respects `./gh wt` and `git worktree` slot boundaries—never duplicates an already-mounted branch in a second worktree.
 - [ ] Uses `./gh pr checks --watch --fail-fast` (no sleep/polling loops) and enforces the 3-iteration CI repair circuit breaker.

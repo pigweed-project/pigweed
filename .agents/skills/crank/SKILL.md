@@ -26,9 +26,11 @@ uses `./gh sense` to inspect the workspace and then composes
 
 ## Step 1: Sense & Prepare Context
 
-Run `./gh sense` as your first command:
+Fetch the target branch, then run `./gh sense`:
 
 ```bash
+git fetch origin
+
 # Bare /crank, --fleet, or Google Chat thread URL:
 ./gh sense [<optional_arg>]
 
@@ -36,12 +38,21 @@ Run `./gh sense` as your first command:
 ./gh sense --prepare <bug_or_cl_target>
 ```
 
+If your setup runs `./gh` or loads these skills from a separate primary
+checkout (for example the checkout that owns your `./gh wt` worktrees),
+fast-forward it first with `git -C <primary_checkout> pull --ff-only`. If that
+fails, stop and report it rather than run stale tools.
+
 `./gh sense` returns a compact summary with the active `Modality`, `Git` and
 `Rebase` status, `Worktree` slot, `Prepare` outcome, `Active CL` or `Target`
 details (including inline unresolved comments, author self-drafts, local code
 snippets, failing CI excerpts, or Buganizer issue comments), and recommended
 `Next:` steps.
 
+- **Conflicts Come Only From the Local Merge Check**: `Rebase:` compares
+  against your local `origin/main`, and Gerrit's `submittable` or `READY`
+  ignores conflicts, so a stale fetch can hide one. Fetch again before you
+  submit or mark a CL ready.
 - **Conversation Continuity First**: If `./gh sense` reports an idle/clean
   worktree (`PICK_BUG_FROM_BUGANIZER`), check whether you and the user just
   agreed on a task or plan earlier in this conversation. If so, execute that
@@ -145,6 +156,8 @@ Whenever you upload a patchset with `--cq`:
      same failure repeats twice, leaving drafts unpublished, and report the root
      cause.
 3. **Publish & Mark Ready (on `exit 0`)**:
+   - Run `git fetch origin && ./gh sense` again. If `Rebase:` is
+     `REBASE_CONFLICT`, go back to Step 2 and rebase first.
    - Publish staged draft replies: `./gh pr review [<cl>] --publish` (highlight
      any `[PUSHBACK_STAGED]` threads for the user).
    - If the CL is WIP or has no reviewers yet, mark ready and assign owners:
