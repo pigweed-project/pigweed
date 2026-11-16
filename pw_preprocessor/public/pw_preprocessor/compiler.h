@@ -193,6 +193,15 @@
 #define PW_HAVE_CPP_ATTRIBUTE(x) 0
 #endif  // defined(__cplusplus) && defined(__has_cpp_attribute)
 
+/// Wrapper around `__has_builtin`, which is defined by Clang and GCC 10+ and
+/// evaluates to a non-zero constant integer if the builtin is supported or 0 if
+/// not.
+#ifdef __has_builtin
+#define PW_HAS_BUILTIN(x) __has_builtin(x)
+#else
+#define PW_HAS_BUILTIN(x) 0
+#endif  // __has_builtin
+
 /// @ingroup pw_preprocessor_internal
 #define _PW_REQUIRE_SEMICOLON \
   static_assert(1, "This macro must be terminated with a semicolon")

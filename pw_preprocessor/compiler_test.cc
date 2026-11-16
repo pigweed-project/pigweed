@@ -116,5 +116,20 @@ TEST(CompilerMacros, CoroutineLifetimeAttributes) {
   FakeCoroReturnType disabled = MakeFakeCoroCopied(/*value=*/11);
   EXPECT_EQ(disabled.value(), 11);
 }
+
+TEST(CompilerMacros, HasBuiltin) {
+  static_assert(PW_HAS_BUILTIN(__pw_nonexistent_builtin) == 0);
+#if PW_HAS_BUILTIN(__pw_nonexistent_builtin)
+  static_assert(PW_HAS_BUILTIN(__pw_nonexistent_builtin) == 0,
+                "Nonexistent builtin should not be reported as available");
+#endif
+
+#ifdef __has_builtin
+  static_assert(PW_HAS_BUILTIN(__builtin_unreachable) ==
+                __has_builtin(__builtin_unreachable));
+#else
+  static_assert(PW_HAS_BUILTIN(__builtin_unreachable) == 0);
+#endif  // __has_builtin
+}
 }  // namespace
 }  // namespace pw::preprocessor
