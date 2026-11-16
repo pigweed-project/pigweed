@@ -129,3 +129,10 @@ func (f agentFlag) isAI() *bool {
 	}
 	panic(fmt.Sprintf("invalid agentFlag %q", string(f)))
 }
+
+// marked reports whether the content should be marked as written by a coding
+// agent.
+func (f agentFlag) marked() bool {
+	isAI := f.isAI()
+	return isAI != nil && *isAI
+}

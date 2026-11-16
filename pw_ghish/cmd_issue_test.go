@@ -1390,3 +1390,90 @@ func TestIssueStatus_FoldsBeyondTenIssues(t *testing.T) {
 		t.Errorf("expected issue #1012 to be visible with -v; got:\n%s", outAll)
 	}
 }
+
+func TestWithAgentNote(t *testing.T) {
+	t.Setenv("ANTIGRAVITY_AGENT", "")
+	tests := []struct {
+		name  string
+		body  string
+		agent agentFlag
+		want  string
+	}{
+		{name: "not marked", body: "Hello", agent: agentFalse, want: "Hello"},
+		{name: "marked", body: "Hello\n", agent: agentTrue, want: "Hello\n\n" + agentIssueNote},
+		{name: "marked, empty body", body: "", agent: agentTrue, want: agentIssueNote},
+		{name: "auto, human", body: "Hello", agent: agentAuto, want: "Hello"},
+	}
+	for _, tc := range tests {
+		if got := withAgentNote(tc.body, tc.agent); got != tc.want {
+			t.Errorf("%s: withAgentNote(%q) = %q, want %q", tc.name, tc.body, got, tc.want)
+		}
+	}
+}
+
+func TestIssueComment_Agent(t *testing.T) {
+	tests := []struct {
+		name     string
+		agentEnv bool
+		args     []string
+		wantNote bool
+	}{
+		{name: "human", wantNote: false},
+		{name: "agent, auto", agentEnv: true, wantNote: true},
+		{name: "human, --agent", args: []string{"--agent"}, wantNote: true},
+		{name: "agent, --agent=false", agentEnv: true, args: []string{"--agent=false"}, wantNote: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.agentEnv {
+				t.Setenv("ANTIGRAVITY_AGENT", "1")
+			}
+			srv := NewMockIssueTrackerServer(t)
+			srv.Install(t)
+			srv.SeedIssue(&BuganizerIssue{
+				IssueID: 400,
+				State:   BuganizerState{ComponentID: 1194524, Status: "NEW", Title: "Bug"},
+			}, "Initial description")
+			SetupMockConfig(t, &MockGitRunner{})
+
+			args := append([]string{"issue", "comment", "400", "-b", "Progress update"}, tc.args...)
+			if out, err := executeCommand(RootCmd, args...); err != nil {
+				t.Fatalf("issue comment failed: %v\nOutput: %s", err, out)
+			}
+			comments, err := srv.Client().ListComments(context.Background(), 400, 10, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := comments.IssueComments[len(comments.IssueComments)-1].Comment
+			want := "Progress update"
+			if tc.wantNote {
+				want = "Progress update\n\n" + agentIssueNote
+			}
+			if got != want {
+				t.Errorf("comment = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestIssueCreate_AgentNote(t *testing.T) {
+	t.Setenv("ANTIGRAVITY_AGENT", "1")
+	srv := NewMockIssueTrackerServer(t)
+	srv.Install(t)
+	SetupMockConfig(t, &MockGitRunner{})
+	SetTestProfile(t, "pigweed")
+
+	if out, err := executeCommand(RootCmd, "issue", "create", "-t", "pw_rpc: Fix framing", "-b", "Repro steps."); err != nil {
+		t.Fatalf("issue create failed: %v\nOutput: %s", err, out)
+	}
+	comments, err := srv.Client().ListComments(context.Background(), 300001, 10, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(comments.IssueComments) == 0 {
+		t.Fatal("created issue has no description")
+	}
+	if got, want := comments.IssueComments[0].Comment, "Repro steps.\n\n"+agentIssueNote; got != want {
+		t.Errorf("description = %q, want %q", got, want)
+	}
+}

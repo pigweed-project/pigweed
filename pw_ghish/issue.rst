@@ -235,6 +235,12 @@ blocks, headings, lists, and links render natively in the Buganizer UI:
    $ ./gh issue comment 315378787 -m "Patch uploaded to pwrev/477565."
    $ ./gh issue comment --body-file investigation_notes.md
 
+``issue comment`` and ``issue create`` take ``--agent=auto|true|false``, like
+``pr comment``. When it resolves to true (by default, when ghish runs under a
+coding agent), ghish appends a line marking the text as written by a coding
+agent. Buganizer has no field for this, so the mark is visible text. Pass
+``--agent=false`` when posting the user's verbatim words.
+
 Updating metadata and labels: issue edit
 ========================================
 Modify the title, description, assignee, or structured Buganizer fields using

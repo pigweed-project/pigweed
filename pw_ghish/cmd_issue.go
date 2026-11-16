@@ -979,6 +979,7 @@ var (
 	issueCreateComponent int64
 	issueCreateCCs       []string
 	issueCreateAmend     bool
+	issueCreateAgent     = agentAuto
 )
 
 var issueCreateCmd = &cobra.Command{
@@ -1099,7 +1100,7 @@ var issueCreateCmd = &cobra.Command{
 		req := &CreateIssueRequest{
 			IssueState: state,
 		}
-		if body != "" {
+		if body := withAgentNote(body, issueCreateAgent); body != "" {
 			req.IssueComment = NewMarkdownComment(body)
 		}
 
@@ -1459,7 +1460,24 @@ var (
 	issueCommentBody     string
 	issueCommentMessage  string
 	issueCommentBodyFile string
+	issueCommentAgent    = agentAuto
 )
+
+// agentIssueNote marks Buganizer text written by a coding agent. Unlike
+// Gerrit's is_ai comment field, Buganizer comments have no field for this, so
+// the mark is a visible line at the end of the text.
+const agentIssueNote = "_🤖 Written by a coding agent._"
+
+// withAgentNote appends agentIssueNote to body when agent is marked.
+func withAgentNote(body string, agent agentFlag) string {
+	if !agent.marked() {
+		return body
+	}
+	if strings.TrimSpace(body) == "" {
+		return agentIssueNote
+	}
+	return strings.TrimRight(body, "\n") + "\n\n" + agentIssueNote
+}
 
 var issueCommentCmd = &cobra.Command{
 	Use:         "comment [<number> | <url>]",
@@ -1496,7 +1514,7 @@ var issueCommentCmd = &cobra.Command{
 			return err
 		}
 
-		comment, err := client.CreateComment(ctx, issueID, body)
+		comment, err := client.CreateComment(ctx, issueID, withAgentNote(body, issueCommentAgent))
 		if err != nil {
 			return err
 		}
@@ -1665,6 +1683,8 @@ func init() {
 	issueCreateCmd.Flags().Int64VarP(&issueCreateComponent, "component", "C", 0, "Buganizer component ID")
 	issueCreateCmd.Flags().StringSliceVar(&issueCreateCCs, "cc", nil, "Comma-separated emails to CC")
 	issueCreateCmd.Flags().BoolVar(&issueCreateAmend, "amend", false, "Amend current Git HEAD commit with 'Bug: b/<new-id>'")
+	//ghish:flag mode=extension reason="Mark Buganizer text written by a coding agent"
+	issueCreateCmd.Flags().VarPF(&issueCreateAgent, "agent", "", agentFlagUsage).NoOptDefVal = string(agentTrue)
 
 	issueEditCmd.Flags().StringVarP(&issueEditTitle, "title", "t", "", "New issue title")
 	issueEditCmd.Flags().StringVar(&issueEditAddAssignee, "add-assignee", "", "Set issue assignee email")
@@ -1701,6 +1721,8 @@ func init() {
 	//ghish:flag mode=extension reason="Alias for --body on issue comment"
 	issueCommentCmd.Flags().StringVarP(&issueCommentMessage, "message", "m", "", "Comment text (alias for --body) (ghish-only)")
 	issueCommentCmd.Flags().StringVarP(&issueCommentBodyFile, "body-file", "F", "", "Read comment text from file (use \"-\" to read from standard input)")
+	//ghish:flag mode=extension reason="Mark Buganizer text written by a coding agent"
+	issueCommentCmd.Flags().VarPF(&issueCommentAgent, "agent", "", agentFlagUsage).NoOptDefVal = string(agentTrue)
 
 	issueDevelopCmd.Flags().StringVarP(&issueDevelopBase, "base", "b", "", "Base branch to branch from")
 	issueDevelopCmd.Flags().StringVarP(&issueDevelopName, "name", "n", "", "Custom branch name")
