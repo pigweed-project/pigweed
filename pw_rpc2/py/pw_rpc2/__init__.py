@@ -21,12 +21,33 @@ import pkgutil
 # separate directory, so extend the path before importing anything.
 __path__ = pkgutil.extend_path(__path__, __name__)
 
+from pw_transport import SocketClosed
+
+from pw_rpc2._call import (
+    BidirectionalStreamingCall,
+    Call,
+    ClientStreamingCall,
+    RpcError,
+    RpcTimeout,
+    ServerStreamingCall,
+    StreamClosedError,
+    UnaryCall,
+)
 from pw_rpc2._descriptors import MethodType, ProtoSource
 from pw_rpc2._packets import DecodeError, RpcStatus
 
 __all__ = [
+    'BidirectionalStreamingCall',
+    'Call',
+    'ClientStreamingCall',
     'DecodeError',
     'MethodType',
     'ProtoSource',
+    'RpcError',
     'RpcStatus',
+    'RpcTimeout',
+    'ServerStreamingCall',
+    'SocketClosed',
+    'StreamClosedError',
+    'UnaryCall',
 ]

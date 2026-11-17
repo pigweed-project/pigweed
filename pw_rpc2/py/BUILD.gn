@@ -30,6 +30,7 @@ pw_python_package("py") {
 
   sources = [
     "pw_rpc2/__init__.py",
+    "pw_rpc2/_call.py",
     "pw_rpc2/_descriptors.py",
     "pw_rpc2/_packets.py",
     "pw_rpc2/codegen_common.py",
@@ -42,6 +43,7 @@ pw_python_package("py") {
   tests = [
     "codegen_test.py",
     "plugin_test.py",
+    "tests/call_test.py",
     "tests/descriptors_test.py",
     "tests/packets_test.py",
   ]
@@ -51,6 +53,7 @@ pw_python_package("py") {
     "$dir_pw_rpc2:packet_type_enum.python",
     "$dir_pw_rpc2:protocol_error_enum.python",
     "$dir_pw_rpc2:rpc_code.python",
+    "$dir_pw_transport/py",
   ]
   python_test_deps = [
     ":descriptors_test_proto.python",

@@ -41,12 +41,15 @@ pw_py_library(
     name = "pw_rpc2",
     srcs = [
         "pw_rpc2/__init__.py",
+        "pw_rpc2/_call.py",
         "pw_rpc2/_packets.py",
     ],
     imports = ["."],
     deps = [
         ":descriptors",
         ":enums",
+        "//pw_build:python_protobuf_runtime",
+        "//pw_transport/py:pw_transport",
     ],
 )
 
@@ -139,6 +142,16 @@ pw_py_test(
         ":descriptors_test_py_pb2",
         ":pw_rpc2",
         "//pw_build:python_protobuf_runtime",
+        "//pw_rpc2:pw_rpc2_test_py_pb2",
+    ],
+)
+
+pw_py_test(
+    name = "call_test",
+    size = "small",
+    srcs = ["tests/call_test.py"],
+    deps = [
+        ":pw_rpc2",
         "//pw_rpc2:pw_rpc2_test_py_pb2",
     ],
 )
