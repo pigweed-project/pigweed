@@ -191,6 +191,7 @@ class TestSourceFilesFilter(unittest.TestCase):
     """Tests for file filters in upstream_checks."""
 
     def test_gn_exclude_perf_test(self) -> None:
+        """Checks perf test sources are excluded but not pw_perf_test."""
         self.assertFalse(
             upstream_checks.SOURCE_FILES_FILTER_GN_EXCLUDE.matches(
                 'pw_checksum/crc32_perf_test.cc'
@@ -198,7 +199,12 @@ class TestSourceFilesFilter(unittest.TestCase):
         )
         self.assertFalse(
             upstream_checks.SOURCE_FILES_FILTER_GN_EXCLUDE.matches(
-                'pw_protobuf/encoder_perf_test.cc'
+                'pw_protobuf/pwpb_perf_test.cc'
+            )
+        )
+        self.assertFalse(
+            upstream_checks.SOURCE_FILES_FILTER_GN_EXCLUDE.matches(
+                'pw_protobuf/pw_protobuf_test_protos/test_data_perf_test.h'
             )
         )
         self.assertFalse(
@@ -209,6 +215,11 @@ class TestSourceFilesFilter(unittest.TestCase):
         self.assertTrue(
             upstream_checks.SOURCE_FILES_FILTER_GN_EXCLUDE.matches(
                 'pw_perf_test/perf_test.cc'
+            )
+        )
+        self.assertTrue(
+            upstream_checks.SOURCE_FILES_FILTER_GN_EXCLUDE.matches(
+                'pw_perf_test/perf_test_test.cc'
             )
         )
         self.assertTrue(

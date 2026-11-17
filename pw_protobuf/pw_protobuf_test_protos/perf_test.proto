@@ -1,0 +1,77 @@
+// Copyright 2026 The Pigweed Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not
+// use this file except in compliance with the License. You may obtain a copy of
+// the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+// WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+// License for the specific language governing permissions and limitations under
+// the License.
+
+syntax = "proto3";
+
+package pw.protobuf.test;
+
+message ItemInfo {
+  enum Access {
+    NONE = 0;
+    READ = 1;
+    WRITE = 2;
+    READ_AND_WRITE = 3;
+  }
+  uint64 offset = 1;
+  uint32 size = 2;
+  Access access_level = 3;
+}
+
+message Location {
+  int32 x = 1;
+  int32 y = 2;
+}
+
+message SensorReport {
+  uint32 device_id = 1;
+  bool active = 2;
+  optional int32 temperature_mc = 3;
+  string label = 4;
+  bytes payload = 5;
+  repeated int32 samples = 6;
+  Location location = 7;
+}
+
+message ResponseInfo {
+  oneof key {
+    string key_string = 1;
+    fixed32 key_token = 2;
+  }
+  optional int64 timestamp = 3;
+  optional bool has_value = 4;
+  ItemInfo item_info = 5;
+}
+
+message SensorLog {
+  string tag = 1;
+  repeated int32 readings = 2;
+}
+
+message NestedLeaf {
+  uint64 id = 1;
+  uint32 count = 2;
+  bytes data = 3;
+}
+
+message NestedMid {
+  uint32 kind = 1;
+  NestedLeaf leaf = 2;
+  uint32 flags = 3;
+}
+
+message NestedRoot {
+  uint64 timestamp = 1;
+  NestedMid mid = 2;
+  uint32 status = 3;
+}

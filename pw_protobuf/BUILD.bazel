@@ -191,13 +191,69 @@ pw_cc_test(
     deps = [":pw_protobuf"],
 )
 
-pw_cc_perf_test(
-    name = "encoder_perf_test",
-    srcs = ["encoder_perf_test.cc"],
+pw_proto_filegroup(
+    name = "perf_test_proto_and_options",
+    testonly = True,
+    srcs = ["pw_protobuf_test_protos/perf_test.proto"],
+    options_files = ["pw_protobuf_test_protos/perf_test.options"],
+    visibility = ["//:__subpackages__"],
+)
+
+proto_library(
+    name = "perf_test_proto",
+    testonly = True,
+    srcs = [":perf_test_proto_and_options"],
+    strip_import_prefix = "/pw_protobuf",
+    visibility = ["//:__subpackages__"],
+)
+
+pwpb_proto_library(
+    name = "perf_test_proto_pwpb",
+    testonly = True,
+    visibility = ["//:__subpackages__"],
+    deps = [":perf_test_proto"],
+)
+
+cc_library(
+    name = "perf_test_data",
+    testonly = True,
+    hdrs = ["pw_protobuf_test_protos/test_data_perf_test.h"],
+    strip_include_prefix = "/pw_protobuf",
+    visibility = ["//:__subpackages__"],
     deps = [
-        ":codegen_test_proto_pwpb",
+        "//pw_bytes",
+        "//pw_span",
+    ],
+)
+
+pw_cc_perf_test(
+    name = "pwpb_perf_test",
+    srcs = ["pwpb_perf_test.cc"],
+    deps = [
+        ":perf_test_data",
+        ":perf_test_proto_pwpb",
         ":pw_protobuf",
-        "//pw_unit_test",
+        "//pw_assert:check",
+        "//pw_bytes",
+        "//pw_perf_test",
+        "//pw_span",
+        "//pw_status",
+        "//pw_stream",
+    ],
+)
+
+pw_cc_perf_test(
+    name = "pwpb_specific_perf_test",
+    srcs = ["pwpb_specific_perf_test.cc"],
+    deps = [
+        ":perf_test_data",
+        ":perf_test_proto_pwpb",
+        ":pw_protobuf",
+        "//pw_assert:check",
+        "//pw_bytes",
+        "//pw_perf_test",
+        "//pw_span",
+        "//pw_status",
     ],
 )
 
