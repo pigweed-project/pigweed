@@ -30,6 +30,7 @@ pw_python_package("py") {
     "pw_protobuf/proto_tree.py",
     "pw_protobuf/symbol_name_mapping.py",
   ]
+  tests = [ "codegen_pwpb_test.py" ]
   python_deps = [
     "$dir_pw_cli/py",
     "$dir_pw_codegen/py",

@@ -330,6 +330,7 @@ class CppStructureTest(unittest.TestCase):
     """Tests C++ #include sorting and namespace helpers."""
 
     def test_includes_sorting_and_grouping(self) -> None:
+        """Verifies include grouping, sorting, and comment merging."""
         self.assertEqual(cpp.includes([]), [])
         self.assertEqual(
             cpp.includes(
@@ -357,14 +358,72 @@ class CppStructureTest(unittest.TestCase):
             cpp.includes(["<vector>", "<array>"]),
             ["#include <array>", "#include <vector>"],
         )
+        self.assertEqual(
+            cpp.includes(
+                [
+                    '"pw_protobuf/internal/codegen.h"  // IWYU pragma: export',
+                    '"pw_protobuf/internal/codegen.h"',
+                    '"pw_assert/assert.h"',
+                ]
+            ),
+            [
+                '#include "pw_assert/assert.h"',
+                '#include "pw_protobuf/internal/codegen.h"  '
+                "// IWYU pragma: export",
+            ],
+        )
+        self.assertEqual(
+            cpp.includes(
+                [
+                    "<cstdint>",
+                    "#include <cstdint> // IWYU pragma: keep",
+                    "<array>",
+                    '"a.h"',
+                    '#include "a.h" // IWYU pragma: export',
+                    '"a.h"  // IWYU pragma: export',
+                ]
+            ),
+            [
+                "#include <array>",
+                "#include <cstdint>  // IWYU pragma: keep",
+                "",
+                '#include "a.h"  // IWYU pragma: export',
+            ],
+        )
 
     def test_includes_invalid_rejected(self) -> None:
-        for bad in ("foo.h", "<unclosed.h", '"unclosed.h', '""', "<>"):
+        """Verifies invalid #include inputs and conflicting comments raise."""
+        for bad in (
+            "foo.h",
+            "<unclosed.h",
+            '"unclosed.h',
+            '""',
+            "<>",
+            '"" // comment',
+            '"" trailing',
+            '"a.h" trailing',
+            "<a.h> trailing",
+            '"a.h" /* keep */',
+            '#included "a.h"',
+            '"a.h"\n#include "b.h"',
+            '"a.h" // keep\n#include "b.h"',
+            "<a.h> // keep\r\n<b.h>",
+        ):
             with self.subTest(bad=bad):
                 with self.assertRaisesRegex(
                     ValueError, "Invalid C\\+\\+ #include"
                 ):
                     cpp.includes([bad])
+
+        with self.assertRaisesRegex(ValueError, "Conflicting comments"):
+            cpp.includes(
+                [
+                    '"a.h"  // IWYU pragma: keep',
+                    '"a.h"  // IWYU pragma: export',
+                ]
+            )
+        with self.assertRaisesRegex(ValueError, "Conflicting comments"):
+            cpp.includes(["<cstdint> // keep", "<cstdint> // export"])
 
     def test_namespace_open_close(self) -> None:
         self.assertEqual(cpp.namespace_open("pw::foo"), "namespace pw::foo {")

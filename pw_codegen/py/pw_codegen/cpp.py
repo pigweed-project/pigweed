@@ -911,33 +911,83 @@ def includes(headers: Iterable[str]) -> list[str]:
     """Deduplicates, groups, and sorts C++ ``#include`` directives.
 
     Each item in ``headers`` may be either a bare include target
-    (``"<cstdint>"`` or ``'"pw_foo/bar.h"'``) or a full ``#include`` line.
-    System headers (``<...>``) are emitted first in sorted order, followed by
-    local headers (``"..."``) in sorted order, with a blank line separating the
-    two groups when both are non-empty.
+    (``"<cstdint>"`` or ``'"pw_foo/bar.h"'``) or a full ``#include`` line,
+    with an optional trailing ``// ...`` comment (such as
+    ``'"pw_foo/bar.h"  // IWYU pragma: export'``). If the same header appears
+    both with and without a comment, the comment is preserved. System headers
+    (``<...>``) are emitted first in sorted order, followed by local headers
+    (``"..."``) in sorted order, with a blank line separating the two groups
+    when both are non-empty.
+
+    Raises:
+        ValueError: An item is not a valid ``#include`` directive or the same
+            header appears with conflicting comments.
     """
-    system: set[str] = set()
-    local: set[str] = set()
+    system: dict[str, str | None] = {}
+    local: dict[str, str | None] = {}
     for raw in headers:
-        target = raw.strip()
-        if target.startswith("#include"):
-            target = target[len("#include") :].strip()
-        if len(target) > 2 and target.startswith("<") and target.endswith(">"):
-            system.add(f"#include {target}")
-        elif (
-            len(target) > 2 and target.startswith('"') and target.endswith('"')
-        ):
-            local.add(f"#include {target}")
+        entry = raw.strip()
+        if "\n" in entry or "\r" in entry:
+            raise ValueError(
+                f"Invalid C++ #include target {raw!r}; embedded newlines are "
+                "not allowed"
+            )
+        if entry.startswith("#include"):
+            entry = entry[len("#include") :].strip()
+
+        if entry.startswith("<"):
+            close_char = ">"
+            group = system
+        elif entry.startswith('"'):
+            close_char = '"'
+            group = local
         else:
             raise ValueError(
                 f"Invalid C++ #include target {raw!r}; expected <...> or "
                 '"..."'
             )
 
-    lines = sorted(system)
+        close_idx = entry.find(close_char, 1)
+        if close_idx <= 1:
+            raise ValueError(
+                f"Invalid C++ #include target {raw!r}; expected <...> or "
+                '"..."'
+            )
+
+        target = entry[: close_idx + 1]
+        rest = entry[close_idx + 1 :].strip()
+        comment: str | None = None
+        if rest:
+            if not rest.startswith("//"):
+                raise ValueError(
+                    f"Invalid C++ #include target {raw!r}; unexpected "
+                    f"trailing text {rest!r}"
+                )
+            comment = rest
+
+        existing = group.get(target)
+        if existing is not None and comment is not None and existing != comment:
+            raise ValueError(
+                f"Conflicting comments for #include {target}: "
+                f"{existing!r} vs {comment!r}"
+            )
+        if existing is None:
+            group[target] = comment
+
+    def _format_group(group: dict[str, str | None]) -> list[str]:
+        return [
+            (
+                f"#include {target}"
+                if group[target] is None
+                else f"#include {target}  {group[target]}"
+            )
+            for target in sorted(group)
+        ]
+
+    lines = _format_group(system)
     if system and local:
         lines.append("")
-    lines.extend(sorted(local))
+    lines.extend(_format_group(local))
     return lines
 
 

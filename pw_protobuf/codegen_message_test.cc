@@ -17,7 +17,6 @@
 #include <tuple>
 
 #include "pw_preprocessor/compiler.h"
-#include "pw_protobuf/internal/codegen.h"
 #include "pw_span/span.h"
 #include "pw_status/status.h"
 #include "pw_status/status_with_size.h"

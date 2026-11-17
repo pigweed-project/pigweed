@@ -12,7 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library")
+load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library", "pw_py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -70,5 +70,15 @@ pw_py_library(
         "//pw_codegen/py:pw_codegen",
         "//pw_protobuf:codegen_protos_pb2",
         "//pw_protobuf:field_options_proto_pb2",
+    ],
+)
+
+pw_py_test(
+    name = "codegen_pwpb_test",
+    size = "small",
+    srcs = ["codegen_pwpb_test.py"],
+    deps = [
+        ":pw_protobuf",
+        "//pw_build:python_protobuf_runtime",
     ],
 )

@@ -3981,7 +3981,7 @@ def generate_code_for_package(
         '"pw_protobuf/buffer_encoder.h"',
         '"pw_protobuf/encoder.h"',
         '"pw_protobuf/find.h"',
-        '"pw_protobuf/internal/codegen.h"',
+        '"pw_protobuf/internal/codegen.h"  // IWYU pragma: export',
         '"pw_protobuf/serialized_size.h"',
         '"pw_protobuf/stream_decoder.h"',
         '"pw_result/result.h"',
