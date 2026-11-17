@@ -12,107 +12,125 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-use nom::bytes::complete::{tag, take_till};
-use nom::multi::count;
-use nom::number::complete::{le_u16, le_u32, le_u8};
-use nom::{IResult, Parser};
-use pw_status::Result;
+//! Binary token database (`TOKENS\0\0`) parser.
+
+use pw_status::{Error, Result};
 
 use crate::detokenize::database::Database;
 
-#[derive(Debug)]
-struct BinaryEntry {
-    token: u32,
-    day: u8,
-    month: u8,
-    year: u16,
-}
+const UNSET_DAY: u8 = 0xff;
+const UNSET_MONTH: u8 = 0xff;
+const UNSET_YEAR: u16 = 0xffff;
+const MAX_DISPLAY_YEAR: u16 = 9999;
 
-fn parse_header(input: &[u8]) -> IResult<&[u8], usize> {
-    let (input, _) = tag(&b"TOKENS\0\0"[..]).parse(input)?;
-    let (input, entry_count) = le_u32(input)?;
-    let (input, _reserved) = le_u32(input)?;
-    Ok((input, entry_count as usize))
-}
-
-fn parse_entry(input: &[u8]) -> IResult<&[u8], BinaryEntry> {
-    let (input, token) = le_u32(input)?;
-    let (input, day) = le_u8(input)?;
-    let (input, month) = le_u8(input)?;
-    let (input, year) = le_u16(input)?;
-    Ok((
-        input,
-        BinaryEntry {
-            token,
-            day,
-            month,
-            year,
-        },
-    ))
-}
-
-fn parse_null_terminated_string(input: &[u8]) -> IResult<&[u8], &str> {
-    let (input, s_bytes) = take_till(|b| b == 0).parse(input)?;
-    let (input, _) = tag(&b"\0"[..]).parse(input)?;
-    let s = core::str::from_utf8(s_bytes).map_err(|_| {
-        nom::Err::Error(nom::error::Error::new(
-            s_bytes,
-            nom::error::ErrorKind::Verify,
-        ))
-    })?;
-    Ok((input, s))
-}
+const BINARY_MAGIC: &[u8; 8] = b"TOKENS\0\0";
+const BINARY_HEADER_META_SIZE: usize = 8;
+const BINARY_ENTRY_SIZE: usize = 8;
 
 fn is_valid_date_fields(year: u16, month: u8, day: u8) -> bool {
-    if !(1..=12).contains(&month) {
+    if year > MAX_DISPLAY_YEAR || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
         return false;
     }
-    if !(1..=31).contains(&day) {
-        return false;
-    }
+    let is_leap = (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400);
     let max_days = match month {
-        2 => {
-            let is_leap =
-                (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400);
-            if is_leap {
-                29
-            } else {
-                28
-            }
-        }
+        2 if is_leap => 29,
+        2 => 28,
         4 | 6 | 9 | 11 => 30,
         _ => 31,
     };
     day <= max_days
 }
 
-fn date_remove_string(entry: &BinaryEntry) -> String {
-    if entry.day == 0xff && entry.month == 0xff && entry.year == 0xffff {
+#[allow(clippy::cast_possible_truncation)] // year <= 9999 guarantees each decimal digit fits in u8.
+fn date_removed_string(year: u16, month: u8, day: u8) -> String {
+    if (day == UNSET_DAY && month == UNSET_MONTH && year == UNSET_YEAR)
+        || !is_valid_date_fields(year, month, day)
+    {
         return String::new();
     }
 
-    if !is_valid_date_fields(entry.year, entry.month, entry.day) {
-        return String::new();
-    }
-
-    format!("{:04}-{:02}-{:02}", entry.year, entry.month, entry.day)
+    let buf = [
+        b'0' + (year / 1000) as u8,
+        b'0' + ((year / 100) % 10) as u8,
+        b'0' + ((year / 10) % 10) as u8,
+        b'0' + (year % 10) as u8,
+        b'-',
+        b'0' + (month / 10),
+        b'0' + (month % 10),
+        b'-',
+        b'0' + (day / 10),
+        b'0' + (day % 10),
+    ];
+    core::str::from_utf8(&buf).unwrap_or("").to_string()
 }
 
-/// Parses a binary token database.
+/// Parses a binary token database into a [`Database`].
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidArgument`] if the header magic is invalid, the entry
+/// table is truncated, or any entry lacks a valid UTF-8 NUL terminator.
 pub fn parse_binary_database(input: &[u8]) -> Result<Database> {
-    let (input, entry_count) =
-        parse_header(input).map_err(|_| pw_status::Error::InvalidArgument)?;
-    let (input, raw_entries) = count(parse_entry, entry_count)
-        .parse(input)
-        .map_err(|_| pw_status::Error::InvalidArgument)?;
-    let (_input, strings) = count(parse_null_terminated_string, entry_count)
-        .parse(input)
-        .map_err(|_| pw_status::Error::InvalidArgument)?;
+    parse_binary_database_internal(input, None)
+}
+
+/// Parses a binary token database into a [`Database`] and pre-parses all format
+/// strings with `prefix`.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidArgument`] if the header magic is invalid, the entry
+/// table is truncated, or any entry lacks a valid UTF-8 NUL terminator.
+pub fn parse_binary_database_preparsed(input: &[u8], prefix: char) -> Result<Database> {
+    parse_binary_database_internal(input, Some(prefix))
+}
+
+fn parse_binary_database_internal(input: &[u8], prefix: Option<char>) -> Result<Database> {
+    let Some(rest) = input.strip_prefix(BINARY_MAGIC) else {
+        return Err(Error::InvalidArgument);
+    };
+    if rest.len() < BINARY_HEADER_META_SIZE {
+        return Err(Error::InvalidArgument);
+    }
+    let entry_count = usize::try_from(u32::from_le_bytes([rest[0], rest[1], rest[2], rest[3]]))
+        .map_err(|_| Error::InvalidArgument)?;
+    let rest = &rest[BINARY_HEADER_META_SIZE..];
+
+    let entries_len = entry_count
+        .checked_mul(BINARY_ENTRY_SIZE)
+        .ok_or(Error::InvalidArgument)?;
+    if rest.len() < entries_len {
+        return Err(Error::InvalidArgument);
+    }
+    let (entries_bytes, mut string_bytes) = rest.split_at(entries_len);
 
     let mut database = Database::new();
+    for entry_chunk in entries_bytes.as_chunks::<BINARY_ENTRY_SIZE>().0 {
+        let token = u32::from_le_bytes([
+            entry_chunk[0],
+            entry_chunk[1],
+            entry_chunk[2],
+            entry_chunk[3],
+        ]);
+        let day = entry_chunk[4];
+        let month = entry_chunk[5];
+        let year = u16::from_le_bytes([entry_chunk[6], entry_chunk[7]]);
 
-    for (entry, s) in raw_entries.into_iter().zip(strings) {
-        database.add_entry("", entry.token, s.to_string(), date_remove_string(&entry));
+        let nul_pos = string_bytes
+            .iter()
+            .position(|&b| b == 0)
+            .ok_or(Error::InvalidArgument)?;
+        let format_str =
+            core::str::from_utf8(&string_bytes[..nul_pos]).map_err(|_| Error::InvalidArgument)?;
+        string_bytes = &string_bytes[nul_pos + 1..];
+
+        database.add_entry_with_prefix(
+            "",
+            token,
+            format_str.to_string(),
+            date_removed_string(year, month, day),
+            prefix,
+        );
     }
 
     Ok(database)
@@ -122,6 +140,13 @@ pub fn parse_binary_database(input: &[u8]) -> Result<Database> {
 mod tests {
     use super::*;
 
+    fn append_binary_entry(buf: &mut Vec<u8>, token: u32, day: u8, month: u8, year: u16) {
+        buf.extend_from_slice(&token.to_le_bytes());
+        buf.push(day);
+        buf.push(month);
+        buf.extend_from_slice(&year.to_le_bytes());
+    }
+
     #[test]
     fn test_parse_binary_database_tokens_header() {
         let mut binary_data = Vec::new();
@@ -129,11 +154,7 @@ mod tests {
         binary_data.extend_from_slice(&1u32.to_le_bytes()); // entry_count = 1
         binary_data.extend_from_slice(&0u32.to_le_bytes()); // reserved
 
-        // BinaryEntry: token (4 bytes), day (1 byte), month (1 byte), year (2 bytes)
-        binary_data.extend_from_slice(&0x12345678u32.to_le_bytes());
-        binary_data.push(0xff); // day (never removed)
-        binary_data.push(0xff); // month
-        binary_data.extend_from_slice(&0xffffu16.to_le_bytes()); // year
+        append_binary_entry(&mut binary_data, 0x12345678, 0xff, 0xff, 0xffff);
 
         // Null-terminated string
         binary_data.extend_from_slice(b"hello world\0");
@@ -142,11 +163,49 @@ mod tests {
         let entries = db.lookup(0x12345678, "");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].format_string, "hello world");
+        assert_eq!(entries[0].date_removed, "");
     }
 
     #[test]
-    fn test_parse_binary_database_invalid_header() {
-        let result = parse_binary_database(b"INVALID_HEADER");
-        result.unwrap_err();
+    fn test_parse_binary_database_valid_and_invalid_dates() {
+        let mut binary_data = Vec::new();
+        binary_data.extend_from_slice(BINARY_MAGIC);
+        binary_data.extend_from_slice(&4u32.to_le_bytes());
+        binary_data.extend_from_slice(&0u32.to_le_bytes());
+
+        // Valid date: 2026-06-12
+        append_binary_entry(&mut binary_data, 1, 12, 6, 2026);
+        // Valid leap day: 2024-02-29
+        append_binary_entry(&mut binary_data, 2, 29, 2, 2024);
+        // Invalid non-leap Feb 29: 2025-02-29 -> ""
+        append_binary_entry(&mut binary_data, 3, 29, 2, 2025);
+        // Out-of-range year > 9999 -> ""
+        append_binary_entry(&mut binary_data, 4, 1, 1, 10000);
+
+        binary_data.extend_from_slice(b"valid\0leap\0nonleap\0future\0");
+
+        let db = parse_binary_database(&binary_data).unwrap();
+        assert_eq!(db.lookup(1, "")[0].date_removed, "2026-06-12");
+        assert_eq!(db.lookup(2, "")[0].date_removed, "2024-02-29");
+        assert_eq!(db.lookup(3, "")[0].date_removed, "");
+        assert_eq!(db.lookup(4, "")[0].date_removed, "");
+    }
+
+    #[test]
+    fn test_parse_binary_database_invalid_inputs() {
+        parse_binary_database(b"INVALID_HEADER").unwrap_err();
+        parse_binary_database(b"TOKENS\0\0\x01\x00").unwrap_err();
+
+        // Declared entry_count = 1, missing entry bytes
+        let mut truncated = Vec::new();
+        truncated.extend_from_slice(BINARY_MAGIC);
+        truncated.extend_from_slice(&1u32.to_le_bytes());
+        truncated.extend_from_slice(&0u32.to_le_bytes());
+        parse_binary_database(&truncated).unwrap_err();
+
+        // Missing null terminator on string table
+        append_binary_entry(&mut truncated, 1, 0xff, 0xff, 0xffff);
+        truncated.extend_from_slice(b"unterminated");
+        parse_binary_database(&truncated).unwrap_err();
     }
 }

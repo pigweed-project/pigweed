@@ -251,8 +251,6 @@ rust_library {
     srcs: ["rust/pw_tokenizer/lib.rs"],
     cfgs: ["feature=\"std\""],
     rustlibs: [
-        "libnom",
-        "libpw_base64",
         "libpw_bytes",
         "libpw_format",
         "libpw_format_core",

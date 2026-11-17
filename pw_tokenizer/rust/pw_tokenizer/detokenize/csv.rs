@@ -12,140 +12,188 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-use core::mem;
+//! CSV token database parser.
 
-use pw_status::Result;
+use pw_status::{Error, Result};
 
 use crate::detokenize::database::Database;
+
+/// Parser state for a single CSV row.
+#[derive(Debug, Default)]
+struct CsvRowState {
+    /// Completed fields parsed so far in the current row.
+    row: Vec<String>,
+    /// Characters accumulated for the field currently being parsed.
+    current_field: String,
+    /// Whether the parser is currently inside a double-quoted field.
+    in_quotes: bool,
+    /// Whether a closing quote was just encountered in the current field.
+    quote_closed: bool,
+    /// Whether the current line has encountered any non-newline characters.
+    has_content: bool,
+}
+
+impl CsvRowState {
+    fn finish_field(&mut self) {
+        self.row.push(core::mem::take(&mut self.current_field));
+        self.quote_closed = false;
+    }
+
+    fn finish_row(&mut self, results: &mut Vec<Vec<String>>) {
+        self.row.push(core::mem::take(&mut self.current_field));
+        if self.has_content || self.row.len() > 1 || !self.row[0].is_empty() {
+            results.push(core::mem::take(&mut self.row));
+        } else {
+            self.row.clear();
+        }
+        self.quote_closed = false;
+        self.has_content = false;
+    }
+
+    fn discard_corrupt_line(&mut self, chars: &mut core::iter::Peekable<core::str::Chars>) {
+        for ch in chars.by_ref() {
+            if ch == '\n' {
+                break;
+            }
+        }
+        self.row.clear();
+        self.current_field.clear();
+        self.in_quotes = false;
+        self.quote_closed = false;
+        self.has_content = false;
+    }
+}
 
 /// Parses a CSV string into a vector of rows, where each row is a vector of strings.
 ///
 /// This parser handles quotes (including newlines inside quotes), empty lines,
 /// and error recovery by skipping lines with errors.
+#[must_use]
 pub fn parse_csv(csv: &str) -> Vec<Vec<String>> {
     let mut results = Vec::new();
-    let mut row = Vec::new();
-    let mut current = String::new();
-    let mut in_quotes = false;
-    let mut quote_closed = false;
+    let mut state = CsvRowState::default();
     let mut chars = csv.chars().peekable();
-    let mut row_has_content = false;
 
-    while let Some(c) = chars.next() {
-        match c {
+    while let Some(ch) = chars.next() {
+        match ch {
             '\r' => continue,
-            '\n' => {
-                if in_quotes {
-                    current.push(c);
+            '\n' if state.in_quotes => state.current_field.push(ch),
+            '\n' => state.finish_row(&mut results),
+            '"' if state.in_quotes => {
+                state.has_content = true;
+                if chars.next_if_eq(&'"').is_some() {
+                    state.current_field.push('"');
                 } else {
-                    row.push(mem::take(&mut current));
-                    if row_has_content || row.len() > 1 || !row[0].is_empty() {
-                        results.push(mem::take(&mut row));
-                    } else {
-                        row.clear();
-                    }
-                    quote_closed = false;
-                    row_has_content = false;
+                    state.in_quotes = false;
+                    state.quote_closed = true;
                 }
             }
             '"' => {
-                row_has_content = true;
-                if in_quotes {
-                    if let Some(&'"') = chars.peek() {
-                        chars.next(); // consume second quote
-                        current.push('"');
-                    } else {
-                        in_quotes = false;
-                        quote_closed = true;
-                    }
-                } else {
-                    if !current.is_empty() || quote_closed {
-                        // Error case, skip to newline.
-                        skip_to_newline(&mut chars);
-                        row.clear();
-                        current.clear();
-                        quote_closed = false;
-                        row_has_content = false;
-                        continue;
-                    }
-                    in_quotes = true;
-                }
-            }
-            ',' => {
-                row_has_content = true;
-                if in_quotes {
-                    current.push(c);
-                } else {
-                    row.push(mem::take(&mut current));
-                    quote_closed = false;
-                }
-            }
-            _ => {
-                row_has_content = true;
-                if quote_closed {
-                    // Error case, skip to newline.
-                    skip_to_newline(&mut chars);
-                    row.clear();
-                    current.clear();
-                    quote_closed = false;
-                    row_has_content = false;
+                state.has_content = true;
+                if !state.current_field.is_empty() || state.quote_closed {
+                    state.discard_corrupt_line(&mut chars);
                     continue;
                 }
-                current.push(c);
+                state.in_quotes = true;
+            }
+            ',' if state.in_quotes => {
+                state.has_content = true;
+                state.current_field.push(ch);
+            }
+            ',' => {
+                state.has_content = true;
+                state.finish_field();
+            }
+            _ => {
+                state.has_content = true;
+                if state.quote_closed {
+                    state.discard_corrupt_line(&mut chars);
+                    continue;
+                }
+                state.current_field.push(ch);
             }
         }
     }
-    // Handle last line if no trailing newline
-    if in_quotes {
-        // Error, unclosed quote at EOF. Skip row.
-    } else if row_has_content || row.len() > 1 || !current.is_empty() {
-        row.push(current);
-        results.push(row);
+
+    // Handle last line if no trailing newline and quotes are balanced.
+    if !state.in_quotes
+        && (state.has_content || state.row.len() > 1 || !state.current_field.is_empty())
+    {
+        state.finish_row(&mut results);
     }
+
     results
 }
 
-fn skip_to_newline(chars: &mut core::iter::Peekable<core::str::Chars>) {
-    for c in chars.by_ref() {
-        if c == '\n' {
-            break;
-        }
-    }
+/// Parses a CSV token database string into a [`Database`].
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidArgument`] if any row contains an invalid hex token
+/// or malformed ISO date string.
+pub fn parse_csv_database(csv: &str) -> Result<Database> {
+    parse_csv_database_internal(csv, None)
 }
 
-pub fn parse_csv_database(csv: &str) -> Result<Database> {
+/// Parses a CSV token database string into a [`Database`], pre-parsing nested token
+/// specifications using `prefix`.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidArgument`] if any row contains an invalid hex token
+/// or malformed ISO date string.
+pub fn parse_csv_database_preparsed(csv: &str, prefix: char) -> Result<Database> {
+    parse_csv_database_internal(csv, Some(prefix))
+}
+
+fn parse_csv_database_internal(csv: &str, prefix: Option<char>) -> Result<Database> {
     let mut database = Database::new();
 
-    let parsed_csv = parse_csv(csv);
-
-    for row in parsed_csv {
+    for row in parse_csv(csv) {
         if row.len() != 4 {
             continue;
         }
 
         let token_str = row[0].trim();
         let date_str = row[1].trim();
-        let domain = crate::detokenize::detokenizer::canonicalize_domain(&row[2]);
+        let domain = &row[2];
         let format_string = &row[3];
 
-        let token = match u32::from_str_radix(token_str, 16) {
-            Ok(t) => t,
-            Err(_) => return Err(pw_status::Error::InvalidArgument),
+        let Ok(token) = u32::from_str_radix(token_str, 16) else {
+            return Err(Error::InvalidArgument);
         };
 
-        if !crate::detokenize::detokenizer::is_valid_date(date_str) {
-            return Err(pw_status::Error::InvalidArgument);
+        if !is_valid_date(date_str) {
+            return Err(Error::InvalidArgument);
         }
 
-        database.add_entry(
-            &domain,
+        database.add_entry_with_prefix(
+            domain,
             token,
             format_string.to_string(),
             date_str.to_string(),
+            prefix,
         );
     }
 
     Ok(database)
+}
+
+fn is_valid_date(date_str: &str) -> bool {
+    const ISO_DATE_LEN: usize = 10;
+    const ISO_DATE_YEAR_SEP_IDX: usize = 4;
+    const ISO_DATE_MONTH_SEP_IDX: usize = 7;
+
+    if date_str.is_empty() {
+        return true;
+    }
+    if date_str.len() != ISO_DATE_LEN {
+        return false;
+    }
+    date_str.chars().enumerate().all(|(idx, ch)| match idx {
+        ISO_DATE_YEAR_SEP_IDX | ISO_DATE_MONTH_SEP_IDX => ch == '-',
+        _ => ch.is_ascii_digit(),
+    })
 }
 
 #[cfg(test)]
@@ -249,5 +297,28 @@ mod tests {
         ];
         let result = parse_csv(csv);
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_from_csv_bad_date_and_bad_token() {
+        assert_eq!(
+            parse_csv_database("00000001,2026/01/01,,hello\n").unwrap_err(),
+            Error::InvalidArgument
+        );
+        assert_eq!(
+            parse_csv_database("not_hex,2026-01-01,,hello\n").unwrap_err(),
+            Error::InvalidArgument
+        );
+    }
+
+    #[test]
+    fn test_from_csv_duplicate_entries_uses_newest_removal_date() {
+        let csv = "00000001,2020-01-01,,same message\n\
+                   00000001,2025-05-10,,same message\n\
+                   00000001,2022-03-04,,same message\n";
+        let db = parse_csv_database(csv).unwrap();
+        let entries = db.lookup(1, "");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].date_removed, "2025-05-10");
     }
 }

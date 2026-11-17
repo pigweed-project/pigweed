@@ -12,69 +12,84 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-use nom::bytes::complete::{tag, take};
-use nom::combinator::verify;
-use nom::number::complete::le_u32;
-use nom::{IResult, Parser};
-use pw_status::Result;
+//! ELF `.pw_tokenizer.entries` section token database parser.
+
+use pw_status::{Error, Result};
 use pw_tokenizer_core::TOKENIZER_ENTRY_MAGIC;
 
 use crate::detokenize::database::Database;
 
-struct ElfSectionEntry<'a> {
-    domain: &'a str,
-    token: u32,
-    format_string: &'a str,
-}
-
-fn parse_null_terminated_string_with_len(input: &[u8], len: usize) -> IResult<&[u8], &str> {
-    if len == 0 {
-        return Err(nom::Err::Error(nom::error::Error::new(
-            input,
-            nom::error::ErrorKind::Verify,
-        )));
+fn parse_null_terminated_string_with_len(input: &[u8], len: usize) -> Result<(&[u8], &str)> {
+    if len == 0 || input.len() < len {
+        return Err(Error::InvalidArgument);
     }
-    let (input, s_bytes) = take(len - 1).parse(input)?;
-    let (input, _) = tag(&b"\0"[..]).parse(input)?;
-    let s = core::str::from_utf8(s_bytes).map_err(|_| {
-        nom::Err::Error(nom::error::Error::new(
-            s_bytes,
-            nom::error::ErrorKind::Verify,
-        ))
-    })?;
-    Ok((input, s))
+    let (chunk, rest) = input.split_at(len);
+    if chunk[len - 1] != 0 {
+        return Err(Error::InvalidArgument);
+    }
+    let parsed_str = core::str::from_utf8(&chunk[..len - 1]).map_err(|_| Error::InvalidArgument)?;
+    Ok((rest, parsed_str))
 }
 
-fn parse_elf_entry(input: &[u8]) -> IResult<&[u8], ElfSectionEntry<'_>> {
-    let (input, _) = verify(le_u32, |&magic| magic == TOKENIZER_ENTRY_MAGIC).parse(input)?;
-    let (input, token) = le_u32(input)?;
-    let (input, domain_len) = le_u32(input)?;
-    let (input, string_len) = le_u32(input)?;
-
-    let (input, domain) = parse_null_terminated_string_with_len(input, domain_len as usize)?;
-    let (input, format_string) = parse_null_terminated_string_with_len(input, string_len as usize)?;
-
-    Ok((
-        input,
-        ElfSectionEntry {
-            domain,
-            token,
-            format_string,
-        },
-    ))
+/// Parses an ELF token database section (`.pw_tokenizer.entries`) into a
+/// [`Database`].
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidArgument`] if an entry header is truncated, the
+/// magic value is invalid, or any domain or format string is malformed.
+pub fn parse_elf_section_database(input: &[u8]) -> Result<Database> {
+    parse_elf_section_database_internal(input, None)
 }
 
-/// Parses an ELF token database section (`.pw_tokenizer.entries`).
-pub fn parse_elf_section_database(mut input: &[u8]) -> Result<Database> {
+/// Parses an ELF token database section into a [`Database`] and pre-parses all
+/// format strings with `prefix`.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidArgument`] if an entry header is truncated, the
+/// magic value is invalid, or any domain or format string is malformed.
+pub fn parse_elf_section_database_preparsed(input: &[u8], prefix: char) -> Result<Database> {
+    parse_elf_section_database_internal(input, Some(prefix))
+}
+
+const ELF_ENTRY_HEADER_SIZE: usize = 16;
+
+fn parse_elf_section_database_internal(mut input: &[u8], prefix: Option<char>) -> Result<Database> {
     let mut database = Database::new();
     while !input.is_empty() {
-        let (remaining, entry) =
-            parse_elf_entry(input).map_err(|_| pw_status::Error::InvalidArgument)?;
-        database.add_entry(
-            entry.domain,
-            entry.token,
-            entry.format_string.to_string(),
+        if input.len() < ELF_ENTRY_HEADER_SIZE {
+            return Err(Error::InvalidArgument);
+        }
+        let (&magic_bytes, rest) = input
+            .split_first_chunk::<4>()
+            .ok_or(Error::InvalidArgument)?;
+        if u32::from_le_bytes(magic_bytes) != TOKENIZER_ENTRY_MAGIC {
+            return Err(Error::InvalidArgument);
+        }
+        let (&token_bytes, rest) = rest
+            .split_first_chunk::<4>()
+            .ok_or(Error::InvalidArgument)?;
+        let (&domain_len_bytes, rest) = rest
+            .split_first_chunk::<4>()
+            .ok_or(Error::InvalidArgument)?;
+        let (&string_len_bytes, rest) = rest
+            .split_first_chunk::<4>()
+            .ok_or(Error::InvalidArgument)?;
+        let token = u32::from_le_bytes(token_bytes);
+        let domain_len = usize::try_from(u32::from_le_bytes(domain_len_bytes))
+            .map_err(|_| Error::InvalidArgument)?;
+        let string_len = usize::try_from(u32::from_le_bytes(string_len_bytes))
+            .map_err(|_| Error::InvalidArgument)?;
+        let (remaining, domain) = parse_null_terminated_string_with_len(rest, domain_len)?;
+        let (remaining, format_string) =
+            parse_null_terminated_string_with_len(remaining, string_len)?;
+        database.add_entry_with_prefix(
+            domain,
+            token,
+            format_string.to_string(),
             String::new(),
+            prefix,
         );
         input = remaining;
     }

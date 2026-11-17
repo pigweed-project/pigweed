@@ -89,11 +89,16 @@ rust_library(
     name = "pw_tokenizer",
     srcs = [
         "pw_tokenizer/detokenize.rs",
+        "pw_tokenizer/detokenize/arg_decoder.rs",
+        "pw_tokenizer/detokenize/arg_decoder/session.rs",
         "pw_tokenizer/detokenize/binary.rs",
         "pw_tokenizer/detokenize/csv.rs",
         "pw_tokenizer/detokenize/database.rs",
-        "pw_tokenizer/detokenize/detokenizer.rs",
+        "pw_tokenizer/detokenize/decoded.rs",
         "pw_tokenizer/detokenize/elf.rs",
+        "pw_tokenizer/detokenize/error.rs",
+        "pw_tokenizer/detokenize/primitives.rs",
+        "pw_tokenizer/detokenize/varint.rs",
         "pw_tokenizer/internal.rs",
         "pw_tokenizer/lib.rs",
     ],
@@ -106,7 +111,6 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         ":pw_tokenizer_core",
-        "//pw_base64/rust:pw_base64",
         "//pw_bytes/rust:pw_bytes",
         "//pw_format/rust:pw_format_core",
         "//pw_status/rust:pw_status",
@@ -114,8 +118,7 @@ rust_library(
         "//pw_varint/rust:pw_varint",
     ] + select({
         "//pw_build/constraints/rust:std": [
-            "//pw_format/rust:pw_format",  # Added for rustdoc linking support.
-            "@rust_crates//:nom",
+            "//pw_format/rust:pw_format",
         ],
         "//conditions:default": [],
     }),
