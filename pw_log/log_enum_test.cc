@@ -50,12 +50,6 @@ pw::tokenizer::PwEnumDomainToken<::this_is_a_test::ScopedThing>() {
   return 99999u;
 }
 
-template <>
-[[maybe_unused]] constexpr const char*
-pw::PwEnumDomainName<::this_is_a_test::ScopedThing>() {
-  return "ScopedDomain";
-}
-
 namespace this_is_a_test {
 namespace {
 
@@ -164,42 +158,19 @@ PW_CONSTEXPR_TEST(TokenizedArgs, NestedTokenFmt2_NonTokenizingBackend, {
 
 PW_CONSTEXPR_TEST(TokenizedArgs, LogEnumVersionedFmt_NonTokenizingBackend, {
   constexpr const char* nested_token = PW_LOG_ENUM_VERSIONED_FMT();
-  PW_TEST_EXPECT_STREQ(PW_LOG_NESTED_TOKEN_FMT("enum_domain"), nested_token);
+  PW_TEST_EXPECT_STREQ("%s", nested_token);
   constexpr const char* custom_token = PW_LOG_ENUM_VERSIONED_FMT("my_domain");
-  PW_TEST_EXPECT_STREQ(PW_LOG_NESTED_TOKEN_FMT("my_domain"), custom_token);
+  PW_TEST_EXPECT_STREQ("%s", custom_token);
 });
 
-PW_CONSTEXPR_TEST(TokenizedArgs,
-                  LogEnumVersionedDefaultDomain_NonTokenizingBackend,
-                  {
-                    struct Captured {
-                      const char* domain;
-                      const char* value;
-                    };
-                    auto capture = [](const char* domain, const char* value) {
-                      return Captured{domain, value};
-                    };
-                    constexpr Captured result = capture(
-                        PW_LOG_ENUM_VERSIONED(::this_is_a_test::Thing::kAlpha));
-                    PW_TEST_EXPECT_STREQ("Enum", result.domain);
-                    PW_TEST_EXPECT_STREQ("kAlpha", result.value);
-                  });
-
-PW_CONSTEXPR_TEST(TokenizedArgs,
-                  LogEnumVersionedCustomDomain_NonTokenizingBackend,
-                  {
-                    struct Captured {
-                      const char* domain;
-                      const char* value;
-                    };
-                    auto capture = [](const char* domain, const char* value) {
-                      return Captured{domain, value};
-                    };
-                    constexpr Captured result = capture(PW_LOG_ENUM_VERSIONED(
-                        ::this_is_a_test::ScopedThing::kItem1));
-                    PW_TEST_EXPECT_STREQ("ScopedDomain", result.domain);
-                    PW_TEST_EXPECT_STREQ("kItem1", result.value);
-                  });
+PW_CONSTEXPR_TEST(TokenizedArgs, LogEnumVersioned_NonTokenizingBackend, {
+  constexpr const char* unscoped =
+      PW_LOG_ENUM_VERSIONED(::this_is_a_test::Thing::kAlpha);
+  PW_TEST_EXPECT_STREQ("kAlpha", unscoped);
+  constexpr const char* scoped =
+      PW_LOG_ENUM_VERSIONED(::this_is_a_test::ScopedThing::kItem1);
+  PW_TEST_EXPECT_STREQ("kItem1", scoped);
+});
 
 #endif  //__has_include("log_backend/log_backend_uses_pw_tokenizer.h")
 

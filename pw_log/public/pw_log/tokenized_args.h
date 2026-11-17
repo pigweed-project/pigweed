@@ -95,24 +95,19 @@
 /// For non-tokenizing backends, defaults to the string specifier `%s`.
 #define PW_LOG_NESTED_TOKEN_FMT(...) "%s::%s"
 
-/// Format specifier for PW_LOG_ENUM_VERSIONED.
+/// Format specifier for logging a versioned enum with `PW_LOG_ENUM_VERSIONED`.
 ///
-/// Aliases PW_LOG_NESTED_TOKEN_FMT.
-#define PW_LOG_ENUM_VERSIONED_FMT PW_LOG_NESTED_TOKEN_FMT
+/// On both tokenizing and non-tokenizing backends, formats as the enumerator
+/// string (for example, `"SECOND"`).
+#define PW_LOG_ENUM_VERSIONED_FMT(...) "%s"
 
-/// Returns the arguments needed to log a versioned enum.
+/// Converts an enum to the arguments needed to log its enumerator with
+/// `PW_LOG_ENUM_VERSIONED_FMT()`.
 ///
-/// These arguments are intended to be formatted using
-/// `PW_LOG_ENUM_VERSIONED_FMT`.
-///
-/// If nested tokenization is supported by the logging backend, this returns
-/// the versioned domain token along with the token representation of the enum.
-///
-/// For non-tokenizing backends, defaults to the domain name along with the
-/// string representation of the enum.
-#define PW_LOG_ENUM_VERSIONED(enumerator)                       \
-  ::pw::PwEnumDomainName<std::decay_t<decltype(enumerator)>>(), \
-      PW_LOG_ENUM(enumerator)
+/// If nested tokenization is supported by the logging backend, expands to two
+/// arguments: the 32-bit versioned domain token and the enum value token. For
+/// non-tokenizing backends, expands to the enumerator string (`const char*`).
+#define PW_LOG_ENUM_VERSIONED(enumerator) PW_LOG_ENUM(enumerator)
 
 #endif  //__has_include("log_backend/log_backend_uses_pw_tokenizer.h")
 

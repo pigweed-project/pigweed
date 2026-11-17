@@ -209,9 +209,10 @@ reliable detokenization), you can use the versioned logging macro:
 When using a tokenizing logging backend, the format macro evaluates to a nested
 token format specifier (e.g. ``"${$#%08" PRIx32 "}#%08" PRIx32``), and
 :cc:`PW_LOG_ENUM_VERSIONED` expands to two arguments: the 32-bit versioned
-domain token and the 32-bit enum value token. On non-tokenizing backends, it
-yields the string format specifier ``%s::%s`` and resolves to the enum's domain name
-string followed by its stringified value.
+domain token and the 32-bit enum value token. On non-tokenizing backends, the
+format macro yields the string format specifier ``%s``, and
+:cc:`PW_LOG_ENUM_VERSIONED` resolves to :cc:`pw::EnumToString`, producing the
+same enumerator display name as tokenizing backends.
 
 Example
 -------
@@ -594,27 +595,6 @@ Use :cc:`pw::has_enum_traits_v` to detect whether an enum has traits, and
 rejects ``bool``, since nearly everything converts implicitly to ``bool`` and
 would silently validate as ``0`` or ``1``. This is unrelated to the enum's
 underlying type: an ``enum class E : bool`` is supported like any other enum.
-
------------------
-Enum domain names
------------------
-:cc:`pw::PwEnumDomainName` returns a fallback string domain name of a given
-enum type, used by non-tokenizing logging backends to prefix versioned enum
-logs.
-
-By default, this function returns ``"Enum"``. If an enum uses a custom
-tokenization domain and you want non-tokenizing logging backends to prefix the
-enum values with that custom domain name instead of ``"Enum"``, you can provide
-a custom template specialization for the enum type:
-
-.. code-block:: cpp
-
-   #include "pw_enum/to_string.h"
-
-   template <>
-   constexpr const char* pw::PwEnumDomainName<my::CustomEnum>() {
-     return "CustomDomain";
-   }
 
 ------------------
 Enum domain tokens
