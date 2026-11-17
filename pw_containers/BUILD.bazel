@@ -206,6 +206,14 @@ cc_library(
 )
 
 cc_library(
+    name = "pack_indexing",
+    hdrs = ["public/pw_containers/internal/pack_indexing.h"],
+    strip_include_prefix = "public",
+    visibility = ["//:__subpackages__"],
+    deps = ["//pw_preprocessor"],
+)
+
+cc_library(
     name = "maybe",
     hdrs = ["public/pw_containers/internal/maybe.h"],
     strip_include_prefix = "public",
@@ -985,6 +993,7 @@ pw_cc_test(
     has_nc_test = True,
     deps = [
         ":maybe",
+        ":pack_indexing",
         ":tag",
         "//pw_polyfill",
         "//pw_unit_test:constexpr",

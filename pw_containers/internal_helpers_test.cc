@@ -12,12 +12,14 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <cstddef>
 #include <optional>
 #include <type_traits>
 #include <utility>
 
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_containers/internal/maybe.h"
+#include "pw_containers/internal/pack_indexing.h"
 #include "pw_containers/internal/tag.h"
 #include "pw_polyfill/language_feature_macros.h"
 #include "pw_unit_test/constexpr.h"
@@ -27,9 +29,14 @@ namespace {
 
 using pw::containers::internal::ConstructAt;
 using pw::containers::internal::Empty;
+using pw::containers::internal::InvalidTypeIndex;
+using pw::containers::internal::kInvalidTypeIndex;
 using pw::containers::internal::kIsInPlaceTag;
+using pw::containers::internal::kUniqueTypeIndex;
 using pw::containers::internal::Maybe;
+using pw::containers::internal::NthType;
 using pw::containers::internal::NullPlaceholder;
+using pw::containers::internal::SafeNthType;
 using pw::containers::internal::UninitializedTag;
 
 // ============================================================================
@@ -54,6 +61,42 @@ static_assert(!kIsInPlaceTag<int>);
 static_assert(!kIsInPlaceTag<Empty>);
 static_assert(!kIsInPlaceTag<const std::in_place_t>);
 static_assert(!kIsInPlaceTag<const std::in_place_t&>);
+
+// ============================================================================
+// pack_indexing.h tests
+// ============================================================================
+
+template <size_t I>
+struct IndexedTag {};
+
+static_assert(std::is_same_v<NthType<0, int>, int>);
+static_assert(std::is_same_v<NthType<0, int, char, float>, int>);
+static_assert(std::is_same_v<NthType<2, int, char, float>, float>);
+
+// Test across 8-element chunk boundaries (indices 7, 8, 15, 16, 17).
+#define _PW_TEST_PACK_18                                                     \
+  IndexedTag<0>, IndexedTag<1>, IndexedTag<2>, IndexedTag<3>, IndexedTag<4>, \
+      IndexedTag<5>, IndexedTag<6>, IndexedTag<7>, IndexedTag<8>,            \
+      IndexedTag<9>, IndexedTag<10>, IndexedTag<11>, IndexedTag<12>,         \
+      IndexedTag<13>, IndexedTag<14>, IndexedTag<15>, IndexedTag<16>,        \
+      IndexedTag<17>
+
+static_assert(std::is_same_v<NthType<7, _PW_TEST_PACK_18>, IndexedTag<7>>);
+static_assert(std::is_same_v<NthType<8, _PW_TEST_PACK_18>, IndexedTag<8>>);
+static_assert(std::is_same_v<NthType<15, _PW_TEST_PACK_18>, IndexedTag<15>>);
+static_assert(std::is_same_v<NthType<16, _PW_TEST_PACK_18>, IndexedTag<16>>);
+static_assert(std::is_same_v<NthType<17, _PW_TEST_PACK_18>, IndexedTag<17>>);
+static_assert(
+    std::is_same_v<SafeNthType<18, _PW_TEST_PACK_18>, InvalidTypeIndex>);
+static_assert(std::is_same_v<SafeNthType<0>, InvalidTypeIndex>);
+#undef _PW_TEST_PACK_18
+
+static_assert(kUniqueTypeIndex<int> == kInvalidTypeIndex);
+static_assert(kUniqueTypeIndex<int, int> == 0);
+static_assert(kUniqueTypeIndex<char, int, char, float> == 1);
+static_assert(kUniqueTypeIndex<double, int, char, float> == kInvalidTypeIndex);
+static_assert(kUniqueTypeIndex<int, int, char, int> == kInvalidTypeIndex);
+static_assert(kUniqueTypeIndex<float, int, char, float> == 2);
 
 // ============================================================================
 // maybe.h tests

@@ -97,6 +97,13 @@ pw_source_set("tag") {
   visibility = [ "$dir_pigweed/*" ]
 }
 
+pw_source_set("pack_indexing") {
+  public = [ "public/pw_containers/internal/pack_indexing.h" ]
+  public_configs = [ ":public_include_path" ]
+  public_deps = [ dir_pw_preprocessor ]
+  visibility = [ "$dir_pigweed/*" ]
+}
+
 pw_source_set("maybe") {
   public = [ "public/pw_containers/internal/maybe.h" ]
   public_configs = [ ":public_include_path" ]
@@ -937,6 +944,7 @@ pw_test("internal_helpers_test") {
   sources = [ "internal_helpers_test.cc" ]
   deps = [
     ":maybe",
+    ":pack_indexing",
     ":tag",
     "$dir_pw_unit_test:constexpr",
     dir_pw_polyfill,

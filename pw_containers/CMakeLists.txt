@@ -91,6 +91,15 @@ pw_add_library(pw_containers._tag INTERFACE
     public
 )
 
+pw_add_library(pw_containers._pack_indexing INTERFACE
+  HEADERS
+    public/pw_containers/internal/pack_indexing.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_preprocessor
+)
+
 pw_add_library(pw_containers._maybe INTERFACE
   HEADERS
     public/pw_containers/internal/maybe.h
@@ -1043,6 +1052,7 @@ pw_add_test(pw_containers.internal_helpers_test
   PRIVATE_DEPS
     pw_compilation_testing._pigweed_only_negative_compilation
     pw_containers._maybe
+    pw_containers._pack_indexing
     pw_containers._tag
     pw_polyfill
     pw_unit_test.constexpr
