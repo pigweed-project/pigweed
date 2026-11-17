@@ -394,6 +394,20 @@ target_link_libraries(pw_system.system_example
     targets.host_device_simulator.boot
 )
 
+pw_add_library(pw_system.perf_test_app OBJECT
+  SOURCES
+    perf_test_app.cc
+  PRIVATE_DEPS
+    pw_perf_test
+    pw_perf_test.event_handler
+    pw_perf_test.logging_event_handler
+    pw_polyfill
+    pw_system.config
+    pw_system.log
+    pw_system.target_hooks
+    pw_thread.thread
+)
+
 pw_add_library(pw_system.async STATIC
   HEADERS
     public/pw_system/system.h

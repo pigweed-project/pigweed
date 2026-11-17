@@ -23,6 +23,7 @@ import("$dir_pw_interrupt/backend.gni")
 import("$dir_pw_log/backend.gni")
 import("$dir_pw_log_string/backend.gni")
 import("$dir_pw_malloc/backend.gni")
+import("$dir_pw_perf_test/perf_test.gni")
 import("$dir_pw_sync/backend.gni")
 import("$dir_pw_sys_io/backend.gni")
 import("$dir_pw_thread/backend.gni")
@@ -130,6 +131,8 @@ template("pw_system_target") {
     # TODO(amontanez): This should be set to a "$dir_pw_unit_test:rpc_main"
     # when RPC is working.
     pw_unit_test_MAIN = "$dir_pw_unit_test:logging_main"
+
+    pw_perf_test_MAIN_FUNCTION = "$dir_pw_system:perf_test_app"
 
     pw_trace_BACKEND = "$dir_pw_trace_tokenized"
 

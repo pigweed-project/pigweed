@@ -384,6 +384,23 @@ will automatically attach to the running python console.
 Benchmark
 ---------
 
+pw_system:perf_test_app
+=======================
+``pw_system`` provides a :ref:`module-pw_perf_test` runner target
+(``@pigweed//pw_system:perf_test_app`` in Bazel, ``$dir_pw_system:perf_test_app``
+in GN) for running performance tests on ``pw_system`` targets. Because
+``pw_system`` starts the RTOS scheduler before ``main()``, ``perf_test_app``
+implements ``pw::system::UserAppInit()`` to run all registered performance tests
+in a high-priority thread and log results through ``pw_system``'s log pipeline.
+
+In Bazel, set ``@pigweed//pw_perf_test:main`` to
+``@pigweed//pw_system:perf_test_app`` (along with an appropriate
+``@pigweed//pw_perf_test:test_timer_backend``) on your ``platform()``. In GN,
+``pw_system_target`` sets ``pw_perf_test_MAIN_FUNCTION`` to
+``$dir_pw_system:perf_test_app`` by default. The runner thread's stack size
+defaults to 8 KiB and can be overridden with
+``PW_SYSTEM_PERF_TEST_THREAD_STACK_SIZE_BYTES``.
+
 pw_system.benchmark_runner
 ==========================
 .. automodule:: pw_system.benchmark_runner

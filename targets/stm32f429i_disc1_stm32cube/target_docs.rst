@@ -126,3 +126,24 @@ Testing
 Unit tests can be run on-device by following the directions in
 :ref:`target-stm32f429i-disc1-test-bazel`, using
 ``--config=stm32f429i_freertos``.
+
+-----------------
+Performance tests
+-----------------
+:ref:`module-pw_perf_test` binaries can run on this target with
+``--config=stm32f429i_freertos``, which measures CPU cycles with the DWT cycle
+counter. ``pw_system`` starts the FreeRTOS scheduler before ``main()``, so the
+tests run in a high-priority thread started from ``UserAppInit()`` (via
+``//pw_system:perf_test_app``) and report their results through ``pw_system``'s
+logs.
+
+.. code-block:: console
+
+   $ bazelisk build --config=stm32f429i_freertos //pw_perf_test:example_perf_test
+
+Flash the binary and view the results with ``pw-system-console`` as shown in
+`Building and Running the Demo`_, passing the built ``bazel-bin/...`` binary to
+``--token-databases``. Because ``perf_test_app`` runs once immediately after
+reset and ``pw_system`` streams unrequested logs over UART without waiting for a
+client, either start ``pw-system-console`` before flashing or press the board's
+``RESET`` button after connecting so you don't miss the output.

@@ -484,6 +484,21 @@ pw_executable("system_example") {
   defines = [ "PW_SYSTEM_ENABLE_RPC_QUERY_SERVICE=1" ]
 }
 
+pw_source_set("perf_test_app") {
+  testonly = pw_unit_test_TESTONLY
+  sources = [ "perf_test_app.cc" ]
+  deps = [
+    ":config",
+    ":log",
+    ":pw_system",
+    "$dir_pw_perf_test",
+    "$dir_pw_perf_test:event_handler",
+    "$dir_pw_perf_test:logging_event_handler",
+    "$dir_pw_polyfill",
+    "$dir_pw_thread:thread",
+  ]
+}
+
 pw_source_set("async_packet_io") {
   public_configs = [ ":public_include_path" ]
   public = [ "public/pw_system/internal/async_packet_io.h" ]

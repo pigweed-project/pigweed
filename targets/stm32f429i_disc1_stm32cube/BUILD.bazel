@@ -73,6 +73,8 @@ platform(
         "@pigweed//pw_log:backend_impl": "//pw_log_tokenized:impl",
         "@pigweed//pw_log_tokenized:handler_backend": "//pw_system:log_backend",
         "@pigweed//pw_malloc:backend": "//pw_malloc:bucket_allocator",
+        "@pigweed//pw_perf_test:main": "//pw_system:perf_test_app",
+        "@pigweed//pw_perf_test:test_timer_backend": "//pw_perf_test:arm_cortex_timer",
         "@pigweed//pw_sys_io:backend": "//pw_sys_io_stm32cube",
         "@pigweed//pw_system:extra_platform_libs": "//targets/stm32f429i_disc1_stm32cube:extra_platform_libs",
         "@pigweed//pw_toolchain/arm_gcc:freestanding": "False",

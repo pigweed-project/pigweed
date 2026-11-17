@@ -16,6 +16,7 @@ import("//build_overrides/pigweed.gni")
 
 import("$dir_pw_build/target_types.gni")
 import("$dir_pw_malloc/backend.gni")
+import("$dir_pw_perf_test/perf_test.gni")
 import("$dir_pw_system/system_target.gni")
 import("$dir_pw_toolchain/arm_clang/toolchains.gni")
 import("$dir_pw_toolchain/generate_toolchain.gni")
@@ -82,6 +83,7 @@ common_link_deps =
 common_build_args = {
   pw_log_BACKEND = dir_pw_log_tokenized
   pw_log_tokenized_HANDLER_BACKEND = "$dir_pw_system:log_backend.impl"
+  pw_perf_test_TIMER_INTERFACE_BACKEND = "$dir_pw_perf_test:arm_cortex_timer"
   pw_third_party_freertos_CONFIG = "$dir_pigweed/targets/stm32f429i_disc1_stm32cube:stm32f4xx_freertos_config"
   pw_third_party_freertos_PORT = "$pw_external_freertos:arm_cm4f"
   pw_sys_io_BACKEND = dir_pw_sys_io_stm32cube

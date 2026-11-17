@@ -609,6 +609,28 @@ pw_cc_binary(
     ],
 )
 
+# pw_perf_test main for pw_system targets. pw_system starts the scheduler
+# before main(), so this runs performance tests from a thread started by
+# UserAppInit() and logs results through pw_system's log pipeline.
+cc_library(
+    name = "perf_test_app",
+    testonly = True,
+    srcs = ["perf_test_app.cc"],
+    implementation_deps = [
+        ":config",
+        ":log",
+        ":pw_system",
+        "//pw_perf_test:event_handler",
+        "//pw_perf_test:logging_event_handler",
+        "//pw_polyfill",
+        "//pw_thread:thread",
+    ],
+    deps = [
+        "//pw_perf_test",
+    ],
+    alwayslink = 1,
+)
+
 cc_library(
     name = "async",
     srcs = [
