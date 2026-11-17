@@ -173,28 +173,6 @@ _PW_TOKENIZE_ENUM_DOMAIN(::my::pkg::MyEnum,
                          (kCustom, "it's \\"custom\\"")
 );
 
-namespace my::pkg {
-class [[nodiscard]] MyStatus final
-    : public ::pw::StatusBase<MyStatus, Code::kOk> {
- public:
-  constexpr MyStatus() = default;
-  explicit constexpr MyStatus(Code code)
-      : ::pw::StatusBase<MyStatus, Code::kOk>(code) {}
-
-  // PW_ENUM_STATUS: No factory for kOk: OK code; use MyStatus() instead.
-
-  [[nodiscard]] static constexpr MyStatus Busy() {
-    return MyStatus(Code::kBusy);
-  }
-
-  // PW_ENUM_STATUS: No Is*() function for kOk: use ok() instead.
-
-  [[nodiscard]] constexpr bool IsBusy() const {
-    return code() == Code::kBusy;
-  }
-};
-}  // namespace my::pkg
-
 #define MY_PKG_CODE_DOMAIN "::my::pkg::_pw_enum_024a61b00c08::Code"
 #define MY_PKG_CODE_FMT PW_LOG_TOKEN_FMT("::my::pkg::_pw_enum_024a61b00c08::Code")
 
@@ -248,6 +226,28 @@ _PW_TOKENIZE_ENUM_DOMAIN(::my::pkg::Code,
                          (kOk, "OK"),
                          (kBusy, "BUSY")
 );
+
+namespace my::pkg {
+class [[nodiscard]] MyStatus final
+    : public ::pw::StatusBase<MyStatus, Code::kOk> {
+ public:
+  constexpr MyStatus() noexcept = default;
+  explicit constexpr MyStatus(Code code) noexcept
+      : ::pw::StatusBase<MyStatus, Code::kOk>(code) {}
+
+  // PW_ENUM_STATUS: No factory for kOk: OK code; use MyStatus() instead.
+
+  [[nodiscard]] static constexpr MyStatus Busy() noexcept {
+    return MyStatus(Code::kBusy);
+  }
+
+  // PW_ENUM_STATUS: No Is*() function for kOk: use ok() instead.
+
+  [[nodiscard]] constexpr bool IsBusy() const noexcept {
+    return code() == Code::kBusy;
+  }
+};
+}  // namespace my::pkg
 """
 
 

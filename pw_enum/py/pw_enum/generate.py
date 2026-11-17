@@ -255,7 +255,8 @@ def _generate_status_members(
         assert fn_name is not None
         defined.add(fn_name)
         yield (
-            f"  [[nodiscard]] static constexpr {status.name}" f" {fn_name}() {{"
+            f"  [[nodiscard]] static constexpr {status.name}"
+            f" {fn_name}() noexcept {{"
         )
         yield f"    return {status.name}(Code::{v.cc_name});"
         yield "  }"
@@ -282,7 +283,7 @@ def _generate_status_members(
 
         assert fn_name is not None
         defined.add(fn_name)
-        yield f"  [[nodiscard]] constexpr bool {fn_name}() const {{"
+        yield f"  [[nodiscard]] constexpr bool {fn_name}() const noexcept {{"
         yield f"    return code() == Code::{v.cc_name};"
         yield "  }"
 
@@ -297,16 +298,17 @@ def _generate_status_class(enum_desc: EnumDescriptor) -> Iterator[str]:
         if enum_desc.scopes == status.scopes
         else f"{enum_desc.cc_full_name}::{ok_code}"
     )
+    base_type = f"::pw::StatusBase<{status.name}, {ok_expr}>"
 
     if status.scopes:
         yield cpp.namespace_open("::".join(status.scopes))
 
     yield f"class [[nodiscard]] {status.name} final"
-    yield f"    : public ::pw::StatusBase<{status.name}, {ok_expr}> {{"
+    yield f"    : public {base_type} {{"
     yield " public:"
-    yield f"  constexpr {status.name}() = default;"
-    yield f"  explicit constexpr {status.name}(Code code)"
-    yield f"      : ::pw::StatusBase<{status.name}, {ok_expr}>(code) {{}}"
+    yield f"  constexpr {status.name}() noexcept = default;"
+    yield f"  explicit constexpr {status.name}(Code code) noexcept"
+    yield f"      : {base_type}(code) {{}}"
     yield from _generate_status_members(enum_desc, status)
     yield "};"
 
@@ -317,15 +319,15 @@ def _generate_status_class(enum_desc: EnumDescriptor) -> Iterator[str]:
 def _generate_single_enum_footer(enum_desc: EnumDescriptor) -> Iterator[str]:
     unique_values = enum_desc.unique_values()
 
-    if enum_desc.status is not None:
-        yield from _generate_status_class(enum_desc)
-        yield ""
-
     yield from _generate_macro_defs(enum_desc)
     yield ""
     yield from _generate_enum_traits(enum_desc, unique_values)
     yield ""
     yield from _generate_tokenization(enum_desc, unique_values)
+
+    if enum_desc.status is not None:
+        yield ""
+        yield from _generate_status_class(enum_desc)
 
 
 def _footer_includes(enums: Sequence[EnumDescriptor]) -> list[str]:

@@ -533,13 +533,13 @@ class TestEnumGeneration(unittest.TestCase):
         self.assertNotIn("using enum ", footer)
         self.assertNotIn("static constexpr MyStatus Ok()", footer)
         self.assertIn(
-            "[[nodiscard]] static constexpr MyStatus NotFound() {\n"
+            "[[nodiscard]] static constexpr MyStatus NotFound() noexcept {\n"
             "    return MyStatus(Code::kNotFound);\n"
             "  }",
             footer,
         )
         self.assertIn(
-            "  [[nodiscard]] constexpr bool IsNotFound() const {\n"
+            "  [[nodiscard]] constexpr bool IsNotFound() const noexcept {\n"
             "    return code() == Code::kNotFound;\n"
             "  }",
             footer,
@@ -549,11 +549,15 @@ class TestEnumGeneration(unittest.TestCase):
             "  // PW_ENUM_STATUS: No Is*() function for kOk: use ok() instead.",
             footer,
         )
-        self.assertIn("constexpr MyStatus() = default;", footer)
-        self.assertIn("explicit constexpr MyStatus(Code code)", footer)
+        self.assertIn("constexpr MyStatus() noexcept = default;", footer)
+        self.assertIn("explicit constexpr MyStatus(Code code) noexcept", footer)
         self.assertIn(
             ": ::pw::StatusBase<MyStatus, MyStatusCode::kOk>(code) {}",
             footer,
+        )
+        self.assertLess(
+            footer.index("struct EnumTraits<::my::ns::MyStatusCode>"),
+            footer.index("class [[nodiscard]] MyStatus final"),
         )
         self.assertIn("struct EnumTraits<::my::ns::MyStatusCode>", footer)
         self.assertIn(
@@ -684,8 +688,8 @@ class TestEnumGeneration(unittest.TestCase):
             )
         ]
         footer = "\n".join(generate_footer(enums)) + "\n"
-        self.assertIn("static constexpr Conflict IsFull() {", footer)
-        self.assertIn("constexpr bool IsIsFull() const", footer)
+        self.assertIn("static constexpr Conflict IsFull() noexcept {", footer)
+        self.assertIn("constexpr bool IsIsFull() const noexcept", footer)
         self.assertNotIn("constexpr bool IsFull() const", footer)
         self.assertIn(
             "  // PW_ENUM_STATUS: No Is*() function for kFull: IsFull() is "
