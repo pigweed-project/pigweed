@@ -37,6 +37,7 @@ from collections.abc import Callable
 from google.protobuf import text_format
 from pw_build.proto import workflows_pb2
 from pw_build.workflows.build_driver import BuildDriver
+from pw_build.workflows.private.mixins import merge_build_configs
 
 
 class ValidationError(Exception):
@@ -108,6 +109,16 @@ class Validator:
         self._shared_output_names = {
             output.name for output in self._workflow_suite.output_specs
         }
+        self._shared_configs = {
+            config.name: config for config in self._workflow_suite.configs
+        }
+        # Build directories are named after configs, so merged config names
+        # must not match any shared or inline config name.
+        self._config_names = {
+            fragment.name
+            for fragment in self._all_fragments
+            if isinstance(fragment, workflows_pb2.BuildConfig)
+        }
 
     def validate(self) -> None:
         """Runs all checks on the loaded Workflows config.
@@ -161,6 +172,7 @@ class Validator:
                     output_check(fragment)
             else:
                 raise ValidationError(f'Unknown fragment type: {fragment}')
+        self._check_merged_names_unique()
 
     def check_fragment_has_unique_name(self, fragment: Fragment) -> None:
         existing_fragment = self._fragments_by_name[fragment.name]
@@ -189,11 +201,26 @@ class Validator:
     def check_config_references_real_build_type(
         self, config: workflows_pb2.BuildConfig
     ) -> None:
+        if config.mixin and not config.build_type:
+            return
         if config.build_type not in self._build_drivers:
             raise ValidationError(
                 f'BuildConfig `{config.name}` references unknown build type '
                 f'`{config.build_type}`'
             )
+
+    @staticmethod
+    def check_config_mixin_driver_options_have_build_type(
+        config: workflows_pb2.BuildConfig,
+    ) -> None:
+        # Without a build_type, nothing ties the options' message type to the
+        # driver of the base config the mixin is applied to.
+        if config.mixin and config.driver_options.type_url:
+            if not config.build_type:
+                raise ValidationError(
+                    f'Mixin `{config.name}` sets `driver_options`, so it must '
+                    'also set `build_type`'
+                )
 
     def check_build_references_real_config(
         self, build: workflows_pb2.Build
@@ -275,6 +302,111 @@ class Validator:
     def check_tool_has_target(tool: workflows_pb2.Tool) -> None:
         if not tool.target:
             raise ValidationError(f'Tool `{tool.name}` has no target.')
+
+    def _base_config(
+        self, fragment: workflows_pb2.Build | workflows_pb2.Tool
+    ) -> workflows_pb2.BuildConfig | None:
+        """Returns the base config of a build or tool, or None if missing."""
+        which = fragment.WhichOneof('config')
+        if which == 'use_config':
+            return self._shared_configs.get(fragment.use_config)
+        if which == 'build_config':
+            return fragment.build_config
+        return None
+
+    def _merged_config(
+        self, fragment: workflows_pb2.Build | workflows_pb2.Tool
+    ) -> workflows_pb2.BuildConfig | None:
+        """Returns the merged config of a build or tool that lists mixins.
+
+        Returns None if the fragment lists no mixins, or if its base config is
+        missing (that case is reported by other checks). Call this only after
+        _check_mixins() has passed for the fragment.
+        """
+        base = self._base_config(fragment)
+        if base is None or not fragment.use_config_mixins:
+            return None
+        return merge_build_configs(
+            base,
+            [self._shared_configs[name] for name in fragment.use_config_mixins],
+        )
+
+    def _check_mixins(
+        self, kind: str, fragment: workflows_pb2.Build | workflows_pb2.Tool
+    ) -> None:
+        """Checks the mixin rules for one build or tool, in order."""
+        name = fragment.name
+        base = self._base_config(fragment)
+        if base is not None and base.mixin:
+            if fragment.WhichOneof('config') == 'use_config':
+                raise ValidationError(
+                    f'{kind} `{name}` cannot use mixin `{base.name}` as its '
+                    '`use_config`'
+                )
+            raise ValidationError(
+                f'{kind} `{name}` has an inline `build_config` marked as a '
+                'mixin; mixins must be shared configs'
+            )
+
+        seen: set[str] = set()
+        for mixin_name in fragment.use_config_mixins:
+            mixin = self._shared_configs.get(mixin_name)
+            if mixin is None:
+                raise ValidationError(
+                    f'{kind} `{name}` references missing mixin `{mixin_name}`'
+                )
+            if not mixin.mixin:
+                raise ValidationError(
+                    f'{kind} `{name}` lists `{mixin_name}` in '
+                    f'`use_config_mixins`, but `{mixin_name}` is not a mixin'
+                )
+            if mixin_name in seen:
+                raise ValidationError(
+                    f'{kind} `{name}` lists mixin `{mixin_name}` more than once'
+                )
+            seen.add(mixin_name)
+
+        try:
+            merged = self._merged_config(fragment)
+        except ValueError as e:
+            raise ValidationError(f'{kind} `{name}`: {e}') from e
+        if merged is not None and merged.name in self._config_names:
+            raise ValidationError(
+                f'{kind} `{name}`: merged config name `{merged.name}` collides '
+                'with an existing build config name'
+            )
+
+    def check_build_mixins(self, build: workflows_pb2.Build) -> None:
+        self._check_mixins('Build', build)
+
+    def check_tool_mixins(self, tool: workflows_pb2.Tool) -> None:
+        self._check_mixins('Tool', tool)
+
+    def _check_merged_names_unique(self) -> None:
+        """Ensures different mixin combinations get different names.
+
+        This looks across all builds and tools, so validate() calls it once
+        after the per-fragment checks have passed.
+        """
+        seen: dict[str, tuple[str, workflows_pb2.BuildConfig]] = {}
+        fragments: list[workflows_pb2.Build | workflows_pb2.Tool] = [
+            *self._workflow_suite.builds,
+            *self._workflow_suite.tools,
+        ]
+        for fragment in fragments:
+            merged = self._merged_config(fragment)
+            if merged is None:
+                continue
+            if merged.name not in seen:
+                seen[merged.name] = (fragment.name, merged)
+                continue
+            other_name, other = seen[merged.name]
+            if other != merged:
+                raise ValidationError(
+                    f'Merged config name `{merged.name}` collides: '
+                    f'`{other_name}` and `{fragment.name}` merge different '
+                    'configs into it'
+                )
 
     def check_group_builds_exist(self, group: workflows_pb2.TaskGroup) -> None:
         for build_name in group.builds:

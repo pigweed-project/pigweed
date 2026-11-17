@@ -31,6 +31,7 @@ pw_python_package("workflows") {
     "pw_build/workflows/describe.py",
     "pw_build/workflows/launcher.py",
     "pw_build/workflows/manager.py",
+    "pw_build/workflows/private/mixins.py",
     "pw_build/workflows/private/validator.py",
   ]
   tests = [
@@ -38,6 +39,7 @@ pw_python_package("workflows") {
     "workflows_launcher_test.py",
     "workflows_validator_test.py",
     "workflows_manager_test.py",
+    "workflows_mixins_test.py",
   ]
   if (host_os != "win") {
     tests += [ "pw_script_integration_test.py" ]

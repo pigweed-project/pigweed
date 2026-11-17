@@ -90,6 +90,12 @@ message BuildConfig {
   // to configure options that are more complex then simply passing additional
   // flags.
   google.protobuf.Any driver_options = 6;
+
+  // If true, this configuration is a mix-in. Mix-ins can't be used directly
+  // via `use_config`; they may only be layered on top of another
+  // configuration via `use_config_mixins`. Mix-ins may omit `build_type`
+  // unless they set `driver_options`.
+  bool mixin = 7;
 }
 
 // A discrete build.
@@ -127,6 +133,11 @@ message Build {
 
   // Unique one-off specs.
   repeated OutputGroupSpec output_spec = 8;
+
+  // Names of shared BuildConfigs marked as `mixin`, applied in order on top
+  // of the configuration selected by `config`. The resulting configuration is
+  // named `<base>+<mixin1>+<mixin2>...`.
+  repeated string use_config_mixins = 9;
 }
 
 // A runnable tool.
@@ -193,6 +204,10 @@ message Tool {
 
   // Default arguments passed to the target binary when launched.
   repeated string args = 11;
+
+  // Names of shared BuildConfigs marked as `mixin`, applied in order on top
+  // of the configuration selected by `config`. See Build.use_config_mixins.
+  repeated string use_config_mixins = 12;
 }
 
 // A series of builds and analyzers that are launchable as a group to

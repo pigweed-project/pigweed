@@ -19,14 +19,21 @@ from unittest.mock import patch
 
 from pathlib import Path
 
+from google.protobuf import any_pb2, json_format
+
 from pw_build.build_recipe import BuildRecipe
-from pw_build.proto import build_driver_pb2, workflows_pb2
+from pw_build.proto import (
+    build_driver_pb2,
+    pigweed_build_driver_pb2,
+    workflows_pb2,
+)
 from pw_build.workflows.manager import (
     WorkflowsManager,
     expand_action,
     NoMatchingOutputsError,
     StripPrefixError,
 )
+from pw_build.workflows.private.mixins import merge_build_configs
 from pw_build.workflows.build_driver import BuildDriver
 
 
@@ -803,6 +810,190 @@ class WorkflowsManagerTest(unittest.TestCase):
         self.assertEqual(len(artifacts.output_groups), 0)
         self.assertEqual(
             artifacts.output_root, str(self.base_out_dir / 'build_config')
+        )
+
+
+def _bazel_options(**kwargs) -> any_pb2.Any:
+    """Packs BazelDriverOptions the same way workflows.json files do."""
+    options = pigweed_build_driver_pb2.BazelDriverOptions(**kwargs)
+    return any_pb2.Any(
+        type_url=options.DESCRIPTOR.full_name,
+        value=options.SerializeToString(),
+    )
+
+
+_BASE = workflows_pb2.BuildConfig(
+    name='base',
+    build_type='fake_build_type',
+    args=['--base'],
+    driver_options=_bazel_options(project_working_subdir='sub/dir'),
+)
+_INLINE = workflows_pb2.BuildConfig(
+    name='inline', build_type='fake_build_type', args=['--inline']
+)
+_M1 = workflows_pb2.BuildConfig(
+    name='m1',
+    mixin=True,
+    build_type='fake_build_type',
+    args=['--m1'],
+    driver_options=_bazel_options(no_test=True),
+)
+_M2 = workflows_pb2.BuildConfig(name='m2', mixin=True, args=['--m2'])
+
+
+class WorkflowsManagerMixinTest(unittest.TestCase):
+    """Tests for how WorkflowsManager uses mix-in build configs."""
+
+    def setUp(self):
+        """Set up a workflow suite that uses mix-ins."""
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.base_out_dir = Path(self.temp_dir.name)
+        self.workflow_suite = workflows_pb2.WorkflowSuite(
+            configs=[_BASE, _M1, _M2],
+            builds=[
+                workflows_pb2.Build(
+                    name='mixed_build',
+                    targets=['//:target'],
+                    use_config='base',
+                    use_config_mixins=['m1', 'm2'],
+                    output_spec=[
+                        workflows_pb2.OutputGroupSpec(
+                            name='files',
+                            glob_patterns=['*.txt'],
+                            allow_empty=True,
+                        )
+                    ],
+                ),
+                workflows_pb2.Build(
+                    name='inline_mixed_build',
+                    targets=['//:target'],
+                    build_config=_INLINE,
+                    use_config_mixins=['m2'],
+                ),
+                workflows_pb2.Build(
+                    name='unmixed_build',
+                    targets=['//:target'],
+                    use_config='base',
+                ),
+            ],
+            tools=[
+                workflows_pb2.Tool(
+                    name='mixed_tool',
+                    use_config='base',
+                    use_config_mixins=['m2'],
+                    target='//:tool',
+                ),
+            ],
+        )
+        self.manager = WorkflowsManager(
+            self.workflow_suite,
+            {'fake_build_type': FakeBuildDriver()},
+            Path('/test/working/dir'),
+            self.base_out_dir,
+            Path('/test/project/root'),
+            extra_build_args={'fake_build_type': ['--extra']},
+        )
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_fragments_use_merged_config(self):
+        """Builds, inline configs, and tools all use the merged config."""
+        for name, base, mixins in (
+            ('mixed_build', _BASE, [_M1, _M2]),
+            ('inline_mixed_build', _INLINE, [_M2]),
+            ('mixed_tool', _BASE, [_M2]),
+        ):
+            with self.subTest(name):
+                expected = merge_build_configs(base, mixins)
+                expected.args.append('--extra')
+                job = self.manager.get_unified_driver_request([name]).jobs[0]
+                fragment = getattr(job, job.WhichOneof('type'))
+                self.assertEqual(fragment.build_config, expected)
+                # No mix-in fields, so the workflows recipe's copy of
+                # workflows.proto can decode it.
+                self.assertNotRegex(str(job), r'\b(mixin|use_config_mixins):')
+
+                if job.WhichOneof('type') == 'tool':
+                    recipes = self.manager.program_tool(name, [])
+                else:
+                    recipes = self.manager.program_build(name)
+                self.assertEqual(
+                    recipes[0].build_dir, self.base_out_dir / expected.name
+                )
+
+    def test_build_dirs(self):
+        """Artifacts use the merged build dir; unmixed builds are unchanged."""
+        self.assertEqual(
+            self.manager.collect_artifacts('mixed_build').output_root,
+            str(self.base_out_dir / 'base+m1+m2'),
+        )
+        self.assertEqual(
+            self.manager.program_build('unmixed_build')[0].build_dir,
+            self.base_out_dir / 'base',
+        )
+
+    def test_resolution_is_repeatable(self):
+        """Resolving mix-ins doesn't change the config for later calls."""
+        names = ['mixed_build', 'mixed_tool', 'unmixed_build']
+        first = self.manager.get_unified_driver_request(names)
+        self.manager.program_build('mixed_build')
+        self.assertEqual(self.manager.get_unified_driver_request(names), first)
+
+    def test_parsed_from_json(self):
+        """Mix-ins work end to end from a parsed JSON config."""
+        suite = json_format.ParseDict(
+            {
+                'configs': [
+                    {
+                        'name': 'host',
+                        'build_type': 'fake_build_type',
+                        'args': ['--config=host'],
+                        'driver_options': {
+                            '@type': 'pw.build.proto.BazelDriverOptions',
+                            'project_working_subdir': 'sub',
+                        },
+                    },
+                    {
+                        'name': 'lint',
+                        'mixin': True,
+                        'build_type': 'fake_build_type',
+                        'args': ['--config=lint'],
+                        'driver_options': {
+                            '@type': 'pw.build.proto.BazelDriverOptions',
+                            'no_test': True,
+                        },
+                    },
+                ],
+                'builds': [
+                    {
+                        'name': 'host_lint',
+                        'use_config': 'host',
+                        'use_config_mixins': ['lint'],
+                        'targets': ['//...'],
+                    },
+                ],
+            },
+            workflows_pb2.WorkflowSuite(),
+        )
+        manager = WorkflowsManager(
+            suite,
+            {'fake_build_type': FakeBuildDriver()},
+            Path('/test/working/dir'),
+            self.base_out_dir,
+            Path('/test/project/root'),
+        )
+        config = manager.get_unified_driver_request(['host_lint'])
+        self.assertEqual(
+            config.jobs[0].build.build_config,
+            workflows_pb2.BuildConfig(
+                name='host+lint',
+                build_type='fake_build_type',
+                args=['--config=host', '--config=lint'],
+                driver_options=_bazel_options(
+                    no_test=True, project_working_subdir='sub'
+                ),
+            ),
         )
 
 

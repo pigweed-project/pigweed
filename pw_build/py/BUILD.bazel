@@ -105,6 +105,7 @@ pw_py_library(
         "pw_build/workflows/describe.py",
         "pw_build/workflows/launcher.py",
         "pw_build/workflows/manager.py",
+        "pw_build/workflows/private/mixins.py",
         "pw_build/workflows/private/validator.py",
     ],
     # TODO: b/436327217 - Some nontrivial mypy findings.
@@ -540,6 +541,8 @@ pw_py_test(
     deps = [
         ":workflows",
         "//pw_build:build_driver_proto_py_pb2",
+        "//pw_build:pigweed_build_driver_py_pb2",
+        "//pw_build:python_protobuf_runtime",
     ],
 )
 
@@ -552,6 +555,22 @@ pw_py_test(
     deps = [
         ":workflows",
         "//pw_build:build_driver_proto_py_pb2",
+        "//pw_build:pigweed_build_driver_py_pb2",
+        "//pw_build:python_protobuf_runtime",
+    ],
+)
+
+pw_py_test(
+    name = "workflows_mixins_test",
+    size = "small",
+    srcs = [
+        "workflows_mixins_test.py",
+    ],
+    deps = [
+        ":workflows",
+        "//pw_build:pigweed_build_driver_py_pb2",
+        "//pw_build:python_protobuf_runtime",
+        "//pw_build:workflows_proto_py_pb2",
     ],
 )
 

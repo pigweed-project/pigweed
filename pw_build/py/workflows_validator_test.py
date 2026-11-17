@@ -13,11 +13,20 @@
 # the License.
 """Tests for the workflow validator."""
 
+import re
 import unittest
+
+from google.protobuf import text_format
 
 from pw_build.workflows.build_driver import BuildDriver
 from pw_build.workflows.private import validator
-from pw_build.proto import workflows_pb2, build_driver_pb2
+from pw_build.proto import build_driver_pb2, workflows_pb2
+
+# Registers BazelDriverOptions so mix-ins can merge driver options. In `./pw`,
+# importing the Bazel build driver does this.
+from pw_build.proto import (  # pylint: disable=unused-import
+    pigweed_build_driver_pb2,
+)
 
 
 class NopBuildDriver(BuildDriver):
@@ -248,6 +257,217 @@ class ValidatorTest(unittest.TestCase):
         with self.assertRaises(validator.ValidationError):
             val = validator.Validator(workflow_suite, {})
             val.validate()
+
+
+# A valid suite that uses mix-ins. Each test case below adds to it.
+# `value` holds serialized BazelDriverOptions: b'\x12\x03sub' is
+# `project_working_subdir: "sub"` and b'\x08\x01' is `no_test: true`.
+_VALID_SUITE = r'''
+configs {
+  name: 'base'
+  build_type: 'bazel'
+  driver_options {
+    type_url: 'pw.build.proto.BazelDriverOptions'
+    value: '\x12\x03sub'
+  }
+}
+configs { name: 'plain' build_type: 'bazel' }
+configs { name: 'm1' mixin: true args: '-1' }
+configs { name: 'm2' mixin: true build_type: 'bazel' args: '-2' }
+configs {
+  name: 'no_test'
+  mixin: true
+  build_type: 'bazel'
+  driver_options {
+    type_url: 'pw.build.proto.BazelDriverOptions'
+    value: '\x08\x01'
+  }
+}
+configs {
+  name: 'other_options'
+  mixin: true
+  build_type: 'bazel'
+  driver_options { type_url: 'pw.test.OtherOptions' value: '\x08\x01' }
+}
+builds {
+  name: 'build'
+  use_config: 'base'
+  use_config_mixins: ['m1', 'm2']
+  targets: '//...'
+}
+tools {
+  name: 'tool'
+  use_config: 'base'
+  use_config_mixins: 'm2'
+  target: '//:tool'
+}
+'''
+
+
+def _build(name: str, fields: str) -> str:
+    return f"builds {{ name: '{name}' {fields} targets: '//...' }}"
+
+
+def _tool(name: str, fields: str) -> str:
+    return f"tools {{ name: '{name}' {fields} target: '//:t' }}"
+
+
+def _validate(extra: str = '') -> None:
+    """Validates _VALID_SUITE with ``extra`` text-format fields appended."""
+    suite = text_format.Parse(
+        _VALID_SUITE + extra, workflows_pb2.WorkflowSuite()
+    )
+    drivers: dict[str, BuildDriver] = {
+        'bazel': NopBuildDriver(),
+        'other': NopBuildDriver(),
+    }
+    validator.Validator(suite, drivers).validate()
+
+
+class ValidatorMixinTest(unittest.TestCase):
+    """Tests for mix-in validation rules."""
+
+    def test_valid(self):
+        """Valid mix-in setups pass validation."""
+        cases = {
+            'base suite': '',
+            'same driver_options type': _build(
+                'b', "use_config: 'base' use_config_mixins: 'no_test'"
+            ),
+            'driver_options type with no fields': (
+                "configs { name: 'empty' mixin: true build_type: 'bazel' "
+                "driver_options { type_url: "
+                "'pw.build.proto.BazelDriverOptions' } }"
+                + _build('b', "use_config: 'base' use_config_mixins: 'empty'")
+            ),
+            'inline base': _build(
+                'b',
+                "build_config { name: 'inline' build_type: 'bazel' } "
+                "use_config_mixins: 'm2'",
+            ),
+            'same combination twice': _build(
+                'b', "use_config: 'base' use_config_mixins: ['m1', 'm2']"
+            ),
+            # Only config names matter for collisions, not build names.
+            'build named like a merged config': _build(
+                'base+m2', "use_config: 'plain'"
+            ),
+            'plus in an unmixed name': (
+                "configs { name: 'a+b' build_type: 'bazel' }"
+                + _build('b', "use_config: 'a+b'")
+            ),
+        }
+        for case, extra in cases.items():
+            with self.subTest(case):
+                _validate(extra)
+
+    def test_invalid(self):
+        """Each mix-in rule rejects a config that breaks it."""
+        cases = {
+            'missing mixin': (
+                _build('bad', "use_config: 'base' use_config_mixins: 'nope'"),
+                'Build `bad` references missing mixin `nope`',
+            ),
+            'tool lists a non-mixin': (
+                _tool('bad', "use_config: 'base' use_config_mixins: 'plain'"),
+                'Tool `bad` lists `plain` in `use_config_mixins`, but `plain` '
+                'is not a mixin',
+            ),
+            'listed twice': (
+                _build(
+                    'bad', "use_config: 'base' use_config_mixins: ['m1', 'm1']"
+                ),
+                'Build `bad` lists mixin `m1` more than once',
+            ),
+            'mixin as use_config': (
+                _build('bad', "use_config: 'm2'"),
+                'Build `bad` cannot use mixin `m2`',
+            ),
+            'mixin as use_config with mixins': (
+                _tool('bad', "use_config: 'm1' use_config_mixins: 'm2'"),
+                'Tool `bad` cannot use mixin `m1`',
+            ),
+            'inline mixin': (
+                _build(
+                    'bad',
+                    "build_config { name: 'i' build_type: 'bazel' "
+                    "mixin: true }",
+                ),
+                'Build `bad` has an inline `build_config` marked as a mixin',
+            ),
+            'build_type mismatch': (
+                "configs { name: 'm_other' mixin: true build_type: 'other' }"
+                + _build(
+                    'bad', "use_config: 'base' use_config_mixins: 'm_other'"
+                ),
+                'build_type `other` does not match base build_type `bazel`',
+            ),
+            'driver_options type mismatch with base': (
+                _build(
+                    'bad',
+                    "use_config: 'base' use_config_mixins: 'other_options'",
+                ),
+                'driver_options type `pw.test.OtherOptions` does not match',
+            ),
+            'driver_options type mismatch with no fields': (
+                "configs { name: 'empty_other' mixin: true build_type: 'bazel' "
+                "driver_options { type_url: 'pw.test.OtherOptions' } }"
+                + _build(
+                    'bad', "use_config: 'base' use_config_mixins: 'empty_other'"
+                ),
+                'driver_options type `pw.test.OtherOptions` does not match',
+            ),
+            'driver_options type mismatch between mixins': (
+                _build(
+                    'bad',
+                    "use_config: 'plain' "
+                    "use_config_mixins: ['no_test', 'other_options']",
+                ),
+                'driver_options type `pw.test.OtherOptions` does not match',
+            ),
+            'mixin with driver_options but no build_type': (
+                "configs { name: 'm_no_type' mixin: true "
+                "driver_options { type_url: 'pw.test.OtherOptions' } }",
+                'Mixin `m_no_type` sets `driver_options`, so it must also set '
+                '`build_type`',
+            ),
+            'mixin with unknown build_type': (
+                "configs { name: 'm_unknown' mixin: true build_type: 'nope' }",
+                'unknown build type',
+            ),
+            'merged name taken by a shared config': (
+                "configs { name: 'base+m1+m2' build_type: 'bazel' }",
+                '`base+m1+m2` collides with an existing build config name',
+            ),
+            'merged name taken by an inline config': (
+                _build(
+                    'i', "build_config { name: 'base+m2' build_type: 'bazel' }"
+                ),
+                'Tool `tool`: merged config name `base+m2` collides',
+            ),
+            'different combinations, two builds': (
+                "configs { name: 'base+m1' build_type: 'bazel' }"
+                + _build(
+                    'other', "use_config: 'base+m1' use_config_mixins: 'm2'"
+                ),
+                '`base+m1+m2` collides: `build` and `other`',
+            ),
+            'different combinations, build and tool': (
+                "configs { name: 'base+m1' build_type: 'bazel' }"
+                + _tool(
+                    'other', "use_config: 'base+m1' use_config_mixins: 'm2'"
+                ),
+                '`base+m1+m2` collides: `build` and `other`',
+            ),
+        }
+        for case, (extra, message) in cases.items():
+            with (
+                self.subTest(case),
+                self.assertRaisesRegex(
+                    validator.ValidationError, re.escape(message)
+                ),
+            ):
+                _validate(extra)
 
 
 if __name__ == '__main__':

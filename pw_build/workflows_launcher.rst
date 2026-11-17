@@ -188,6 +188,57 @@ behavior.
       :start-after: _EXAMPLE_CONFIG = """
       :end-before: """
 
+.. _module-pw_build-workflows-launcher-mixins:
+
+Mix-ins
+=======
+A mix-in is a shared build configuration that is layered on top of another
+configuration, so builds that need one or two extra options don't have to copy
+the whole configuration. Mark it with ``"mixin": true`` and list it in a build's
+or tool's ``use_config_mixins``:
+
+.. code-block:: json
+
+   {
+     "configs": [
+       {"name": "host", "build_type": "bazel", "args": ["--config=host"]},
+       {"name": "lint", "mixin": true, "args": ["--config=lint"]}
+     ],
+     "builds": [
+       {
+         "name": "host_lint",
+         "use_config": "host",
+         "use_config_mixins": ["lint"],
+         "targets": ["//..."]
+       }
+     ]
+   }
+
+``host_lint`` builds with a configuration named ``host+lint`` and the arguments
+``--config=host --config=lint``. Mix-ins are applied in the order listed:
+
+* ``args`` are appended, so for single-value flags the last mix-in wins.
+* ``env`` variables set by a mix-in replace earlier values.
+* ``driver_options`` are merged with Protobuf ``MergeFrom`` semantics and must
+  all use the same message type.
+* ``build_type`` may be omitted on a mix-in unless it sets ``driver_options``;
+  if set, it must match the base.
+* The merged configuration's name, and therefore its output directory, is the
+  base name followed by each mix-in name, joined with ``+``.
+
+A mix-in can only add or override values. Because of Protobuf default values,
+it can't, for example, set ``no_test`` back to ``false``.
+
+The following are reported as errors when the configuration is loaded:
+
+* A listed mix-in doesn't exist, isn't a mix-in, or is listed more than once.
+* A mix-in is used as ``use_config`` or as an inline ``build_config``.
+* A mix-in's ``build_type`` or ``driver_options`` type doesn't match, or the
+  ``driver_options`` type isn't known to any build driver.
+* A mix-in sets ``driver_options`` but not ``build_type``.
+* A merged name matches another build configuration's name, or the merged name
+  of a different combination.
+
 .. _module-pw_build-workflows-launcher-commands:
 
 Build programming

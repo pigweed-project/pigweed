@@ -24,6 +24,7 @@ import string
 from pw_build.build_recipe import BuildCommand, BuildRecipe
 from pw_build.proto import build_driver_pb2, workflows_pb2
 from pw_build.workflows.build_driver import BuildDriver
+from pw_build.workflows.private.mixins import merge_build_configs
 from pw_build.workflows.private.validator import (
     Fragment,
     Validator,
@@ -183,8 +184,15 @@ class WorkflowsManager:
                 f'or tool: {fragment}'
             )
         if fragment.WhichOneof('config') == 'use_config':
-            return self._shared_configs[fragment.use_config]
-        return fragment.build_config
+            base = self._shared_configs[fragment.use_config]
+        else:
+            base = fragment.build_config
+        if not fragment.use_config_mixins:
+            return base
+        return merge_build_configs(
+            base,
+            [self._shared_configs[name] for name in fragment.use_config_mixins],
+        )
 
     def _build_dir(self, config: workflows_pb2.BuildConfig) -> Path:
         return self._base_out_dir / config.name
@@ -370,6 +378,8 @@ class WorkflowsManager:
 
         * Copies the incoming request.
         * Expands referenced shared build configs.
+        * Applies ``use_config_mixins`` and clears it, so the result contains
+          no mix-in fields and decodes with older copies of workflows.proto.
         * Removes info that build drivers shouldn't see/use from a request.
 
         Returns:
@@ -385,10 +395,14 @@ class WorkflowsManager:
                 if prepared_job.WhichOneof('type') == 'build'
                 else prepared_job.tool
             )
-            if fragment.WhichOneof('config') == 'use_config':
+            if (
+                fragment.WhichOneof('config') == 'use_config'
+                or fragment.use_config_mixins
+            ):
                 config = self._get_build_config(fragment)
                 fragment.ClearField('use_config')
                 fragment.build_config.CopyFrom(config)
+            fragment.ClearField('use_config_mixins')
             if hasattr(fragment, "use_output"):
                 for spec_name in fragment.use_output:
                     fragment.output_spec.append(
