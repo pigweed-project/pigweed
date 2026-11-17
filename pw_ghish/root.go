@@ -276,7 +276,7 @@ are accepted with a different meaning. Check 'WHERE THIS DIFFERS FROM THE REAL g
 at the end of this text before relying on a 'gh' flag you have not used here.
 
 - Host Auto-Detection: When run from a local Git repository,
-  %[1]s automatically detects the Gerrit host (e.g., pigweed-review.googlesource.com).
+  %[1]s automatically detects the Gerrit host (e.g., <project>-review.googlesource.com).
   Use the global '--host <domain>' flag to override or explicitly declare the host.
 - Automatic Inline Threading: Posting an inline comment on a line with active threads
   automatically detects and appends a reply to the most recent active thread on that line.
@@ -527,7 +527,7 @@ func init() {
 	RootCmd.Flags().Bool("version", false, "Print the gh-ish version")
 	RootCmd.PersistentFlags().StringVar(&HostFlag, "host", "", "Gerrit host to connect to")
 	RootCmd.PersistentFlags().BoolVarP(&VerboseFlag, "verbose", "v", false, "Enable verbose (debug) logging")
-	RootCmd.PersistentFlags().StringVar(&ProfileFlag, "profile", "", "Project profile (pigweed, fuchsia, generic)")
+	RootCmd.PersistentFlags().StringVar(&ProfileFlag, "profile", "", "Override auto-detected project profile")
 	RootCmd.PersistentFlags().StringVar(&AuthModeFlag, "auth-mode", "", "Authentication mode (auto, googler, community, none)")
 }
 

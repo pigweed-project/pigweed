@@ -40,23 +40,23 @@ func newMergeCmd() *cobra.Command {
 		Short:       "Merge (submit) a change",
 		Long: `Merge (submit) a Gerrit change, or enable auto-submit / Commit-Queue / scheduled submission.
 
-When --auto is passed, pw_ghish detects the host's auto-submit label from the
-change (e.g. Pigweed-Auto-Submit+1 or Auto-Submit+1) and votes it. If the host
-has no auto-submit label, pw_ghish starts a Commit-Queue+1 dry run (when
+When --auto is passed, this command detects the host's auto-submit label from the
+change (e.g. Auto-Submit+1) and votes it. If the host
+has no auto-submit label, it starts a Commit-Queue+1 dry run (when
 available) and returns an error; use --trigger (or --cq) to submit via Commit-Queue+2.
 
-When --trigger (or --cq) is passed, pw_ghish applies the Commit-Queue+2 (or
+When --trigger (or --cq) is passed, this command applies the Commit-Queue+2 (or
 Autosubmit+1 + Presubmit-Ready+1) vote directly.
 
-When --nightly or --submit-at is passed, pw_ghish creates a Gerrit Flow that,
+When --nightly or --submit-at is passed, this command creates a Gerrit Flow that,
 once the scheduled time in PT/MTV (America/Los_Angeles) is reached, starts a
 dry run (Commit-Queue+1, or Presubmit-Ready+1 on hosts that use it) and enables
 auto-submit. Auto-submit then lands the change once it is submittable. A
 work-in-progress change is marked ready for review. Running it again replaces
 the pending schedule.
 
-When none of these flags are passed, pw_ghish attempts to submit the change immediately.
-Note: In Pigweed and LUCI-gated projects, direct submission requires all gates
+When none of these flags are passed, this command attempts to submit the change immediately.
+Note: In Gerrit/LUCI-gated projects, direct submission requires all gates
 (Code-Review+2, Presubmit-Verified, etc.) to be satisfied already; otherwise
 Gerrit rejects immediate submission. Use --auto or --trigger (alias --cq) for automated landing.`,
 		Args: cobra.MaximumNArgs(1),

@@ -129,6 +129,7 @@ fi
 # Pigweed setting, so rather than registering it with that parser, it uses the
 # _PW_ prefix for internal variables, which the parser does not check.
 export _PW_GH_SCRIPT_DIR="${_PW_SCRIPT_DIR}"
+export GH_ISH_INVOKED_AS="${GH_ISH_INVOKED_AS:-./gh}"
 if [ -z "${BUILD_WORKSPACE_DIRECTORY:-}" ]; then
   if [ -n "$_CALLER_TOPLEVEL" ]; then
     export BUILD_WORKSPACE_DIRECTORY="$_CALLER_TOPLEVEL"

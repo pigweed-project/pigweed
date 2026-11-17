@@ -399,7 +399,7 @@ func TestGhWrapper_WarmFastPathAndRebuildDetection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("./gh --help on warm fast-path failed: %v\nOutput:\n%s", err, string(out))
 	}
-	if !strings.Contains(string(out), "CACHED_GH_ISH invoked_as= args=--help") {
+	if !strings.Contains(string(out), "CACHED_GH_ISH invoked_as=./gh args=--help") {
 		t.Errorf("unexpected warm fast-path output: %s", string(out))
 	}
 	if calls := readGitCalls(); len(calls) > 2 {
@@ -420,7 +420,7 @@ func TestGhWrapper_WarmFastPathAndRebuildDetection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("./gh --version after modifying .md/.rst failed: %v\nOutput:\n%s", err, string(outDoc))
 	}
-	if !strings.Contains(string(outDoc), "CACHED_GH_ISH invoked_as= args=--version") {
+	if !strings.Contains(string(outDoc), "CACHED_GH_ISH invoked_as=./gh args=--version") {
 		t.Errorf("expected cached binary when only .md/.rst changed, got: %s", string(outDoc))
 	}
 	if calls := readGitCalls(); len(calls) > 2 {
