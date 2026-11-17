@@ -118,6 +118,7 @@ pw_source_set("base64") {
     ":pw_tokenizer",
     "$dir_pw_string:string",
     dir_pw_base64,
+    dir_pw_bytes,
     dir_pw_preprocessor,
   ]
 }
@@ -125,6 +126,7 @@ pw_source_set("base64") {
 pw_source_set("decoder") {
   public_configs = [ ":public_include_path" ]
   public_deps = [
+    dir_pw_bytes,
     dir_pw_preprocessor,
     dir_pw_result,
     dir_pw_span,
@@ -136,7 +138,6 @@ pw_source_set("decoder") {
     "$dir_pw_bytes:bit",
     "$dir_pw_elf:reader",
     dir_pw_base64,
-    dir_pw_bytes,
     dir_pw_varint,
   ]
   public = [

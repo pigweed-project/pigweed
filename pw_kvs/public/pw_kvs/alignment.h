@@ -61,8 +61,7 @@ class AlignedWriter {
   StatusWithSize Write(span<const std::byte> data);
 
   StatusWithSize Write(const void* data, size_t size) {
-    return Write(
-        span<const std::byte>(static_cast<const std::byte*>(data), size));
+    return Write(AsBytes(data, size));
   }
 
   // Reads size bytes from the input and writes them to the output.

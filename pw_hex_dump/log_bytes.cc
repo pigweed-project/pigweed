@@ -17,6 +17,5 @@
 extern "C" void pw_dump_LogBytes(int log_level,
                                  const void* data,
                                  size_t length) {
-  pw::dump::LogBytes(
-      log_level, pw::span(reinterpret_cast<const std::byte*>(data), length));
+  pw::dump::LogBytes(log_level, pw::AsBytes(data, length));
 }

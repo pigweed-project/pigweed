@@ -202,11 +202,10 @@ class Initiator {
                       void* rx_buffer,
                       size_t rx_size_bytes,
                       chrono::SystemClock::duration timeout) {
-    return WriteReadFor(
-        device_address,
-        span(static_cast<const std::byte*>(tx_buffer), tx_size_bytes),
-        span(static_cast<std::byte*>(rx_buffer), rx_size_bytes),
-        timeout);
+    return WriteReadFor(device_address,
+                        AsBytes(tx_buffer, tx_size_bytes),
+                        AsWritableBytes(rx_buffer, rx_size_bytes),
+                        timeout);
   }
 
   /// Write bytes to the I2C device.
@@ -252,10 +251,7 @@ class Initiator {
                   const void* tx_buffer,
                   size_t tx_size_bytes,
                   chrono::SystemClock::duration timeout) {
-    return WriteFor(
-        device_address,
-        span(static_cast<const std::byte*>(tx_buffer), tx_size_bytes),
-        timeout);
+    return WriteFor(device_address, AsBytes(tx_buffer, tx_size_bytes), timeout);
   }
 
   /// Reads bytes from an I2C device.
@@ -301,9 +297,8 @@ class Initiator {
                  void* rx_buffer,
                  size_t rx_size_bytes,
                  chrono::SystemClock::duration timeout) {
-    return ReadFor(device_address,
-                   span(static_cast<std::byte*>(rx_buffer), rx_size_bytes),
-                   timeout);
+    return ReadFor(
+        device_address, AsWritableBytes(rx_buffer, rx_size_bytes), timeout);
   }
 
   /// Probes the device for an I2C ACK after only writing the address.

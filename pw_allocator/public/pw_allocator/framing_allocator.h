@@ -509,7 +509,7 @@ ByteSpan BaseFramingAllocator<ErrorHandler>::AllocateFrame(Layout prefix,
   if (ptr == nullptr) {
     return ByteSpan();
   }
-  return ByteSpan(static_cast<std::byte*>(ptr), frame_layout.size());
+  return AsWritableBytes(ptr, frame_layout.size());
 }
 
 template <typename ErrorHandler>

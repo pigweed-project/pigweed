@@ -121,7 +121,7 @@ class Stream {
   }
   /// @overload
   Result<ByteSpan> Read(void* dest, size_t size_bytes) {
-    return Read(span(static_cast<std::byte*>(dest), size_bytes));
+    return Read(AsWritableBytes(dest, size_bytes));
   }
 
   /// Reads exactly the number of bytes requested into the provided buffer, if
@@ -177,7 +177,7 @@ class Stream {
   }
   /// @overload
   Status Write(const void* data, size_t size_bytes) {
-    return Write(span(static_cast<const std::byte*>(data), size_bytes));
+    return Write(AsBytes(data, size_bytes));
   }
   /// @overload
   Status Write(const std::byte b) { return Write(&b, 1); }

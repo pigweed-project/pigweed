@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <type_traits>
 
+#include "pw_bytes/span.h"
 #include "pw_span/span.h"
 #include "pw_status/status_with_size.h"
 
@@ -41,8 +42,7 @@ class Output {
 
   // Convenience wrapper for writing data from a pointer and length.
   StatusWithSize Write(const void* data, size_t size_bytes) {
-    return Write(
-        span<const std::byte>(static_cast<const std::byte*>(data), size_bytes));
+    return Write(AsBytes(data, size_bytes));
   }
 
  protected:
@@ -58,7 +58,7 @@ class Input {
 
   // Convenience wrapper for reading data from a pointer and length.
   StatusWithSize Read(void* data, size_t size_bytes) {
-    return Read(span<std::byte>(static_cast<std::byte*>(data), size_bytes));
+    return Read(AsWritableBytes(data, size_bytes));
   }
 
  protected:

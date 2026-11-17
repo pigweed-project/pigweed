@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cstring>
 
+#include "pw_bytes/span.h"
 #include "pw_preprocessor/compiler.h"
 #include "pw_varint/varint.h"
 
@@ -134,10 +135,8 @@ extern "C" size_t pw_tokenizer_EncodeArgs(pw_tokenizer_ArgTypes types,
                                           va_list args,
                                           void* output_buffer,
                                           size_t output_buffer_size) {
-  return EncodeArgs(types,
-                    args,
-                    span<std::byte>(static_cast<std::byte*>(output_buffer),
-                                    output_buffer_size));
+  return EncodeArgs(
+      types, args, AsWritableBytes(output_buffer, output_buffer_size));
 }
 
 }  // namespace pw::tokenizer

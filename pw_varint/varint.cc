@@ -123,27 +123,24 @@ size_t pw_varint_EncodedSizeBytes(uint64_t value) {
 size_t pw_varint_Encode32(uint32_t value,
                           void* out_encoded,
                           size_t out_encoded_size) {
-  pw::ByteSpan bytes(reinterpret_cast<std::byte*>(out_encoded),
-                     out_encoded_size);
-  return pw::varint::Encode(value, bytes);
+  return pw::varint::Encode(value,
+                            pw::AsWritableBytes(out_encoded, out_encoded_size));
 }
 
 size_t pw_varint_Encode64(uint64_t value,
                           void* out_encoded,
                           size_t out_encoded_size) {
-  pw::ByteSpan bytes(reinterpret_cast<std::byte*>(out_encoded),
-                     out_encoded_size);
-  return pw::varint::Encode(value, bytes);
+  return pw::varint::Encode(value,
+                            pw::AsWritableBytes(out_encoded, out_encoded_size));
 }
 
 size_t pw_varint_EncodeCustom(uint64_t value,
                               void* out_encoded,
                               size_t out_encoded_size,
                               pw_varint_Format format) {
-  pw::ByteSpan bytes(reinterpret_cast<std::byte*>(out_encoded),
-                     out_encoded_size);
-  auto cxx_format = static_cast<pw::varint::Format>(format);
-  return pw::varint::Encode(value, bytes, cxx_format);
+  return pw::varint::Encode(value,
+                            pw::AsWritableBytes(out_encoded, out_encoded_size),
+                            static_cast<pw::varint::Format>(format));
 }
 
 uint8_t pw_varint_EncodeOneByte32(uint32_t* value) {
@@ -165,27 +162,22 @@ uint64_t pw_varint_ZigZagEncode64(int64_t value) {
 size_t pw_varint_Decode32(const void* encoded,
                           size_t encoded_size,
                           uint32_t* out_value) {
-  pw::ConstByteSpan bytes(reinterpret_cast<const std::byte*>(encoded),
-                          encoded_size);
-  return pw::varint::Decode(bytes, out_value);
+  return pw::varint::Decode(pw::AsBytes(encoded, encoded_size), out_value);
 }
 
 size_t pw_varint_Decode64(const void* encoded,
                           size_t encoded_size,
                           uint64_t* out_value) {
-  pw::ConstByteSpan bytes(reinterpret_cast<const std::byte*>(encoded),
-                          encoded_size);
-  return pw::varint::Decode(bytes, out_value);
+  return pw::varint::Decode(pw::AsBytes(encoded, encoded_size), out_value);
 }
 
 size_t pw_varint_DecodeCustom(const void* encoded,
                               size_t encoded_size,
                               uint64_t* out_value,
                               pw_varint_Format format) {
-  pw::ConstByteSpan bytes(reinterpret_cast<const std::byte*>(encoded),
-                          encoded_size);
-  auto cxx_format = static_cast<pw::varint::Format>(format);
-  return pw::varint::Decode(bytes, out_value, cxx_format);
+  return pw::varint::Decode(pw::AsBytes(encoded, encoded_size),
+                            out_value,
+                            static_cast<pw::varint::Format>(format));
 }
 
 bool pw_varint_DecodeOneByte32(uint8_t encoded,

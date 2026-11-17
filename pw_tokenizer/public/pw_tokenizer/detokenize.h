@@ -31,6 +31,7 @@
 #include <utility>
 #include <vector>
 
+#include "pw_bytes/span.h"
 #include "pw_result/result.h"
 #include "pw_span/span.h"
 #include "pw_stream/stream.h"
@@ -139,8 +140,7 @@ class Detokenizer {
   DetokenizedString Detokenize(const void* encoded,
                                size_t size_bytes,
                                std::string_view domain = kDefaultDomain) const {
-    return Detokenize(span(static_cast<const std::byte*>(encoded), size_bytes),
-                      domain);
+    return Detokenize(AsBytes(encoded, size_bytes), domain);
   }
 
   /// Decodes and detokenizes the binary encoded message. Returns a
@@ -170,8 +170,7 @@ class Detokenizer {
       const void* encoded,
       size_t size_bytes,
       std::string_view domain = kDefaultDomain) const {
-    return RecursiveDetokenize(
-        span(static_cast<const std::byte*>(encoded), size_bytes), domain);
+    return RecursiveDetokenize(AsBytes(encoded, size_bytes), domain);
   }
 
   /// Decodes and detokenizes a Base64-encoded message. Returns a

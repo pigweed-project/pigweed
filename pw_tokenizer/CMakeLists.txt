@@ -84,6 +84,7 @@ pw_add_library(pw_tokenizer.base64 STATIC
     public
   PUBLIC_DEPS
     pw_base64
+    pw_bytes
     pw_span
     pw_string.string
     pw_tokenizer
@@ -99,6 +100,7 @@ pw_add_library(pw_tokenizer.decoder STATIC
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
+    pw_bytes
     pw_span
     pw_stream
     pw_tokenizer
@@ -110,7 +112,6 @@ pw_add_library(pw_tokenizer.decoder STATIC
     public/pw_tokenizer/internal/decode.h
     token_database.cc
   PRIVATE_DEPS
-    pw_bytes
     pw_bytes.bit
     pw_elf.reader
     pw_tokenizer._csv

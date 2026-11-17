@@ -107,18 +107,14 @@ void pw_InlineVarLenEntryQueue_Push(pw_InlineVarLenEntryQueue_Handle queue,
                                     const void* data,
                                     uint32_t data_size_bytes) {
   auto& cxx_queue = InlineVarLenEntryQueueC::From(queue);
-  pw::ConstByteSpan bytes(reinterpret_cast<const std::byte*>(data),
-                          data_size_bytes);
-  cxx_queue.push(bytes);
+  cxx_queue.push(pw::AsBytes(data, data_size_bytes));
 }
 
 bool pw_InlineVarLenEntryQueue_TryPush(pw_InlineVarLenEntryQueue_Handle queue,
                                        const void* data,
                                        const uint32_t data_size_bytes) {
   auto& cxx_queue = InlineVarLenEntryQueueC::From(queue);
-  pw::ConstByteSpan bytes(reinterpret_cast<const std::byte*>(data),
-                          data_size_bytes);
-  return cxx_queue.try_push(bytes);
+  return cxx_queue.try_push(pw::AsBytes(data, data_size_bytes));
 }
 
 void pw_InlineVarLenEntryQueue_PushOverwrite(
@@ -126,9 +122,7 @@ void pw_InlineVarLenEntryQueue_PushOverwrite(
     const void* data,
     uint32_t data_size_bytes) {
   auto& cxx_queue = InlineVarLenEntryQueueC::From(queue);
-  pw::ConstByteSpan bytes(reinterpret_cast<const std::byte*>(data),
-                          data_size_bytes);
-  cxx_queue.push_overwrite(bytes);
+  cxx_queue.push_overwrite(pw::AsBytes(data, data_size_bytes));
 }
 
 void pw_InlineVarLenEntryQueue_Pop(pw_InlineVarLenEntryQueue_Handle queue) {

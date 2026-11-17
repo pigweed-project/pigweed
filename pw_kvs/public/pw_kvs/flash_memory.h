@@ -83,7 +83,7 @@ class FlashMemory {
   virtual StatusWithSize Read(Address address, span<std::byte> output) = 0;
 
   StatusWithSize Read(Address address, void* buffer, size_t len) {
-    return Read(address, span<std::byte>(static_cast<std::byte*>(buffer), len));
+    return Read(address, AsWritableBytes(buffer, len));
   }
 
   // Writes bytes to flash. Blocking call. Returns:
@@ -98,9 +98,7 @@ class FlashMemory {
   StatusWithSize Write(Address destination_flash_address,
                        const void* data,
                        size_t len) {
-    return Write(
-        destination_flash_address,
-        span<const std::byte>(static_cast<const std::byte*>(data), len));
+    return Write(destination_flash_address, AsBytes(data, len));
   }
 
   // Convert an Address to an MCU pointer, this can be used for memory
@@ -273,8 +271,7 @@ class FlashPartition {
   virtual StatusWithSize Read(Address address, span<std::byte> output);
 
   StatusWithSize Read(Address address, size_t length, void* output) {
-    return Read(address,
-                span<std::byte>(static_cast<std::byte*>(output), length));
+    return Read(address, AsWritableBytes(output, length));
   }
 
   // Writes bytes to flash. Address and data.size_bytes() must both be a

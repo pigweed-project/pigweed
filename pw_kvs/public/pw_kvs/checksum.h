@@ -15,6 +15,7 @@
 
 #include <cstddef>
 
+#include "pw_bytes/span.h"
 #include "pw_kvs/alignment.h"
 #include "pw_span/span.h"
 #include "pw_status/status.h"
@@ -32,8 +33,7 @@ class ChecksumAlgorithm {
 
   // Updates the checksum from a pointer and size.
   void Update(const void* data, size_t size_bytes) {
-    return Update(
-        span<const std::byte>(static_cast<const std::byte*>(data), size_bytes));
+    return Update(AsBytes(data, size_bytes));
   }
 
   // Returns the final result of the checksum. Update() can no longer be called
