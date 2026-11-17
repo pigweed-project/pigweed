@@ -11,7 +11,6 @@
 // WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 // License for the specific language governing permissions and limitations under
 // the License.
-
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use pw_format::macros::{
@@ -68,38 +67,38 @@ impl FormatMacroGenerator for TestGenerator {
         type_width: u8, // in bits
         expression: Arg,
     ) -> Result<()> {
-        let expression = format!("{}", expression.to_token_stream());
+        let arg = arg_to_string(&expression);
         self.code_fragments.push(quote! {
             ops.push(TestGeneratorOps::IntegerConversion{
                 params: #params,
                 signed: #signed,
                 type_width: #type_width,
-                arg: #expression.to_string(),
+                arg: #arg.to_string(),
             });
         });
         Ok(())
     }
 
     fn string_conversion(&mut self, expression: Arg) -> Result<()> {
-        let expression = format!("{}", expression.to_token_stream());
+        let arg = arg_to_string(&expression);
         self.code_fragments.push(quote! {
-            ops.push(TestGeneratorOps::StringConversion(#expression.to_string()));
+            ops.push(TestGeneratorOps::StringConversion(#arg.to_string()));
         });
         Ok(())
     }
 
     fn char_conversion(&mut self, expression: Arg) -> Result<()> {
-        let expression = format!("{}", expression.to_token_stream());
+        let arg = arg_to_string(&expression);
         self.code_fragments.push(quote! {
-            ops.push(TestGeneratorOps::CharConversion(#expression.to_string()));
+            ops.push(TestGeneratorOps::CharConversion(#arg.to_string()));
         });
         Ok(())
     }
 
     fn untyped_conversion(&mut self, expression: Arg, _params: &FormatParams) -> Result<()> {
-        let expression = format!("{}", expression.to_token_stream());
+        let arg = arg_to_string(&expression);
         self.code_fragments.push(quote! {
-            ops.push(TestGeneratorOps::UntypedConversion(#expression.to_string()));
+            ops.push(TestGeneratorOps::UntypedConversion(#arg.to_string()));
         });
         Ok(())
     }
@@ -124,37 +123,115 @@ pub fn core_fmt_format_generator_test_macro(tokens: TokenStream) -> TokenStream 
     generator_test_macro_impl::<CoreFmtFormatStringParser>(tokens)
 }
 
-// Generator for testing `generate_printf()`.  Allows control over the return
-// value of the conversion functions.
-struct PrintfTestGenerator {
+/// Converts an [`Arg`] to its string token representation for test operations.
+fn arg_to_string(arg: &Arg) -> String {
+    arg.to_token_stream().to_string()
+}
+
+/// Shared operation recorder for [`PrintfTestGenerator`] and [`CoreFmtTestGenerator`].
+#[derive(Default)]
+struct TestOpsRecorder {
+    /// Accumulated token streams pushing recorded [`PrintfTestGeneratorOps`] entries.
     code_fragments: Vec<TokenStream2>,
+    /// Optional format specifier override returned by `integer_conversion`.
     integer_specifier_override: Option<String>,
+    /// Optional format specifier override returned by `string_conversion`.
     string_specifier_override: Option<String>,
+    /// Optional format specifier override returned by `char_conversion`.
     char_specifier_override: Option<String>,
+}
+
+impl TestOpsRecorder {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn with_integer_specifier(mut self, specifier: impl Into<String>) -> Self {
+        self.integer_specifier_override = Some(specifier.into());
+        self
+    }
+
+    fn with_string_specifier(mut self, specifier: impl Into<String>) -> Self {
+        self.string_specifier_override = Some(specifier.into());
+        self
+    }
+
+    fn with_char_specifier(mut self, specifier: impl Into<String>) -> Self {
+        self.char_specifier_override = Some(specifier.into());
+        self
+    }
+
+    fn string_fragment(&mut self, string: &str) -> Result<()> {
+        self.code_fragments.push(quote! {
+            ops.push(PrintfTestGeneratorOps::StringFragment(#string.to_string()));
+        });
+        Ok(())
+    }
+
+    fn integer_conversion(&mut self, ty: Ident, expression: Arg) -> Result<Option<String>> {
+        let ty_str = ty.to_string();
+        let arg = arg_to_string(&expression);
+        self.code_fragments.push(quote! {
+            ops.push(PrintfTestGeneratorOps::IntegerConversion{
+               ty: #ty_str.to_string(),
+               arg: #arg.to_string(),
+            });
+        });
+        Ok(self.integer_specifier_override.clone())
+    }
+
+    fn string_conversion(&mut self, expression: Arg) -> Result<Option<String>> {
+        let arg = arg_to_string(&expression);
+        self.code_fragments.push(quote! {
+            ops.push(PrintfTestGeneratorOps::StringConversion(#arg.to_string()));
+        });
+        Ok(self.string_specifier_override.clone())
+    }
+
+    fn char_conversion(&mut self, expression: Arg) -> Result<Option<String>> {
+        let arg = arg_to_string(&expression);
+        self.code_fragments.push(quote! {
+            ops.push(PrintfTestGeneratorOps::CharConversion(#arg.to_string()));
+        });
+        Ok(self.char_specifier_override.clone())
+    }
+
+    fn untyped_conversion(&mut self, expression: Arg) -> Result<()> {
+        let arg = arg_to_string(&expression);
+        self.code_fragments.push(quote! {
+            ops.push(PrintfTestGeneratorOps::UntypedConversion(#arg.to_string()));
+        });
+        Ok(())
+    }
+}
+
+/// Generator for testing `generate_printf()`. Allows control over the return
+/// value of the conversion functions.
+#[derive(Default)]
+struct PrintfTestGenerator {
+    /// Shared operation recorder.
+    inner: TestOpsRecorder,
 }
 
 impl PrintfTestGenerator {
     pub fn new() -> Self {
         Self {
-            code_fragments: Vec::new(),
-            integer_specifier_override: None,
-            string_specifier_override: None,
-            char_specifier_override: None,
+            inner: TestOpsRecorder::new(),
         }
     }
 
-    pub fn with_integer_specifier(mut self, specifier: &str) -> Self {
-        self.integer_specifier_override = Some(specifier.to_string());
+    pub fn with_integer_specifier(mut self, specifier: impl Into<String>) -> Self {
+        self.inner = self.inner.with_integer_specifier(specifier);
         self
     }
 
-    pub fn with_string_specifier(mut self, specifier: &str) -> Self {
-        self.string_specifier_override = Some(specifier.to_string());
+    pub fn with_string_specifier(mut self, specifier: impl Into<String>) -> Self {
+        self.inner = self.inner.with_string_specifier(specifier);
         self
     }
 
-    pub fn with_char_specifier(mut self, specifier: &str) -> Self {
-        self.char_specifier_override = Some(specifier.to_string());
+    pub fn with_char_specifier(mut self, specifier: impl Into<String>) -> Self {
+        self.inner = self.inner.with_char_specifier(specifier);
         self
     }
 }
@@ -165,7 +242,7 @@ impl PrintfFormatMacroGenerator for PrintfTestGenerator {
         format_string_fragments: &[PrintfFormatStringFragment],
     ) -> Result<TokenStream2> {
         // Create locally scoped alias so we can refer to them in `quote!()`.
-        let code_fragments = self.code_fragments;
+        let code_fragments = self.inner.code_fragments;
         let format_string_pieces: Vec<_> = format_string_fragments
             .iter()
             .map(|fragment| fragment.as_token_stream("pw_format_core"))
@@ -182,46 +259,25 @@ impl PrintfFormatMacroGenerator for PrintfTestGenerator {
           }
         })
     }
+
     fn string_fragment(&mut self, string: &str) -> Result<()> {
-        self.code_fragments.push(quote! {
-            ops.push(PrintfTestGeneratorOps::StringFragment(#string.to_string()));
-        });
-        Ok(())
+        self.inner.string_fragment(string)
     }
+
     fn integer_conversion(&mut self, ty: Ident, expression: Arg) -> Result<Option<String>> {
-        let ty_str = format!("{ty}");
-        let expression = format!("{}", expression.to_token_stream());
-        self.code_fragments.push(quote! {
-            ops.push(PrintfTestGeneratorOps::IntegerConversion{
-               ty: #ty_str.to_string(),
-               arg: #expression.to_string(),
-            });
-        });
-        Ok(self.integer_specifier_override.clone())
+        self.inner.integer_conversion(ty, expression)
     }
 
     fn string_conversion(&mut self, expression: Arg) -> Result<Option<String>> {
-        let expression = format!("{}", expression.to_token_stream());
-        self.code_fragments.push(quote! {
-            ops.push(PrintfTestGeneratorOps::StringConversion(#expression.to_string()));
-        });
-        Ok(self.string_specifier_override.clone())
+        self.inner.string_conversion(expression)
     }
 
     fn char_conversion(&mut self, expression: Arg) -> Result<Option<String>> {
-        let expression = format!("{}", expression.to_token_stream());
-        self.code_fragments.push(quote! {
-            ops.push(PrintfTestGeneratorOps::CharConversion(#expression.to_string()));
-        });
-        Ok(self.char_specifier_override.clone())
+        self.inner.char_conversion(expression)
     }
 
     fn untyped_conversion(&mut self, expression: Arg) -> Result<()> {
-        let expression = format!("{}", expression.to_token_stream());
-        self.code_fragments.push(quote! {
-            ops.push(PrintfTestGeneratorOps::UntypedConversion(#expression.to_string()));
-        });
-        Ok(())
+        self.inner.untyped_conversion(expression)
     }
 }
 
@@ -280,37 +336,33 @@ pub fn char_sub_printf_format_printf_generator_test_macro(tokens: TokenStream) -
     }
 }
 
-// Generator for testing `generate_core_fmt()`.  Allows control over the return
-// value of the conversion functions.
+/// Generator for testing `generate_core_fmt()`. Allows control over the return
+/// value of the conversion functions.
+#[derive(Default)]
 struct CoreFmtTestGenerator {
-    code_fragments: Vec<TokenStream2>,
-    integer_specifier_override: Option<String>,
-    string_specifier_override: Option<String>,
-    char_specifier_override: Option<String>,
+    /// Shared operation recorder.
+    inner: TestOpsRecorder,
 }
 
 impl CoreFmtTestGenerator {
     pub fn new() -> Self {
         Self {
-            code_fragments: Vec::new(),
-            integer_specifier_override: None,
-            string_specifier_override: None,
-            char_specifier_override: None,
+            inner: TestOpsRecorder::new(),
         }
     }
 
-    pub fn with_integer_specifier(mut self, specifier: &str) -> Self {
-        self.integer_specifier_override = Some(specifier.to_string());
+    pub fn with_integer_specifier(mut self, specifier: impl Into<String>) -> Self {
+        self.inner = self.inner.with_integer_specifier(specifier);
         self
     }
 
-    pub fn with_string_specifier(mut self, specifier: &str) -> Self {
-        self.string_specifier_override = Some(specifier.to_string());
+    pub fn with_string_specifier(mut self, specifier: impl Into<String>) -> Self {
+        self.inner = self.inner.with_string_specifier(specifier);
         self
     }
 
-    pub fn with_char_specifier(mut self, specifier: &str) -> Self {
-        self.char_specifier_override = Some(specifier.to_string());
+    pub fn with_char_specifier(mut self, specifier: impl Into<String>) -> Self {
+        self.inner = self.inner.with_char_specifier(specifier);
         self
     }
 }
@@ -319,7 +371,7 @@ impl CoreFmtTestGenerator {
 impl CoreFmtFormatMacroGenerator for CoreFmtTestGenerator {
     fn finalize(self, format_string: String) -> Result<TokenStream2> {
         // Create locally scoped alias so we can refer to them in `quote!()`.
-        let code_fragments = self.code_fragments;
+        let code_fragments = self.inner.code_fragments;
 
         Ok(quote! {
           {
@@ -331,46 +383,25 @@ impl CoreFmtFormatMacroGenerator for CoreFmtTestGenerator {
           }
         })
     }
+
     fn string_fragment(&mut self, string: &str) -> Result<()> {
-        self.code_fragments.push(quote! {
-            ops.push(PrintfTestGeneratorOps::StringFragment(#string.to_string()));
-        });
-        Ok(())
+        self.inner.string_fragment(string)
     }
+
     fn integer_conversion(&mut self, ty: Ident, expression: Arg) -> Result<Option<String>> {
-        let ty_str = format!("{ty}");
-        let expression = format!("{}", expression.to_token_stream());
-        self.code_fragments.push(quote! {
-            ops.push(PrintfTestGeneratorOps::IntegerConversion{
-                ty: #ty_str.to_string(),
-                arg: #expression.to_string()
-            });
-        });
-        Ok(self.integer_specifier_override.clone())
+        self.inner.integer_conversion(ty, expression)
     }
 
     fn string_conversion(&mut self, expression: Arg) -> Result<Option<String>> {
-        let expression = format!("{}", expression.to_token_stream());
-        self.code_fragments.push(quote! {
-            ops.push(PrintfTestGeneratorOps::StringConversion(#expression.to_string()));
-        });
-        Ok(self.string_specifier_override.clone())
+        self.inner.string_conversion(expression)
     }
 
     fn char_conversion(&mut self, expression: Arg) -> Result<Option<String>> {
-        let expression = format!("{}", expression.to_token_stream());
-        self.code_fragments.push(quote! {
-            ops.push(PrintfTestGeneratorOps::CharConversion(#expression.to_string()));
-        });
-        Ok(self.char_specifier_override.clone())
+        self.inner.char_conversion(expression)
     }
 
     fn untyped_conversion(&mut self, expression: Arg) -> Result<()> {
-        let expression = format!("{}", expression.to_token_stream());
-        self.code_fragments.push(quote! {
-            ops.push(PrintfTestGeneratorOps::UntypedConversion(#expression.to_string()));
-        });
-        Ok(())
+        self.inner.untyped_conversion(expression)
     }
 }
 

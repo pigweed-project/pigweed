@@ -400,6 +400,24 @@ fn next_arg(spec: &ConversionSpec, args: &mut VecDeque<Arg>) -> Result<Arg> {
         .ok_or_else(|| Error::new(&format!("No argument given for {spec:?}")))
 }
 
+/// Returns an error if the conversion specifier uses variable width or precision.
+fn validate_no_variable_width_or_precision(spec: &ConversionSpec, type_name: &str) -> Result<()> {
+    // TODO: b/281862660 - Support Width::Variable and Precision::Variable.
+    if spec.min_field_width == MinFieldWidth::Variable {
+        return Err(Error::new(&format!(
+            "Variable width '*' {type_name} formats are not supported.",
+        )));
+    }
+
+    if spec.precision == Precision::Variable {
+        return Err(Error::new(&format!(
+            "Variable precision '*' {type_name} formats are not supported.",
+        )));
+    }
+
+    Ok(())
+}
+
 // Handle a single format conversion specifier (i.e. `%08x`).  Grabs the
 // necessary arguments for the specifier from `args` and generates code
 // to marshal the arguments into the buffer declared in `_tokenize_to_buffer`.
@@ -411,18 +429,7 @@ fn handle_conversion(
 ) -> Result<()> {
     match spec.primitive {
         Primitive::Integer | Primitive::Unsigned => {
-            // TODO: b/281862660 - Support Width::Variable and Precision::Variable.
-            if spec.min_field_width == MinFieldWidth::Variable {
-                return Err(Error::new(
-                    "Variable width '*' integer formats are not supported.",
-                ));
-            }
-
-            if spec.precision == Precision::Variable {
-                return Err(Error::new(
-                    "Variable precision '*' integer formats are not supported.",
-                ));
-            }
+            validate_no_variable_width_or_precision(spec, "integer")?;
 
             if spec.style == Style::Binary {
                 return Err(Error::new("Binary output style is not supported."));
@@ -448,28 +455,21 @@ fn handle_conversion(
             generator.integer_conversion(&params, spec.primitive == Primitive::Integer, bits, arg)
         }
         Primitive::String => {
-            // TODO: b/281862660 - Support Width::Variable and Precision::Variable.
-            if spec.min_field_width == MinFieldWidth::Variable {
-                return Err(Error::new(
-                    "Variable width '*' string formats are not supported.",
-                ));
-            }
-
-            if spec.precision == Precision::Variable {
-                return Err(Error::new(
-                    "Variable precision '*' string formats are not supported.",
-                ));
-            }
+            validate_no_variable_width_or_precision(spec, "string")?;
 
             let arg = next_arg(spec, args)?;
             generator.string_conversion(arg)
         }
         Primitive::Character => {
+            validate_no_variable_width_or_precision(spec, "character")?;
+
             let arg = next_arg(spec, args)?;
             generator.char_conversion(arg)
         }
 
         Primitive::Untyped => {
+            validate_no_variable_width_or_precision(spec, "untyped")?;
+
             let arg = next_arg(spec, args)?;
             let params = spec.try_into()?;
             generator.untyped_conversion(arg, &params)
@@ -743,32 +743,29 @@ impl<GENERATOR: PrintfFormatMacroGenerator> FormatMacroGenerator for PrintfGener
             }
         };
 
-        match self.inner.integer_conversion(ty, expression)? {
-            Some(s) => self.append_format_string(&s),
-            None => self.append_format_string(&format!(
+        let spec = match self.inner.integer_conversion(ty, expression)? {
+            Some(spec) => spec,
+            None => format!(
                 "%{}{}{}",
                 params.field_params(),
                 length_modifier,
                 conversion
-            )),
-        }
+            ),
+        };
+        self.append_format_string(&spec);
 
         Ok(())
     }
 
     fn string_conversion(&mut self, expression: Arg) -> Result<()> {
-        match self.inner.string_conversion(expression)? {
-            Some(s) => self.append_format_string(&s),
-            None => self.append_format_string("%s"),
-        }
+        let spec = self.inner.string_conversion(expression)?;
+        self.append_format_string(spec.as_deref().unwrap_or("%s"));
         Ok(())
     }
 
     fn char_conversion(&mut self, expression: Arg) -> Result<()> {
-        match self.inner.char_conversion(expression)? {
-            Some(s) => self.append_format_string(&s),
-            None => self.append_format_string("%c"),
-        }
+        let spec = self.inner.char_conversion(expression)?;
+        self.append_format_string(spec.as_deref().unwrap_or("%c"));
         Ok(())
     }
 
@@ -878,29 +875,24 @@ impl<GENERATOR: CoreFmtFormatMacroGenerator> FormatMacroGenerator for CoreFmtGen
             format_ident!("u{type_width}")
         };
 
-        let conversion = params.core_fmt_specifier()?;
-
-        match self.inner.integer_conversion(ty, expression)? {
-            Some(s) => self.format_string.push_str(&s),
-            None => self.format_string.push_str(&conversion),
-        }
+        let spec = match self.inner.integer_conversion(ty, expression)? {
+            Some(spec) => spec,
+            None => params.core_fmt_specifier()?,
+        };
+        self.format_string.push_str(&spec);
 
         Ok(())
     }
 
     fn string_conversion(&mut self, expression: Arg) -> Result<()> {
-        match self.inner.string_conversion(expression)? {
-            Some(s) => self.format_string.push_str(&s),
-            None => self.format_string.push_str("{}"),
-        }
+        let spec = self.inner.string_conversion(expression)?;
+        self.format_string.push_str(spec.as_deref().unwrap_or("{}"));
         Ok(())
     }
 
     fn char_conversion(&mut self, expression: Arg) -> Result<()> {
-        match self.inner.char_conversion(expression)? {
-            Some(s) => self.format_string.push_str(&s),
-            None => self.format_string.push_str("{}"),
-        }
+        let spec = self.inner.char_conversion(expression)?;
+        self.format_string.push_str(spec.as_deref().unwrap_or("{}"));
         Ok(())
     }
 
@@ -924,4 +916,76 @@ pub fn generate_core_fmt(
         format_string: "".into(),
     };
     generate(generator, format_and_args)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct NoOpGenerator;
+
+    impl FormatMacroGenerator for NoOpGenerator {
+        fn finalize(self) -> Result<TokenStream2> {
+            Ok(TokenStream2::new())
+        }
+
+        fn string_fragment(&mut self, _string: &str) -> Result<()> {
+            Ok(())
+        }
+
+        fn integer_conversion(
+            &mut self,
+            _params: &FormatParams,
+            _signed: bool,
+            _type_width: u8,
+            _expression: Arg,
+        ) -> Result<()> {
+            Ok(())
+        }
+
+        fn string_conversion(&mut self, _expression: Arg) -> Result<()> {
+            Ok(())
+        }
+
+        fn char_conversion(&mut self, _expression: Arg) -> Result<()> {
+            Ok(())
+        }
+
+        fn untyped_conversion(&mut self, _expression: Arg, _params: &FormatParams) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn rejects_variable_width_character_format() {
+        let parsed: FormatAndArgsFlavor<PrintfFormatStringParser> =
+            syn::parse_str("\"%*c\", 4, 'a'").unwrap();
+        let err = generate(NoOpGenerator, parsed.into()).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Variable width '*' character formats are not supported."
+        );
+    }
+
+    #[test]
+    fn rejects_variable_precision_character_format() {
+        let parsed: FormatAndArgsFlavor<PrintfFormatStringParser> =
+            syn::parse_str("\"%.*c\", 4, 'a'").unwrap();
+        let err = generate(NoOpGenerator, parsed.into()).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Variable precision '*' character formats are not supported."
+        );
+    }
+
+    #[test]
+    fn rejects_variable_precision_untyped_format() {
+        let parsed: FormatAndArgsFlavor<PrintfFormatStringParser> =
+            syn::parse_str("\"%.*v\", 4, 1").unwrap();
+        let err = generate(NoOpGenerator, parsed.into()).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Variable precision '*' untyped formats are not supported."
+        );
+    }
 }

@@ -62,6 +62,12 @@ impl Generator {
             code_fragments: Vec::new(),
         }
     }
+
+    fn push_format_arg(&mut self, expression: &Arg) {
+        self.code_fragments.push(quote! {
+            result.push_str(&format!("{}", #expression));
+        });
+    }
 }
 
 // This toy example implements the generator by calling `format!()` at runtime.
@@ -105,30 +111,22 @@ impl FormatMacroGenerator for Generator {
         _type_width: u8, // in bits
         expression: Arg,
     ) -> Result<()> {
-        self.code_fragments.push(quote! {
-            result.push_str(&format!("{}", #expression));
-        });
+        self.push_format_arg(&expression);
         Ok(())
     }
 
     fn string_conversion(&mut self, expression: Arg) -> Result<()> {
-        self.code_fragments.push(quote! {
-            result.push_str(&format!("{}", #expression));
-        });
+        self.push_format_arg(&expression);
         Ok(())
     }
 
     fn char_conversion(&mut self, expression: Arg) -> Result<()> {
-        self.code_fragments.push(quote! {
-            result.push_str(&format!("{}", #expression));
-        });
+        self.push_format_arg(&expression);
         Ok(())
     }
 
     fn untyped_conversion(&mut self, expression: Arg, _params: &FormatParams) -> Result<()> {
-        self.code_fragments.push(quote! {
-            result.push_str(&format!("{}", #expression));
-        });
+        self.push_format_arg(&expression);
         Ok(())
     }
 }

@@ -125,7 +125,7 @@ pub enum Flag {
 }
 
 /// A printf minimum field width (the 5 in %5d).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MinFieldWidth {
     /// No field width specified.
     None,
@@ -141,7 +141,7 @@ pub enum MinFieldWidth {
 ///
 /// For string conversions (%s) this is treated as the maximum number of
 /// bytes of the string to output.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Precision {
     /// No precision specified.
     None,
@@ -151,6 +151,17 @@ pub enum Precision {
 
     /// Variable precision passed as an argument (i.e. %.*f).
     Variable,
+}
+
+impl Precision {
+    /// Returns the fixed precision value if present, or None otherwise.
+    #[must_use]
+    pub const fn to_fixed(self) -> Option<u32> {
+        match self {
+            Self::Fixed(p) => Some(p),
+            _ => None,
+        }
+    }
 }
 
 /// A printf length (the l in %ld).
@@ -179,6 +190,23 @@ pub enum Length {
 
     /// `t`
     PointerDiff,
+}
+
+impl Length {
+    /// Returns the length modifier string (e.g., `"hh"`, `"l"`).
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Char => "hh",
+            Self::Short => "h",
+            Self::Long => "l",
+            Self::LongLong => "ll",
+            Self::LongDouble => "L",
+            Self::IntMax => "j",
+            Self::Size => "z",
+            Self::PointerDiff => "t",
+        }
+    }
 }
 
 /// A core::fmt alignment spec.
@@ -235,6 +263,22 @@ pub struct ConversionSpec {
     pub style: Style,
 }
 
+impl Default for ConversionSpec {
+    fn default() -> Self {
+        Self {
+            argument: Argument::None,
+            fill: ' ',
+            alignment: Alignment::None,
+            flags: HashSet::new(),
+            min_field_width: MinFieldWidth::None,
+            precision: Precision::None,
+            length: None,
+            primitive: Primitive::Untyped,
+            style: Style::None,
+        }
+    }
+}
+
 impl ConversionSpec {
     /// Reconstructs the conversion specifier back to its printf format string representation (e.g., `%+05.2ld`).
     #[must_use]
@@ -269,16 +313,7 @@ impl ConversionSpec {
         }
 
         if let Some(length) = self.length {
-            s.push_str(match length {
-                Length::Char => "hh",
-                Length::Short => "h",
-                Length::Long => "l",
-                Length::LongLong => "ll",
-                Length::LongDouble => "L",
-                Length::IntMax => "j",
-                Length::Size => "z",
-                Length::PointerDiff => "t",
-            });
+            s.push_str(length.as_str());
         }
 
         let type_char = match (self.primitive, self.style) {
@@ -416,59 +451,13 @@ impl FormatString {
         error_formatter: &FE,
     ) -> String {
         let mut output = String::new();
-        let mut args_iter = args.iter();
+        let mut session = FormatSession::new(args.iter(), style, error_formatter, &mut output);
 
         for fragment in &self.fragments {
-            self.format_fragment(
-                fragment,
-                &mut args_iter,
-                style,
-                error_formatter,
-                &mut output,
-            );
+            session.format_fragment(fragment);
         }
 
         output
-    }
-
-    fn format_fragment<'a, FE: FormatError>(
-        &self,
-        fragment: &FormatFragment,
-        args: &mut impl Iterator<Item = &'a Result<Arg, FE::Error>>,
-        style: FormatStyle,
-        error_formatter: &FE,
-        output: &mut String,
-    ) where
-        FE::Error: 'a,
-    {
-        let spec = match fragment {
-            FormatFragment::Conversion(spec) => spec,
-            FormatFragment::Literal(s) => {
-                output.push_str(s);
-                return;
-            }
-        };
-
-        let Some(decoded) = args.next() else {
-            output.push_str(&error_formatter.format_missing(spec));
-            return;
-        };
-
-        let arg = match decoded {
-            Ok(arg) => arg,
-            Err(err) => {
-                output.push_str(&error_formatter.format_error(spec, err));
-                return;
-            }
-        };
-
-        let mut formatted = String::new();
-        match self.format_value(spec, arg, style, &mut formatted) {
-            Ok(()) => output.push_str(&formatted),
-            Err(_) => {
-                output.push_str(&error_formatter.format_type_error(spec, arg));
-            }
-        }
     }
 
     /// Parses a printf style format string.
@@ -526,225 +515,255 @@ impl FormatString {
                 }),
         }
     }
+}
 
-    fn format_value(
-        &self,
-        spec: &ConversionSpec,
-        arg: &Arg,
-        style: FormatStyle,
-        output: &mut String,
-    ) -> Result<(), String> {
-        match (spec.primitive, arg) {
-            (Primitive::Integer, Arg::Int(v)) => self.format_int(*v, spec, style, output),
-            (Primitive::Unsigned, Arg::Uint(v)) => self.format_uint(*v, spec, style, output),
-            (Primitive::Float, Arg::Float(v)) => self.format_float(*v, spec, style, output),
-            (Primitive::String, Arg::Str(v)) => self.format_str(v, spec, style, output),
-            (Primitive::Character, Arg::Char(v)) => self.format_char(*v, spec, style, output),
-            (Primitive::Pointer, Arg::Ptr(v)) => self.format_ptr(*v, spec, style, output),
-            (Primitive::Untyped, _) => self.format_untyped(spec, arg, style, output),
-            _ => Err(format!(
-                "Mismatched type: expected {:?}, got {:?}",
-                spec.primitive, arg
-            )),
+/// State for formatting a single [`FormatString`] with a sequence of arguments.
+///
+/// # Lifetimes
+///
+/// * `'a`: The lifetime of the decoded [`Arg`] items (and any decoding errors)
+///   yielded by the `args` iterator `I` (see the `impl` block).
+/// * `'b`: The lifetime of the borrowed error formatter (`error_formatter`) and
+///   the output string buffer (`output`) for the duration of the formatting
+///   session.
+struct FormatSession<'b, I, FE> {
+    /// Iterator yielding references to decoded [`Arg`] results for each conversion.
+    args: I,
+    /// The formatting style ([`FormatStyle::Printf`] or [`FormatStyle::CoreFmt`]).
+    style: FormatStyle,
+    /// Formatter invoked to produce fallback text when an argument is missing,
+    /// fails to decode, or has a mismatched type.
+    error_formatter: &'b FE,
+    /// Destination string buffer where formatted fragments are appended.
+    output: &'b mut String,
+}
+
+impl<'a, 'b, I, FE> FormatSession<'b, I, FE>
+where
+    I: Iterator<Item = &'a Result<Arg, FE::Error>>,
+    FE: FormatError,
+    FE::Error: 'a,
+{
+    fn new(args: I, style: FormatStyle, error_formatter: &'b FE, output: &'b mut String) -> Self {
+        Self {
+            args,
+            style,
+            error_formatter,
+            output,
         }
     }
 
-    fn format_untyped(
-        &self,
-        spec: &ConversionSpec,
-        arg: &Arg,
-        style: FormatStyle,
-        output: &mut String,
-    ) -> Result<(), String> {
-        match arg {
-            Arg::Int(v) => self.format_int(*v, spec, style, output),
-            Arg::Uint(v) => self.format_uint(*v, spec, style, output),
-            Arg::Float(v) => self.format_float(*v, spec, style, output),
-            Arg::Str(v) => self.format_str(v, spec, style, output),
-            Arg::Char(v) => self.format_char(*v, spec, style, output),
-            Arg::Ptr(v) => self.format_ptr(*v, spec, style, output),
+    fn format_fragment(&mut self, fragment: &FormatFragment) {
+        match fragment {
+            FormatFragment::Literal(s) => self.output.push_str(s),
+            FormatFragment::Conversion(spec) => self.format_conversion(spec),
         }
     }
 
-    fn format_int_common(
-        &self,
-        v: u64,
-        sign: &str,
-        spec: &ConversionSpec,
-        output: &mut String,
-    ) -> Result<(), String> {
-        let (base_prefix, mut value) = match spec.style {
-            Style::Hex | Style::Pointer => ("0x", format!("{:x}", v)),
-            Style::UpperHex => ("0X", format!("{:X}", v)),
-            Style::Octal => ("0", format!("{:o}", v)),
-            _ => ("", format!("{}", v)),
+    fn format_conversion(&mut self, spec: &ConversionSpec) {
+        let Some(decoded) = self.args.next() else {
+            self.output
+                .push_str(&self.error_formatter.format_missing(spec));
+            return;
         };
 
-        if let Precision::Fixed(p) = spec.precision {
-            while value.len() < p as usize {
-                value.insert(0, '0');
+        let arg = match decoded {
+            Ok(arg) => arg,
+            Err(err) => {
+                self.output
+                    .push_str(&self.error_formatter.format_error(spec, err));
+                return;
             }
-        }
-
-        let mut prefix = sign.to_string();
-        if spec.flags.contains(&Flag::AlternateSyntax) || spec.style == Style::Pointer {
-            // For octal, it's possible that the value string already starts with the prefix.
-            if !value.starts_with(base_prefix) {
-                prefix.push_str(base_prefix);
-            }
-        }
-
-        let s = self.apply_width_and_alignment(&prefix, &value, spec)?;
-        output.push_str(&s);
-        Ok(())
-    }
-
-    fn sign_prefix(&self, is_negative: bool, spec: &ConversionSpec) -> &'static str {
-        if is_negative {
-            "-"
-        } else if spec.flags.contains(&Flag::ForceSign) {
-            "+"
-        } else if spec.flags.contains(&Flag::SpaceSign) {
-            " "
-        } else {
-            ""
-        }
-    }
-
-    fn format_int(
-        &self,
-        v: i64,
-        spec: &ConversionSpec,
-        _style: FormatStyle,
-        output: &mut String,
-    ) -> Result<(), String> {
-        let sign = self.sign_prefix(v < 0, spec);
-        self.format_int_common(v.unsigned_abs(), sign, spec, output)
-    }
-
-    fn format_uint(
-        &self,
-        v: u64,
-        spec: &ConversionSpec,
-        _style: FormatStyle,
-        output: &mut String,
-    ) -> Result<(), String> {
-        self.format_int_common(v, "", spec, output)
-    }
-
-    fn format_float(
-        &self,
-        v: f64,
-        spec: &ConversionSpec,
-        style: FormatStyle,
-        output: &mut String,
-    ) -> Result<(), String> {
-        let abs_v = v.abs();
-        let value = match spec.precision {
-            Precision::Fixed(p) => format!("{:.1$}", abs_v, p as usize),
-            _ => match style {
-                FormatStyle::Printf => format!("{:.6}", abs_v),
-                FormatStyle::CoreFmt => format!("{}", abs_v),
-            },
-        };
-        let prefix = self.sign_prefix(v < 0.0 || v.is_sign_negative(), spec);
-
-        let s = self.apply_width_and_alignment(prefix, &value, spec)?;
-        output.push_str(&s);
-        Ok(())
-    }
-
-    fn format_str(
-        &self,
-        v: &str,
-        spec: &ConversionSpec,
-        _style: FormatStyle,
-        output: &mut String,
-    ) -> Result<(), String> {
-        let mut value = v.to_string();
-        if let Precision::Fixed(p) = spec.precision {
-            value.truncate(p as usize);
-        }
-        let s = self.apply_width_and_alignment("", &value, spec)?;
-        output.push_str(&s);
-        Ok(())
-    }
-
-    fn format_char(
-        &self,
-        v: char,
-        spec: &ConversionSpec,
-        _style: FormatStyle,
-        output: &mut String,
-    ) -> Result<(), String> {
-        let value = v.to_string();
-        let s = self.apply_width_and_alignment("", &value, spec)?;
-        output.push_str(&s);
-        Ok(())
-    }
-
-    fn format_ptr(
-        &self,
-        v: usize,
-        spec: &ConversionSpec,
-        _style: FormatStyle,
-        output: &mut String,
-    ) -> Result<(), String> {
-        self.format_int_common(v as u64, "", spec, output)
-    }
-
-    fn apply_width_and_alignment(
-        &self,
-        prefix: &str,
-        value: &str,
-        spec: &ConversionSpec,
-    ) -> Result<String, String> {
-        // If there is no fixed field width, format w/o padding.
-        // Variable field width is unsupported for now.
-        let MinFieldWidth::Fixed(w) = spec.min_field_width else {
-            return Ok(format!("{}{}", prefix, value));
         };
 
-        let w = w as usize;
-        let total_len = prefix.len() + value.len();
-
-        // If the value overflows the minimum field width, format w/o padding.
-        if total_len >= w {
-            return Ok(format!("{}{}", prefix, value));
+        let initial_len = self.output.len();
+        if format_value(spec, arg, self.style, self.output).is_err() {
+            self.output.truncate(initial_len);
+            self.output
+                .push_str(&self.error_formatter.format_type_error(spec, arg));
         }
-
-        let pad_len = w - total_len;
-        let ignore_zero = spec.flags.contains(&Flag::LeftJustify)
-            || (matches!(spec.precision, Precision::Fixed(_))
-                && matches!(spec.primitive, Primitive::Integer | Primitive::Unsigned));
-        let do_zero_fill = spec.flags.contains(&Flag::LeadingZeros) && !ignore_zero;
-        let is_left_aligned =
-            spec.alignment == Alignment::Left || spec.flags.contains(&Flag::LeftJustify);
-
-        let mut s = String::with_capacity(w);
-        if is_left_aligned {
-            // Left justified values are never zero filled.
-            s.push_str(prefix);
-            s.push_str(value);
-            for _ in 0..pad_len {
-                s.push(spec.fill);
-            }
-        } else {
-            if do_zero_fill {
-                // Zero fill happens after the prefix like '0x001' or '-0001'.
-                s.push_str(prefix);
-                for _ in 0..pad_len {
-                    s.push('0');
-                }
-            } else {
-                // Normal fill happens after the prefix like '  0x1' or '  -01'.
-                for _ in 0..pad_len {
-                    s.push(spec.fill);
-                }
-                s.push_str(prefix);
-            }
-            s.push_str(value);
-        }
-        Ok(s)
     }
+}
+
+struct MismatchedTypeError;
+
+fn format_value(
+    spec: &ConversionSpec,
+    arg: &Arg,
+    style: FormatStyle,
+    output: &mut String,
+) -> Result<(), MismatchedTypeError> {
+    match (spec.primitive, arg) {
+        (Primitive::Integer, Arg::Int(v)) => {
+            format_int(*v, spec, output);
+            Ok(())
+        }
+        (Primitive::Unsigned, Arg::Uint(v)) => {
+            format_uint(*v, spec, output);
+            Ok(())
+        }
+        (Primitive::Float, Arg::Float(v)) => {
+            format_float(*v, spec, style, output);
+            Ok(())
+        }
+        (Primitive::String, Arg::Str(v)) => {
+            format_str(v, spec, output);
+            Ok(())
+        }
+        (Primitive::Character, Arg::Char(v)) => {
+            format_char(*v, spec, output);
+            Ok(())
+        }
+        (Primitive::Pointer, Arg::Ptr(v)) => {
+            format_ptr(*v, spec, output);
+            Ok(())
+        }
+        (Primitive::Untyped, _) => {
+            format_untyped(spec, arg, style, output);
+            Ok(())
+        }
+        _ => Err(MismatchedTypeError),
+    }
+}
+
+fn format_untyped(spec: &ConversionSpec, arg: &Arg, style: FormatStyle, output: &mut String) {
+    match arg {
+        Arg::Int(v) => format_int(*v, spec, output),
+        Arg::Uint(v) => format_uint(*v, spec, output),
+        Arg::Float(v) => format_float(*v, spec, style, output),
+        Arg::Str(v) => format_str(v, spec, output),
+        Arg::Char(v) => format_char(*v, spec, output),
+        Arg::Ptr(v) => format_ptr(*v, spec, output),
+    }
+}
+
+fn format_int_common(v: u64, sign: &str, spec: &ConversionSpec, output: &mut String) {
+    let (base_prefix, mut value) = match spec.style {
+        Style::Hex | Style::Pointer => ("0x", format!("{v:x}")),
+        Style::UpperHex => ("0X", format!("{v:X}")),
+        Style::Octal => ("0", format!("{v:o}")),
+        _ => ("", format!("{v}")),
+    };
+
+    if let Some(p) = spec.precision.to_fixed() {
+        while value.len() < p as usize {
+            value.insert(0, '0');
+        }
+    }
+
+    let mut prefix = sign.to_string();
+    if spec.flags.contains(&Flag::AlternateSyntax) || spec.style == Style::Pointer {
+        // For octal, it's possible that the value string already starts with the prefix.
+        if !value.starts_with(base_prefix) {
+            prefix.push_str(base_prefix);
+        }
+    }
+
+    apply_width_and_alignment(&prefix, &value, spec, output);
+}
+
+fn sign_prefix(is_negative: bool, spec: &ConversionSpec) -> &'static str {
+    if is_negative {
+        "-"
+    } else if spec.flags.contains(&Flag::ForceSign) {
+        "+"
+    } else if spec.flags.contains(&Flag::SpaceSign) {
+        " "
+    } else {
+        ""
+    }
+}
+
+fn format_int(v: i64, spec: &ConversionSpec, output: &mut String) {
+    let sign = sign_prefix(v < 0, spec);
+    format_int_common(v.unsigned_abs(), sign, spec, output)
+}
+
+fn format_uint(v: u64, spec: &ConversionSpec, output: &mut String) {
+    format_int_common(v, "", spec, output)
+}
+
+fn format_float(v: f64, spec: &ConversionSpec, style: FormatStyle, output: &mut String) {
+    let abs_v = v.abs();
+    let value = match spec.precision {
+        Precision::Fixed(p) => format!("{:.1$}", abs_v, p as usize),
+        _ => match style {
+            FormatStyle::Printf => format!("{abs_v:.6}"),
+            FormatStyle::CoreFmt => format!("{abs_v}"),
+        },
+    };
+    let prefix = sign_prefix(v < 0.0 || v.is_sign_negative(), spec);
+
+    apply_width_and_alignment(prefix, &value, spec, output);
+}
+
+fn format_str(v: &str, spec: &ConversionSpec, output: &mut String) {
+    let mut value = v.to_string();
+    if let Some(p) = spec.precision.to_fixed() {
+        value.truncate(p as usize);
+    }
+    apply_width_and_alignment("", &value, spec, output);
+}
+
+fn format_char(v: char, spec: &ConversionSpec, output: &mut String) {
+    let value = v.to_string();
+    apply_width_and_alignment("", &value, spec, output);
+}
+
+fn format_ptr(v: usize, spec: &ConversionSpec, output: &mut String) {
+    format_int_common(v as u64, "", spec, output)
+}
+
+fn apply_width_and_alignment(
+    prefix: &str,
+    value: &str,
+    spec: &ConversionSpec,
+    output: &mut String,
+) {
+    // If there is no fixed field width, format w/o padding.
+    // Variable field width is unsupported for now.
+    let MinFieldWidth::Fixed(w) = spec.min_field_width else {
+        output.push_str(prefix);
+        output.push_str(value);
+        return;
+    };
+
+    let w = w as usize;
+    let total_len = prefix.len() + value.len();
+
+    // If the value overflows the minimum field width, format w/o padding.
+    if total_len >= w {
+        output.push_str(prefix);
+        output.push_str(value);
+        return;
+    }
+
+    let pad_len = w - total_len;
+    let is_left_aligned =
+        spec.alignment == Alignment::Left || spec.flags.contains(&Flag::LeftJustify);
+    let ignore_zero = spec.flags.contains(&Flag::LeftJustify)
+        || (matches!(spec.precision, Precision::Fixed(_))
+            && matches!(spec.primitive, Primitive::Integer | Primitive::Unsigned));
+    let do_zero_fill = spec.flags.contains(&Flag::LeadingZeros) && !ignore_zero;
+
+    if is_left_aligned {
+        // Left justified values are never zero filled.
+        output.push_str(prefix);
+        output.push_str(value);
+        pad_fill(output, spec.fill, pad_len);
+    } else if do_zero_fill {
+        // Zero fill happens after the prefix like '0x001' or '-0001'.
+        output.push_str(prefix);
+        pad_fill(output, '0', pad_len);
+        output.push_str(value);
+    } else {
+        // Normal fill happens after the prefix like '  0x1' or '  -01'.
+        pad_fill(output, spec.fill, pad_len);
+        output.push_str(prefix);
+        output.push_str(value);
+    }
+}
+
+fn pad_fill(s: &mut String, fill_char: char, count: usize) {
+    s.extend(core::iter::repeat_n(fill_char, count));
 }

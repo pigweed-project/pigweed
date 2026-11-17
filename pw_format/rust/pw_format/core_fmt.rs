@@ -28,7 +28,7 @@ use nom::{IResult, Parser};
 use crate::parser_util::{fixed_width, precision};
 use crate::{
     Alignment, Argument, ConversionSpec, Flag, FormatFragment, FormatString, MinFieldWidth,
-    Precision, Primitive, Style,
+    Primitive, Style,
 };
 
 /// The `name` in a `{name}` format string.  Matches a Rust identifier.
@@ -186,18 +186,7 @@ fn conversion(input: &str) -> IResult<&str, ConversionSpec> {
     let (input, _) = take_while(|c: char| c.is_whitespace()).parse(input)?;
     let (input, _) = tag("}").parse(input)?;
 
-    let mut spec = spec.unwrap_or_else(|| ConversionSpec {
-        argument: Argument::None,
-        fill: ' ',
-        alignment: Alignment::None,
-        flags: HashSet::new(),
-        min_field_width: MinFieldWidth::None,
-        precision: Precision::None,
-        length: None,
-        primitive: Primitive::Untyped,
-        style: Style::None,
-    });
-
+    let mut spec = spec.unwrap_or_default();
     spec.argument = argument;
 
     Ok((input, spec))
@@ -309,22 +298,6 @@ mod tests {
 
     #[test]
     fn empty_conversion_spec_has_sensible_defaults() {
-        assert_eq!(
-            conversion("{}"),
-            Ok((
-                "",
-                ConversionSpec {
-                    argument: Argument::None,
-                    fill: ' ',
-                    alignment: Alignment::None,
-                    flags: HashSet::new(),
-                    min_field_width: MinFieldWidth::None,
-                    precision: Precision::None,
-                    length: None,
-                    primitive: Primitive::Untyped,
-                    style: Style::None,
-                }
-            ))
-        );
+        assert_eq!(conversion("{}"), Ok(("", ConversionSpec::default())));
     }
 }
