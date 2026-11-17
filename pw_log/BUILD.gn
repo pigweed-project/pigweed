@@ -73,6 +73,7 @@ pw_source_set("args") {
   public_configs = [ ":public_include_path" ]
   public_deps = [
     dir_pw_enum,
+    dir_pw_preprocessor,
     dir_pw_tokenizer,
   ]
   public = [ "public/pw_log/tokenized_args.h" ]
@@ -141,6 +142,7 @@ pw_test_group("tests") {
 pw_test("basic_log_test") {
   enable_if = pw_log_BACKEND != ""
   deps = [
+    ":args",
     ":pw_log",
     dir_pw_preprocessor,
     pw_log_BACKEND,

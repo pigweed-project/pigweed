@@ -81,6 +81,7 @@ cc_library(
     strip_include_prefix = "public",
     deps = [
         "//pw_enum",
+        "//pw_preprocessor",
         "//pw_tokenizer",
     ],
 )
@@ -209,6 +210,7 @@ pw_cc_test(
         "basic_log_test_plain_c.c",
     ],
     deps = [
+        ":args",
         ":pw_log",
         ":pw_log.facade",
         ":rate_limited",

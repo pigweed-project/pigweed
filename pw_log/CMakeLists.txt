@@ -51,6 +51,7 @@ pw_add_library(pw_log.args INTERFACE
     public
   PUBLIC_DEPS
     pw_enum
+    pw_preprocessor
     pw_tokenizer
 )
 
@@ -116,6 +117,7 @@ if(NOT "${pw_log_BACKEND}" STREQUAL "")
       basic_log_test_plain_c.c
     PRIVATE_DEPS
       pw_log
+      pw_log.args
       pw_preprocessor
     GROUPS
       modules

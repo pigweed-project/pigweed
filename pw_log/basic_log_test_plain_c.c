@@ -23,6 +23,7 @@
 #define PW_LOG_MODULE_NAME "CTS"
 
 #include "pw_log/log.h"
+#include "pw_log/tokenized_args.h"
 
 #ifdef __cplusplus
 #error "This file must be compiled as plain C to verify C compilation works."
@@ -167,7 +168,11 @@ static void DoNothingFakeFunction(const char* module, const char* f, ...) {
 }
 
 static void CustomFormatStringTest(void) {
+  PW_LOG_TOKEN_TYPE default_token = PW_LOG_TOKEN_DEFAULT_VALUE;
+  (void)default_token;
+  PW_LOG_TOKEN_TYPE token = PW_LOG_TOKEN("plain_c");
   PW_LOG_DEBUG("Abc");
   PW_LOG_INFO("Abc %d", 123);
   PW_LOG_WARN("Abc %d %s", 123, "four");
+  PW_LOG_INFO("Token " PW_LOG_TOKEN_FMT(), token);
 }
