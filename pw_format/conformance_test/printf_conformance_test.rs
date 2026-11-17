@@ -53,12 +53,7 @@ impl From<&TestArg> for Arg {
 
 fn check_case(tc: &TestCase) {
     let args: Vec<Arg> = tc.args.iter().map(Arg::from).collect();
-    let parsed = FormatString::parse_printf(tc.format_string).unwrap_or_else(|err| {
-        panic!(
-            "Unexpected parse failure for test_id {:?} (format: {:?}): {err}",
-            tc.test_id, tc.format_string,
-        )
-    });
+    let parsed = FormatString::parse_printf_lossy(tc.format_string);
     let actual = parsed.format(&args, FormatStyle::Printf);
 
     assert_eq!(

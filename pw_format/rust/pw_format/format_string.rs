@@ -12,11 +12,26 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+use core::convert::Infallible;
+use core::marker::PhantomData;
+use std::borrow::Cow;
 use std::collections::HashSet;
 
 #[cfg(feature = "proc_macro")]
 use quote::{quote, ToTokens};
 
+mod float;
+mod integer;
+mod padding;
+mod platform;
+mod text;
+
+use self::float::format_float;
+use self::integer::{format_int, format_ptr, format_uint};
+pub use self::platform::{
+    Ilp32Platform, Llp64Platform, Lp64Platform, PlatformTypes, PointerInt, SignedInt, UnsignedInt,
+};
+use self::text::{format_char, format_str};
 use crate::{core_fmt, printf};
 
 /// Primitive type of a conversion (integer, float, string, etc.)
@@ -65,6 +80,21 @@ pub enum Style {
     /// Upper case exponential rendering (i.e. "%E" or "{:E}".
     UpperExponential,
 
+    /// Compact shortest floating point representation (i.e. "%g" or "{:g}").
+    General,
+
+    /// Upper case compact shortest floating point representation (i.e. "%G" or "{:G}").
+    UpperGeneral,
+
+    /// Hexadecimal floating point representation (i.e. "%a" or "{:a}").
+    HexFloat,
+
+    /// Upper case hexadecimal floating point representation (i.e. "%A" or "{:A}").
+    UpperHexFloat,
+
+    /// Upper case floating point representation (i.e. "%F" or "{:F}").
+    Upper,
+
     /// Pointer type rendering (i.e. "%p" or "{:p}").
     Pointer,
 
@@ -95,6 +125,11 @@ impl ToTokens for Style {
             Style::UpperHex => quote!(pw_format::Style::UpperHex),
             Style::Exponential => quote!(pw_format::Style::Exponential),
             Style::UpperExponential => quote!(pw_format::Style::UpperExponential),
+            Style::General => quote!(pw_format::Style::General),
+            Style::UpperGeneral => quote!(pw_format::Style::UpperGeneral),
+            Style::HexFloat => quote!(pw_format::Style::HexFloat),
+            Style::UpperHexFloat => quote!(pw_format::Style::UpperHexFloat),
+            Style::Upper => quote!(pw_format::Style::Upper),
             Style::Debug => quote!(pw_format::Style::Debug),
             Style::HexDebug => quote!(pw_format::Style::HexDebug),
             Style::UpperHexDebug => quote!(pw_format::Style::UpperHexDebug),
@@ -324,6 +359,11 @@ impl ConversionSpec {
             (Primitive::Unsigned, _) => 'u',
             (Primitive::Float, Style::Exponential) => 'e',
             (Primitive::Float, Style::UpperExponential) => 'E',
+            (Primitive::Float, Style::General) => 'g',
+            (Primitive::Float, Style::UpperGeneral) => 'G',
+            (Primitive::Float, Style::HexFloat) => 'a',
+            (Primitive::Float, Style::UpperHexFloat) => 'A',
+            (Primitive::Float, Style::Upper) => 'F',
             (Primitive::Float, _) => 'f',
             (Primitive::Character, _) => 'c',
             (Primitive::String, _) => 's',
@@ -432,16 +472,26 @@ pub struct FormatString {
 }
 
 impl FormatString {
+    /// Formats a parsed format string with provided arguments using the specified
+    /// producing platform's integer and pointer widths (`P: PlatformTypes`).
+    #[must_use]
+    pub fn format_for_platform<P: PlatformTypes>(
+        &self,
+        args: &[Arg],
+        style: FormatStyle,
+    ) -> String {
+        let result_args: Vec<Result<Arg, Infallible>> =
+            args.iter().map(|arg| Ok(arg.clone())).collect();
+        self.format_with_errors_for_platform::<P, _>(&result_args, style, &DefaultFormatter)
+    }
+
     /// Formats a parsed format string with provided arguments.
     #[must_use]
     pub fn format(&self, args: &[Arg], style: FormatStyle) -> String {
-        let result_args: Vec<Result<Arg, core::convert::Infallible>> =
-            args.iter().map(|arg| Ok(arg.clone())).collect();
-
-        self.format_with_errors(&result_args, style, &DefaultFormatter)
+        self.format_for_platform::<Ilp32Platform>(args, style)
     }
 
-    /// Formats a parsed format string with the provided argument states (Result<Arg, FE::Error>),
+    /// Formats a parsed format string with the provided argument states (`Result<Arg, FE::Error>`),
     /// delegating formatting of any failures, missing arguments, or type mismatches
     /// to the provided `FormatError` implementation.
     pub fn format_with_errors<FE: FormatError>(
@@ -450,8 +500,20 @@ impl FormatString {
         style: FormatStyle,
         error_formatter: &FE,
     ) -> String {
+        self.format_with_errors_for_platform::<Ilp32Platform, FE>(args, style, error_formatter)
+    }
+
+    /// Formats a parsed format string with the provided argument states (`Result<Arg, FE::Error>`)
+    /// using the specified producing platform's integer and pointer widths (`P: PlatformTypes`).
+    pub fn format_with_errors_for_platform<P: PlatformTypes, FE: FormatError>(
+        &self,
+        args: &[Result<Arg, FE::Error>],
+        style: FormatStyle,
+        error_formatter: &FE,
+    ) -> String {
         let mut output = String::new();
-        let mut session = FormatSession::new(args.iter(), style, error_formatter, &mut output);
+        let mut session =
+            FormatSession::<_, _, P>::new(args.iter(), style, error_formatter, &mut output);
 
         for fragment in &self.fragments {
             session.format_fragment(fragment);
@@ -474,6 +536,14 @@ impl FormatString {
         }
 
         Ok(result)
+    }
+
+    /// Parses a printf style format string infallibly for runtime formatting,
+    /// treating any invalid or incomplete `%` sequence as a literal `'%'` and
+    /// continuing to parse subsequent conversion specifiers.
+    #[must_use]
+    pub fn parse_printf_lossy(s: &str) -> Self {
+        printf::format_string_lossy(s)
     }
 
     /// Parses a core::fmt style format string.
@@ -517,6 +587,16 @@ impl FormatString {
     }
 }
 
+/// Resolved dynamic field width or precision (`*`) integer argument.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DynamicInt {
+    /// Non-negative width or precision magnitude.
+    Positive(u32),
+    /// Negative width or precision magnitude (indicating left-justification for width
+    /// or omitted precision).
+    Negative(u32),
+}
+
 /// State for formatting a single [`FormatString`] with a sequence of arguments.
 ///
 /// # Lifetimes
@@ -526,7 +606,7 @@ impl FormatString {
 /// * `'b`: The lifetime of the borrowed error formatter (`error_formatter`) and
 ///   the output string buffer (`output`) for the duration of the formatting
 ///   session.
-struct FormatSession<'b, I, FE> {
+struct FormatSession<'b, I, FE, P: PlatformTypes> {
     /// Iterator yielding references to decoded [`Arg`] results for each conversion.
     args: I,
     /// The formatting style ([`FormatStyle::Printf`] or [`FormatStyle::CoreFmt`]).
@@ -536,9 +616,11 @@ struct FormatSession<'b, I, FE> {
     error_formatter: &'b FE,
     /// Destination string buffer where formatted fragments are appended.
     output: &'b mut String,
+    /// Marker for the producing platform's native integer/pointer types.
+    _platform: PhantomData<P>,
 }
 
-impl<'a, 'b, I, FE> FormatSession<'b, I, FE>
+impl<'a, 'b, I, FE, P: PlatformTypes> FormatSession<'b, I, FE, P>
 where
     I: Iterator<Item = &'a Result<Arg, FE::Error>>,
     FE: FormatError,
@@ -550,7 +632,23 @@ where
             style,
             error_formatter,
             output,
+            _platform: PhantomData,
         }
+    }
+
+    fn push_missing(&mut self, spec: &ConversionSpec) {
+        self.output
+            .push_str(&self.error_formatter.format_missing(spec));
+    }
+
+    fn push_error(&mut self, spec: &ConversionSpec, err: &FE::Error) {
+        self.output
+            .push_str(&self.error_formatter.format_error(spec, err));
+    }
+
+    fn push_type_error(&mut self, spec: &ConversionSpec, arg: &Arg) {
+        self.output
+            .push_str(&self.error_formatter.format_type_error(spec, arg));
     }
 
     fn format_fragment(&mut self, fragment: &FormatFragment) {
@@ -561,209 +659,181 @@ where
     }
 
     fn format_conversion(&mut self, spec: &ConversionSpec) {
+        let Some(effective_spec) = self.resolve_dynamic_spec(spec) else {
+            return;
+        };
+
         let Some(decoded) = self.args.next() else {
-            self.output
-                .push_str(&self.error_formatter.format_missing(spec));
+            self.push_missing(spec);
             return;
         };
 
         let arg = match decoded {
             Ok(arg) => arg,
             Err(err) => {
-                self.output
-                    .push_str(&self.error_formatter.format_error(spec, err));
+                self.push_error(spec, err);
                 return;
             }
         };
 
         let initial_len = self.output.len();
-        if format_value(spec, arg, self.style, self.output).is_err() {
+        if format_value::<P>(&effective_spec, arg, self.style, self.output).is_err() {
             self.output.truncate(initial_len);
-            self.output
-                .push_str(&self.error_formatter.format_type_error(spec, arg));
+            self.push_type_error(spec, arg);
+        }
+    }
+
+    fn resolve_dynamic_spec<'s>(
+        &mut self,
+        spec: &'s ConversionSpec,
+    ) -> Option<Cow<'s, ConversionSpec>> {
+        if spec.min_field_width != MinFieldWidth::Variable && spec.precision != Precision::Variable
+        {
+            return Some(Cow::Borrowed(spec));
+        }
+
+        let mut resolved = spec.clone();
+        resolved.min_field_width = self.resolve_dynamic_width(spec, &mut resolved.flags)?;
+        if resolved.flags.contains(&Flag::LeftJustify) {
+            resolved.alignment = Alignment::Left;
+        }
+        resolved.precision = self.resolve_dynamic_precision(spec)?;
+        Some(Cow::Owned(resolved))
+    }
+
+    fn consume_dynamic_int_arg(&mut self, spec: &ConversionSpec) -> Option<DynamicInt> {
+        let Some(decoded) = self.args.next() else {
+            self.push_missing(spec);
+            return None;
+        };
+        let arg = match decoded {
+            Ok(arg) => arg,
+            Err(err) => {
+                self.push_error(spec, err);
+                return None;
+            }
+        };
+
+        match arg {
+            Arg::Int(val) => match u32::try_from(val.unsigned_abs()) {
+                Ok(u) if *val < 0 => Some(DynamicInt::Negative(u)),
+                Ok(u) => Some(DynamicInt::Positive(u)),
+                Err(_) => {
+                    self.push_type_error(spec, arg);
+                    None
+                }
+            },
+            Arg::Uint(val) => match u32::try_from(*val) {
+                Ok(u) => Some(DynamicInt::Positive(u)),
+                Err(_) => {
+                    self.push_type_error(spec, arg);
+                    None
+                }
+            },
+            other => {
+                self.push_type_error(spec, other);
+                None
+            }
+        }
+    }
+
+    fn resolve_dynamic_width(
+        &mut self,
+        spec: &ConversionSpec,
+        flags: &mut HashSet<Flag>,
+    ) -> Option<MinFieldWidth> {
+        match spec.min_field_width {
+            MinFieldWidth::Fixed(w) => Some(MinFieldWidth::Fixed(w)),
+            MinFieldWidth::None => Some(MinFieldWidth::None),
+            MinFieldWidth::Variable => match self.consume_dynamic_int_arg(spec)? {
+                DynamicInt::Positive(w) => Some(MinFieldWidth::Fixed(w)),
+                DynamicInt::Negative(w) => {
+                    flags.insert(Flag::LeftJustify);
+                    Some(MinFieldWidth::Fixed(w))
+                }
+            },
+        }
+    }
+
+    fn resolve_dynamic_precision(&mut self, spec: &ConversionSpec) -> Option<Precision> {
+        match spec.precision {
+            Precision::Fixed(p) => Some(Precision::Fixed(p)),
+            Precision::None => Some(Precision::None),
+            Precision::Variable => match self.consume_dynamic_int_arg(spec)? {
+                DynamicInt::Positive(p) => Some(Precision::Fixed(p)),
+                DynamicInt::Negative(_) => Some(Precision::None),
+            },
         }
     }
 }
 
-struct MismatchedTypeError;
+/// Errors that can occur when formatting an [`Arg`] for a [`ConversionSpec`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FormatValueError {
+    /// The conversion specifier and argument types are incompatible.
+    MismatchedType,
 
-fn format_value(
+    /// The argument value exceeds the valid range for the conversion specifier
+    /// or target platform type.
+    ValueOutOfRange,
+}
+
+fn format_value<P: PlatformTypes>(
     spec: &ConversionSpec,
     arg: &Arg,
     style: FormatStyle,
     output: &mut String,
-) -> Result<(), MismatchedTypeError> {
+) -> Result<(), FormatValueError> {
     match (spec.primitive, arg) {
-        (Primitive::Integer, Arg::Int(v)) => {
-            format_int(*v, spec, output);
-            Ok(())
+        (Primitive::Integer, Arg::Int(v)) => format_int::<P>(*v, spec, style, output),
+        (Primitive::Integer, Arg::Uint(v)) => format_int::<P>(v.cast_signed(), spec, style, output),
+        (Primitive::Unsigned, Arg::Uint(v)) => format_uint::<P>(*v, spec, style, output),
+        (Primitive::Unsigned, Arg::Int(v)) => {
+            format_uint::<P>(v.cast_unsigned(), spec, style, output)
         }
-        (Primitive::Unsigned, Arg::Uint(v)) => {
-            format_uint(*v, spec, output);
-            Ok(())
+        (Primitive::Float, Arg::Float(v)) => format_float(*v, spec, style, output),
+        (Primitive::String, Arg::Str(v)) => format_str(v, spec, output),
+        (Primitive::Character, Arg::Char(v)) => format_char(*v, spec, output),
+
+        // Note: For integer arguments (`Arg::Int` / `Arg::Uint`) in `128..=255`,
+        // `u8... as char` maps to Latin-1 Unicode code points (`U+0080..=U+00FF`),
+        // which encode as two-byte UTF-8 sequences in a Rust string.
+        (Primitive::Character, Arg::Int(v)) => {
+            let c = u8::try_from(*v).map_err(|_| FormatValueError::ValueOutOfRange)? as char;
+            format_char(c, spec, output);
         }
-        (Primitive::Float, Arg::Float(v)) => {
-            format_float(*v, spec, style, output);
-            Ok(())
-        }
-        (Primitive::String, Arg::Str(v)) => {
-            format_str(v, spec, output);
-            Ok(())
-        }
-        (Primitive::Character, Arg::Char(v)) => {
-            format_char(*v, spec, output);
-            Ok(())
+        (Primitive::Character, Arg::Uint(v)) => {
+            let c = u8::try_from(*v).map_err(|_| FormatValueError::ValueOutOfRange)? as char;
+            format_char(c, spec, output);
         }
         (Primitive::Pointer, Arg::Ptr(v)) => {
-            format_ptr(*v, spec, output);
-            Ok(())
+            format_ptr(P::Pointer::ptr_from_usize(*v)?, spec, output)
         }
-        (Primitive::Untyped, _) => {
-            format_untyped(spec, arg, style, output);
-            Ok(())
+        (Primitive::Pointer, Arg::Uint(v)) => {
+            format_ptr(P::Pointer::ptr_from_u64(*v), spec, output)
         }
-        _ => Err(MismatchedTypeError),
+        (Primitive::Pointer, Arg::Int(v)) => {
+            format_ptr(P::Pointer::ptr_from_u64(v.cast_unsigned()), spec, output)
+        }
+        (Primitive::Untyped, _) => format_untyped::<P>(spec, arg, style, output)?,
+        _ => return Err(FormatValueError::MismatchedType),
     }
+    Ok(())
 }
 
-fn format_untyped(spec: &ConversionSpec, arg: &Arg, style: FormatStyle, output: &mut String) {
+fn format_untyped<P: PlatformTypes>(
+    spec: &ConversionSpec,
+    arg: &Arg,
+    style: FormatStyle,
+    output: &mut String,
+) -> Result<(), FormatValueError> {
     match arg {
-        Arg::Int(v) => format_int(*v, spec, output),
-        Arg::Uint(v) => format_uint(*v, spec, output),
+        Arg::Int(v) => format_int::<P>(*v, spec, style, output),
+        Arg::Uint(v) => format_uint::<P>(*v, spec, style, output),
         Arg::Float(v) => format_float(*v, spec, style, output),
         Arg::Str(v) => format_str(v, spec, output),
         Arg::Char(v) => format_char(*v, spec, output),
-        Arg::Ptr(v) => format_ptr(*v, spec, output),
+        Arg::Ptr(v) => format_ptr(P::Pointer::ptr_from_usize(*v)?, spec, output),
     }
-}
-
-fn format_int_common(v: u64, sign: &str, spec: &ConversionSpec, output: &mut String) {
-    let (base_prefix, mut value) = match spec.style {
-        Style::Hex | Style::Pointer => ("0x", format!("{v:x}")),
-        Style::UpperHex => ("0X", format!("{v:X}")),
-        Style::Octal => ("0", format!("{v:o}")),
-        _ => ("", format!("{v}")),
-    };
-
-    if let Some(p) = spec.precision.to_fixed() {
-        while value.len() < p as usize {
-            value.insert(0, '0');
-        }
-    }
-
-    let mut prefix = sign.to_string();
-    if spec.flags.contains(&Flag::AlternateSyntax) || spec.style == Style::Pointer {
-        // For octal, it's possible that the value string already starts with the prefix.
-        if !value.starts_with(base_prefix) {
-            prefix.push_str(base_prefix);
-        }
-    }
-
-    apply_width_and_alignment(&prefix, &value, spec, output);
-}
-
-fn sign_prefix(is_negative: bool, spec: &ConversionSpec) -> &'static str {
-    if is_negative {
-        "-"
-    } else if spec.flags.contains(&Flag::ForceSign) {
-        "+"
-    } else if spec.flags.contains(&Flag::SpaceSign) {
-        " "
-    } else {
-        ""
-    }
-}
-
-fn format_int(v: i64, spec: &ConversionSpec, output: &mut String) {
-    let sign = sign_prefix(v < 0, spec);
-    format_int_common(v.unsigned_abs(), sign, spec, output)
-}
-
-fn format_uint(v: u64, spec: &ConversionSpec, output: &mut String) {
-    format_int_common(v, "", spec, output)
-}
-
-fn format_float(v: f64, spec: &ConversionSpec, style: FormatStyle, output: &mut String) {
-    let abs_v = v.abs();
-    let value = match spec.precision {
-        Precision::Fixed(p) => format!("{:.1$}", abs_v, p as usize),
-        _ => match style {
-            FormatStyle::Printf => format!("{abs_v:.6}"),
-            FormatStyle::CoreFmt => format!("{abs_v}"),
-        },
-    };
-    let prefix = sign_prefix(v < 0.0 || v.is_sign_negative(), spec);
-
-    apply_width_and_alignment(prefix, &value, spec, output);
-}
-
-fn format_str(v: &str, spec: &ConversionSpec, output: &mut String) {
-    let mut value = v.to_string();
-    if let Some(p) = spec.precision.to_fixed() {
-        value.truncate(p as usize);
-    }
-    apply_width_and_alignment("", &value, spec, output);
-}
-
-fn format_char(v: char, spec: &ConversionSpec, output: &mut String) {
-    let value = v.to_string();
-    apply_width_and_alignment("", &value, spec, output);
-}
-
-fn format_ptr(v: usize, spec: &ConversionSpec, output: &mut String) {
-    format_int_common(v as u64, "", spec, output)
-}
-
-fn apply_width_and_alignment(
-    prefix: &str,
-    value: &str,
-    spec: &ConversionSpec,
-    output: &mut String,
-) {
-    // If there is no fixed field width, format w/o padding.
-    // Variable field width is unsupported for now.
-    let MinFieldWidth::Fixed(w) = spec.min_field_width else {
-        output.push_str(prefix);
-        output.push_str(value);
-        return;
-    };
-
-    let w = w as usize;
-    let total_len = prefix.len() + value.len();
-
-    // If the value overflows the minimum field width, format w/o padding.
-    if total_len >= w {
-        output.push_str(prefix);
-        output.push_str(value);
-        return;
-    }
-
-    let pad_len = w - total_len;
-    let is_left_aligned =
-        spec.alignment == Alignment::Left || spec.flags.contains(&Flag::LeftJustify);
-    let ignore_zero = spec.flags.contains(&Flag::LeftJustify)
-        || (matches!(spec.precision, Precision::Fixed(_))
-            && matches!(spec.primitive, Primitive::Integer | Primitive::Unsigned));
-    let do_zero_fill = spec.flags.contains(&Flag::LeadingZeros) && !ignore_zero;
-
-    if is_left_aligned {
-        // Left justified values are never zero filled.
-        output.push_str(prefix);
-        output.push_str(value);
-        pad_fill(output, spec.fill, pad_len);
-    } else if do_zero_fill {
-        // Zero fill happens after the prefix like '0x001' or '-0001'.
-        output.push_str(prefix);
-        pad_fill(output, '0', pad_len);
-        output.push_str(value);
-    } else {
-        // Normal fill happens after the prefix like '  0x1' or '  -01'.
-        pad_fill(output, spec.fill, pad_len);
-        output.push_str(prefix);
-        output.push_str(value);
-    }
-}
-
-fn pad_fill(s: &mut String, fill_char: char, count: usize) {
-    s.extend(core::iter::repeat_n(fill_char, count));
+    Ok(())
 }

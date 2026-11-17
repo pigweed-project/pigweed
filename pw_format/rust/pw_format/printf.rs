@@ -35,15 +35,17 @@ fn map_specifier(value: char) -> Result<(Primitive, Style), String> {
         'x' => Ok((Primitive::Unsigned, Style::Hex)),
         'X' => Ok((Primitive::Unsigned, Style::UpperHex)),
         'f' => Ok((Primitive::Float, Style::None)),
+        'F' => Ok((Primitive::Float, Style::Upper)),
         'e' => Ok((Primitive::Float, Style::Exponential)),
         'E' => Ok((Primitive::Float, Style::UpperExponential)),
+        'g' => Ok((Primitive::Float, Style::General)),
+        'G' => Ok((Primitive::Float, Style::UpperGeneral)),
+        'a' => Ok((Primitive::Float, Style::HexFloat)),
+        'A' => Ok((Primitive::Float, Style::UpperHexFloat)),
         'c' => Ok((Primitive::Character, Style::None)),
         's' => Ok((Primitive::String, Style::None)),
         'p' => Ok((Primitive::Pointer, Style::Pointer)),
         'v' => Ok((Primitive::Untyped, Style::None)),
-        'F' => Err("%F is not supported because it does not have a core::fmt analog".to_string()),
-        'g' => Err("%g is not supported because it does not have a core::fmt analog".to_string()),
-        'G' => Err("%G is not supported because it does not have a core::fmt analog".to_string()),
         _ => Err(format!("Unsupported format specifier '{value}'")),
     }
 }
@@ -137,14 +139,35 @@ fn conversion_fragment(input: &str) -> IResult<&str, FormatFragment> {
     map(conversion_spec, FormatFragment::Conversion).parse(input)
 }
 
+fn lossy_percent_fragment(input: &str) -> IResult<&str, FormatFragment> {
+    map(tag("%"), |_| FormatFragment::Literal("%".to_string())).parse(input)
+}
+
 fn fragment(input: &str) -> IResult<&str, FormatFragment> {
     alt((percent_fragment, conversion_fragment, literal_fragment)).parse(input)
+}
+
+fn lossy_fragment(input: &str) -> IResult<&str, FormatFragment> {
+    alt((
+        percent_fragment,
+        conversion_fragment,
+        lossy_percent_fragment,
+        literal_fragment,
+    ))
+    .parse(input)
 }
 
 pub(crate) fn format_string(input: &str) -> IResult<&str, FormatString> {
     let (input, fragments) = many0(fragment).parse(input)?;
 
     Ok((input, FormatString::from_fragments(&fragments)))
+}
+
+pub(crate) fn format_string_lossy(input: &str) -> FormatString {
+    match many0(lossy_fragment).parse(input) {
+        Ok((_, fragments)) => FormatString::from_fragments(&fragments),
+        Err(_) => FormatString::from_fragments(&[FormatFragment::Literal(input.to_string())]),
+    }
 }
 
 #[cfg(test)]
@@ -167,6 +190,7 @@ mod tests {
             Ok(("", (Primitive::Unsigned, Style::UpperHex)))
         );
         assert_eq!(specifier("f"), Ok(("", (Primitive::Float, Style::None))));
+        assert_eq!(specifier("F"), Ok(("", (Primitive::Float, Style::Upper))));
         assert_eq!(
             specifier("e"),
             Ok(("", (Primitive::Float, Style::Exponential)))
@@ -174,6 +198,19 @@ mod tests {
         assert_eq!(
             specifier("E"),
             Ok(("", (Primitive::Float, Style::UpperExponential)))
+        );
+        assert_eq!(specifier("g"), Ok(("", (Primitive::Float, Style::General))));
+        assert_eq!(
+            specifier("G"),
+            Ok(("", (Primitive::Float, Style::UpperGeneral)))
+        );
+        assert_eq!(
+            specifier("a"),
+            Ok(("", (Primitive::Float, Style::HexFloat)))
+        );
+        assert_eq!(
+            specifier("A"),
+            Ok(("", (Primitive::Float, Style::UpperHexFloat)))
         );
         assert_eq!(
             specifier("c"),
@@ -257,6 +294,7 @@ mod tests {
             precision(".1234567890f"),
             Ok(("f", Precision::Fixed(1234567890)))
         );
+        assert_eq!(precision(".f"), Ok(("f", Precision::Fixed(0))));
         assert_eq!(precision(".*f"), Ok(("f", Precision::Variable)));
         assert_eq!(precision("f"), Ok(("f", Precision::None)));
     }

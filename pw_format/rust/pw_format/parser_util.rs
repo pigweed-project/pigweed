@@ -15,7 +15,7 @@
 use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::character::complete::digit1;
-use nom::combinator::{map, map_res};
+use nom::combinator::{map, map_res, opt};
 use nom::{IResult, Parser};
 
 use crate::{MinFieldWidth, Precision};
@@ -25,13 +25,7 @@ fn variable_width(input: &str) -> IResult<&str, MinFieldWidth> {
 }
 
 pub(crate) fn fixed_width(input: &str) -> IResult<&str, MinFieldWidth> {
-    map_res(
-        digit1,
-        |value: &str| -> Result<MinFieldWidth, core::num::ParseIntError> {
-            Ok(MinFieldWidth::Fixed(value.parse()?))
-        },
-    )
-    .parse(input)
+    map(map_res(digit1, str::parse::<u32>), MinFieldWidth::Fixed).parse(input)
 }
 
 fn no_width(input: &str) -> IResult<&str, MinFieldWidth> {
@@ -49,13 +43,8 @@ fn variable_precision(input: &str) -> IResult<&str, Precision> {
 
 fn fixed_precision(input: &str) -> IResult<&str, Precision> {
     let (input, _) = tag(".").parse(input)?;
-    map_res(
-        digit1,
-        |value: &str| -> Result<Precision, core::num::ParseIntError> {
-            Ok(Precision::Fixed(value.parse()?))
-        },
-    )
-    .parse(input)
+    let (input, prec) = opt(map_res(digit1, str::parse::<u32>)).parse(input)?;
+    Ok((input, Precision::Fixed(prec.unwrap_or(0))))
 }
 
 fn no_precision(input: &str) -> IResult<&str, Precision> {

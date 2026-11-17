@@ -102,6 +102,25 @@ fn call_snprintf_char(format: &str, arg: c_char) -> String {
     }
 }
 
+fn call_snprintf_ptr(format: &str, arg: usize) -> String {
+    let mut buf = vec![0u8; 100];
+    let c_format = CString::new(format).unwrap();
+    // SAFETY: `buf` points to a valid mutable buffer of `buf.len()` bytes,
+    // `c_format` is a valid NUL-terminated C string, and `arg as *const ()`
+    // supplies the pointer argument expected by `%p`.
+    let n = unsafe {
+        snprintf(
+            buf.as_mut_ptr().cast::<c_char>(),
+            buf.len(),
+            c_format.as_ptr(),
+            arg as *const (),
+        )
+    };
+    assert!(n >= 0, "snprintf returned a negative value");
+    let n = usize::try_from(n).unwrap();
+    String::from_utf8(buf[..n].to_vec()).unwrap()
+}
+
 #[test]
 fn test_int_simple() {
     let printf_format_str = "%d";
@@ -791,8 +810,8 @@ fn format_with_errors_renders_missing_arguments_via_format_missing() {
 fn conversion_spec_to_string_reconstructs_format_string_representation() {
     let test_cases = [
         "%d", "%+d", "%-d", "% d", "%#o", "%05d", "%+05d", "%*d", "%.2f", "%.*f", "%ld", "%lld",
-        "%hhd", "%hd", "%Lf", "%jd", "%zd", "%td", "%e", "%E", "%x", "%X", "%u", "%c", "%s", "%p",
-        "%+05.2ld", "%-10s", "%08x", "%#010X",
+        "%hhd", "%hd", "%Lf", "%jd", "%zd", "%td", "%F", "%e", "%E", "%g", "%G", "%a", "%A", "%x",
+        "%X", "%u", "%c", "%s", "%p", "%+05.2ld", "%-10s", "%08x", "%#010X",
     ];
 
     for spec_str in test_cases {
@@ -803,4 +822,418 @@ fn conversion_spec_to_string_reconstructs_format_string_representation() {
         };
         assert_eq!(spec.to_printf(), spec_str);
     }
+}
+
+#[test]
+fn test_pointer() {
+    let ptr_val = 0x800usize;
+    let args = [Arg::Ptr(ptr_val)];
+
+    let parsed = FormatString::parse_printf("%p").unwrap();
+    assert_eq!(
+        parsed.format(&args, FormatStyle::Printf),
+        call_snprintf_ptr("%p", ptr_val)
+    );
+
+    let parsed = FormatString::parse_printf("%10p").unwrap();
+    assert_eq!(
+        parsed.format(&args, FormatStyle::Printf),
+        call_snprintf_ptr("%10p", ptr_val)
+    );
+
+    let parsed = FormatString::parse_printf("%-10p").unwrap();
+    assert_eq!(
+        parsed.format(&args, FormatStyle::Printf),
+        call_snprintf_ptr("%-10p", ptr_val)
+    );
+
+    let parsed = FormatString::parse_printf("%010p").unwrap();
+    assert_eq!(
+        parsed.format(&args, FormatStyle::Printf),
+        call_snprintf_ptr("%010p", ptr_val)
+    );
+}
+
+#[test]
+fn test_float_scientific() {
+    let val = 2.5f64;
+    let args = [Arg::Float(val)];
+
+    let parsed = FormatString::parse_printf("%e").unwrap();
+    assert_eq!(
+        parsed.format(&args, FormatStyle::Printf),
+        call_snprintf_float("%e", val)
+    );
+
+    let parsed = FormatString::parse_printf("%E").unwrap();
+    assert_eq!(
+        parsed.format(&args, FormatStyle::Printf),
+        call_snprintf_float("%E", val)
+    );
+
+    let parsed = FormatString::parse_printf("%.2e").unwrap();
+    assert_eq!(
+        parsed.format(&args, FormatStyle::Printf),
+        call_snprintf_float("%.2e", val)
+    );
+}
+
+#[test]
+fn test_float_general() {
+    let val = 2.5f64;
+    let args = [Arg::Float(val)];
+
+    let parsed = FormatString::parse_printf("%g").unwrap();
+    assert_eq!(
+        parsed.format(&args, FormatStyle::Printf),
+        call_snprintf_float("%g", val)
+    );
+
+    let parsed = FormatString::parse_printf("%G").unwrap();
+    assert_eq!(
+        parsed.format(&args, FormatStyle::Printf),
+        call_snprintf_float("%G", val)
+    );
+}
+
+#[test]
+fn test_star_arguments() {
+    // Dynamic width for integer
+    let parsed = FormatString::parse_printf("%*d").unwrap();
+    assert_eq!(
+        parsed.format(&[Arg::Int(5), Arg::Int(42)], FormatStyle::Printf),
+        "   42"
+    );
+    // Negative dynamic width means left-justify
+    assert_eq!(
+        parsed.format(&[Arg::Int(-5), Arg::Int(42)], FormatStyle::Printf),
+        "42   "
+    );
+
+    // Dynamic precision for string
+    let parsed = FormatString::parse_printf("%.*s").unwrap();
+    assert_eq!(
+        parsed.format(
+            &[Arg::Int(3), Arg::Str("hello".to_string())],
+            FormatStyle::Printf
+        ),
+        "hel"
+    );
+
+    // Dynamic width and precision for float
+    let parsed = FormatString::parse_printf("%*.*f").unwrap();
+    assert_eq!(
+        parsed.format(
+            &[Arg::Int(8), Arg::Int(2), Arg::Float(12.3456)],
+            FormatStyle::Printf
+        ),
+        "   12.35"
+    );
+}
+
+#[test]
+fn test_int_widths_and_padding() {
+    let parsed = FormatString::parse_printf("%08.5d").unwrap();
+    assert_eq!(
+        parsed.format(&[Arg::Int(42)], FormatStyle::Printf),
+        call_snprintf_int("%08.5d", 42)
+    );
+
+    let parsed = FormatString::parse_printf("%#010x").unwrap();
+    assert_eq!(
+        parsed.format(&[Arg::Uint(42)], FormatStyle::Printf),
+        call_snprintf_uint("%#010x", 42)
+    );
+
+    let parsed = FormatString::parse_printf("%hhd").unwrap();
+    assert_eq!(parsed.format(&[Arg::Int(255)], FormatStyle::Printf), "-1");
+
+    let parsed = FormatString::parse_printf("%hhu").unwrap();
+    assert_eq!(parsed.format(&[Arg::Int(-1)], FormatStyle::Printf), "255");
+}
+
+#[test]
+fn test_arg_coercions() {
+    // Integer to %c
+    let parsed = FormatString::parse_printf("%c").unwrap();
+    assert_eq!(parsed.format(&[Arg::Int(65)], FormatStyle::Printf), "A");
+    assert_eq!(parsed.format(&[Arg::Uint(97)], FormatStyle::Printf), "a");
+    // Non-ASCII byte values 128..=255 map to U+0080..=U+00FF (two-byte UTF-8).
+    assert_eq!(
+        parsed.format(&[Arg::Int(0xa0)], FormatStyle::Printf),
+        "\u{00A0}"
+    );
+
+    // Integer to %p
+    let parsed = FormatString::parse_printf("%p").unwrap();
+    assert_eq!(
+        parsed.format(&[Arg::Uint(0x1234)], FormatStyle::Printf),
+        "0x1234"
+    );
+
+    // Unsigned word sign extension for %d
+    let parsed = FormatString::parse_printf("%d").unwrap();
+    assert_eq!(
+        parsed.format(&[Arg::Uint(4294967232)], FormatStyle::Printf),
+        "-64"
+    );
+}
+
+#[test]
+fn test_hex_float_rounding() {
+    let parsed = FormatString::parse_printf("%.0a").unwrap();
+    assert_eq!(
+        parsed.format(&[Arg::Float(1.5)], FormatStyle::Printf),
+        "0x2p+0"
+    );
+    assert_eq!(
+        parsed.format(&[Arg::Float(1.0)], FormatStyle::Printf),
+        "0x1p+0"
+    );
+    assert_eq!(
+        parsed.format(&[Arg::Float(1.25)], FormatStyle::Printf),
+        "0x1p+0"
+    );
+
+    let parsed = FormatString::parse_printf("%.1a").unwrap();
+    assert_eq!(
+        parsed.format(&[Arg::Float(1.046875)], FormatStyle::Printf),
+        "0x1.1p+0"
+    ); // 0x1.0cp0
+    assert_eq!(
+        parsed.format(&[Arg::Float(1.03125)], FormatStyle::Printf),
+        "0x1.0p+0"
+    ); // 0x1.08p0 (tie to even: 0)
+    assert_eq!(
+        parsed.format(&[Arg::Float(1.09375)], FormatStyle::Printf),
+        "0x1.2p+0"
+    ); // 0x1.18p0 (tie to even: 2)
+}
+
+#[test]
+fn test_core_fmt_64bit_integers() {
+    let parsed = FormatString::parse_core_fmt("{}").unwrap();
+    assert_eq!(
+        parsed.format(&[Arg::Int(5_000_000_000)], FormatStyle::CoreFmt),
+        "5000000000"
+    );
+    assert_eq!(
+        parsed.format(&[Arg::Uint(5_000_000_000)], FormatStyle::CoreFmt),
+        "5000000000"
+    );
+}
+
+#[test]
+fn test_string_precision_bytes() {
+    let parsed = FormatString::parse_printf("%.5s").unwrap();
+    assert_eq!(
+        parsed.format(&[Arg::Str("hello world".into())], FormatStyle::Printf),
+        "hello"
+    );
+    // "🦀" is 4 bytes. Precision 5 gives "🦀a" (4 bytes + 1 byte = 5 bytes).
+    let parsed = FormatString::parse_printf("%.5s").unwrap();
+    assert_eq!(
+        parsed.format(&[Arg::Str("🦀abc".into())], FormatStyle::Printf),
+        "🦀a"
+    );
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SimpleTestError;
+
+impl FormatError for SimpleTestError {
+    type Error = String;
+
+    fn format_error(&self, spec: &ConversionSpec, _err: &Self::Error) -> String {
+        format!("<[{} ERROR]>", spec.to_printf())
+    }
+
+    fn format_missing(&self, spec: &ConversionSpec) -> String {
+        format!("<[{} MISSING]>", spec.to_printf())
+    }
+
+    fn format_type_error(&self, spec: &ConversionSpec, _arg: &Arg) -> String {
+        format!("<[{} TYPE_ERROR]>", spec.to_printf())
+    }
+}
+
+#[test]
+fn test_char_out_of_range() {
+    let parsed = FormatString::parse_printf("%c").unwrap();
+    let err_formatter = SimpleTestError;
+    let res = parsed.format_with_errors(&[Ok(Arg::Int(300))], FormatStyle::Printf, &err_formatter);
+    assert_eq!(res, "<[%c TYPE_ERROR]>");
+
+    let res = parsed.format_with_errors(&[Ok(Arg::Int(-1))], FormatStyle::Printf, &err_formatter);
+    assert_eq!(res, "<[%c TYPE_ERROR]>");
+}
+
+#[test]
+fn test_char_latin1_utf8_encoding() {
+    let parsed = FormatString::parse_printf("%c").unwrap();
+
+    // ASCII range (0..=127) encodes as single-byte UTF-8.
+    let ascii = parsed.format(&[Arg::Int(65)], FormatStyle::Printf);
+    assert_eq!(ascii, "A");
+    assert_eq!(ascii.as_bytes(), &[0x41]);
+
+    // Non-ASCII byte 128 maps to U+0080 (2-byte UTF-8: [0xC2, 0x80]).
+    let latin1_128 = parsed.format(&[Arg::Int(128)], FormatStyle::Printf);
+    assert_eq!(latin1_128, "\u{80}");
+    assert_eq!(latin1_128.as_bytes(), &[0xc2, 0x80]);
+
+    // Non-ASCII byte 255 maps to U+00FF 'ÿ' (2-byte UTF-8: [0xC3, 0xBF]).
+    let latin1_255 = parsed.format(&[Arg::Uint(255)], FormatStyle::Printf);
+    assert_eq!(latin1_255, "ÿ");
+    assert_eq!(latin1_255.as_bytes(), &[0xc3, 0xbf]);
+}
+
+#[test]
+fn test_dynamic_width_precision_overflow() {
+    let parsed = FormatString::parse_printf("%*d").unwrap();
+    let err_formatter = SimpleTestError;
+    let res = parsed.format_with_errors(
+        &[Ok(Arg::Int(5_000_000_000)), Ok(Arg::Int(42))],
+        FormatStyle::Printf,
+        &err_formatter,
+    );
+    assert_eq!(res, "<[%*d TYPE_ERROR]>");
+
+    let parsed = FormatString::parse_printf("%.*f").unwrap();
+    let res = parsed.format_with_errors(
+        &[Ok(Arg::Uint(5_000_000_000)), Ok(Arg::Float(1.0))],
+        FormatStyle::Printf,
+        &err_formatter,
+    );
+    assert_eq!(res, "<[%.*f TYPE_ERROR]>");
+}
+
+#[test]
+fn test_literal_precision_overflow() {
+    let _ = FormatString::parse_printf("%.99999999999999999999999d").unwrap_err();
+}
+
+#[test]
+fn test_platform_types_length_modifiers() {
+    use crate::{Ilp32Platform, Llp64Platform, Lp64Platform};
+
+    // Value exceeding 32-bit signed/unsigned range: 0x1_0000_0001 (4_294_967_297)
+    let val_signed = Arg::Int(0x1_0000_0001);
+    let val_unsigned = Arg::Uint(0x1_0000_0001);
+
+    let fmt_signed = FormatString::parse_printf("%hhd %hd %d %ld %lld %jd %zd %td").unwrap();
+    let signed_args = [
+        val_signed.clone(),
+        val_signed.clone(),
+        val_signed.clone(),
+        val_signed.clone(),
+        val_signed.clone(),
+        val_signed.clone(),
+        val_signed.clone(),
+        val_signed,
+    ];
+
+    // ILP32: int, long, ssize_t, ptrdiff_t are 32-bit (truncate 0x1_0000_0001 -> 1);
+    // long long and intmax_t are 64-bit (preserve 4294967297).
+    assert_eq!(
+        fmt_signed.format_for_platform::<Ilp32Platform>(&signed_args, FormatStyle::Printf),
+        "1 1 1 1 4294967297 4294967297 1 1"
+    );
+
+    // LP64: int is 32-bit (1); long, long long, intmax_t, ssize_t, ptrdiff_t are 64-bit (4294967297).
+    assert_eq!(
+        fmt_signed.format_for_platform::<Lp64Platform>(&signed_args, FormatStyle::Printf),
+        "1 1 1 4294967297 4294967297 4294967297 4294967297 4294967297"
+    );
+
+    // LLP64: int and long are 32-bit (1); long long, intmax_t, ssize_t, ptrdiff_t are 64-bit (4294967297).
+    assert_eq!(
+        fmt_signed.format_for_platform::<Llp64Platform>(&signed_args, FormatStyle::Printf),
+        "1 1 1 1 4294967297 4294967297 4294967297 4294967297"
+    );
+
+    let fmt_unsigned = FormatString::parse_printf("%hhu %hu %u %lu %llu %ju %zu %tu %p").unwrap();
+    let unsigned_args = [
+        val_unsigned.clone(),
+        val_unsigned.clone(),
+        val_unsigned.clone(),
+        val_unsigned.clone(),
+        val_unsigned.clone(),
+        val_unsigned.clone(),
+        val_unsigned.clone(),
+        val_unsigned.clone(),
+        val_unsigned,
+    ];
+
+    assert_eq!(
+        fmt_unsigned.format_for_platform::<Ilp32Platform>(&unsigned_args, FormatStyle::Printf),
+        "1 1 1 1 4294967297 4294967297 1 1 0x1"
+    );
+    assert_eq!(
+        fmt_unsigned.format_for_platform::<Lp64Platform>(&unsigned_args, FormatStyle::Printf),
+        "1 1 1 4294967297 4294967297 4294967297 4294967297 4294967297 0x100000001"
+    );
+    assert_eq!(
+        fmt_unsigned.format_for_platform::<Llp64Platform>(&unsigned_args, FormatStyle::Printf),
+        "1 1 1 1 4294967297 4294967297 4294967297 4294967297 0x100000001"
+    );
+
+    #[cfg(target_pointer_width = "64")]
+    {
+        let fmt_ptr = FormatString::parse_printf("%p").unwrap();
+        let ptr_arg = [Ok(Arg::Ptr(0x1_0000_0001))];
+        assert_eq!(
+            fmt_ptr.format_with_errors_for_platform::<Ilp32Platform, _>(
+                &ptr_arg,
+                FormatStyle::Printf,
+                &SimpleTestError,
+            ),
+            "<[%p TYPE_ERROR]>"
+        );
+        assert_eq!(
+            fmt_ptr.format_with_errors_for_platform::<Lp64Platform, _>(
+                &ptr_arg,
+                FormatStyle::Printf,
+                &SimpleTestError,
+            ),
+            "0x100000001"
+        );
+    }
+}
+
+#[test]
+fn test_parse_printf_lossy_and_strict_parity() {
+    // Strict `parse_printf` rejects invalid specifiers (used by compile-time macros),
+    // while `parse_printf_lossy` emits `%` literally and keeps parsing subsequent specs.
+    FormatString::parse_printf("%q %d").unwrap_err();
+    let lossy = FormatString::parse_printf_lossy("%q %d");
+    assert_eq!(lossy.format(&[Arg::Int(5)], FormatStyle::Printf), "%q 5");
+
+    FormatString::parse_printf("%**d %d").unwrap_err();
+    let lossy_stars = FormatString::parse_printf_lossy("%**d %d");
+    assert_eq!(
+        lossy_stars.format(&[Arg::Int(5)], FormatStyle::Printf),
+        "%**d 5"
+    );
+
+    FormatString::parse_printf("%+% %d").unwrap_err();
+    let lossy_pct_flag = FormatString::parse_printf_lossy("%+% %d");
+    assert_eq!(
+        lossy_pct_flag.format(&[Arg::Int(5)], FormatStyle::Printf),
+        "%+% 5"
+    );
+
+    for incomplete in ["%-5", "%.*", "%ll"] {
+        FormatString::parse_printf(incomplete).unwrap_err();
+        assert_eq!(
+            FormatString::parse_printf_lossy(incomplete).format(&[], FormatStyle::Printf),
+            incomplete
+        );
+    }
+
+    FormatString::parse_printf("%%%").unwrap_err();
+    assert_eq!(
+        FormatString::parse_printf_lossy("%%%").format(&[], FormatStyle::Printf),
+        "%%"
+    );
 }

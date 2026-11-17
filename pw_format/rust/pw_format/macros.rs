@@ -440,10 +440,8 @@ fn handle_conversion(
                 Length::Char => 8,
                 Length::Short => 16,
                 Length::Long => 32,
-                Length::LongLong => 64,
-                Length::IntMax => 64,
-                Length::Size => 32,
-                Length::PointerDiff => 32,
+                Length::LongLong | Length::IntMax => 64,
+                Length::Size | Length::PointerDiff => 32,
                 Length::LongDouble => {
                     return Err(Error::new(
                         "Long double length parameter invalid for integer formats",

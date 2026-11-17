@@ -122,7 +122,8 @@ mod printf;
 
 pub use format_string::{
     Alignment, Arg, Argument, ConversionSpec, Flag, FormatError, FormatFragment, FormatString,
-    FormatStyle, Length, MinFieldWidth, Precision, Primitive, Style,
+    FormatStyle, FormatValueError, Ilp32Platform, Length, Llp64Platform, Lp64Platform,
+    MinFieldWidth, PlatformTypes, PointerInt, Precision, Primitive, SignedInt, Style, UnsignedInt,
 };
 
 #[cfg(test)]

@@ -46,6 +46,7 @@ Conformance Testing
   outputs conform to the C standard library.
 * **Rust Formatting & Fallback Conformance**: A Rust test
   (``printf_conformance_rust_test``) evaluates each generated case using
-  ``FormatString::parse_printf`` and ``FormatString::format``, validating
-  standard formatting, boundary conditions, and unformatted specifier retention
+  ``FormatString::parse_printf_lossy`` and ``FormatString::format``, validating
+  standard formatting, boundary conditions, per-specifier literal fallback for
+  invalid or incomplete ``%`` sequences, and unformatted specifier retention
   when arguments are missing or mismatched.

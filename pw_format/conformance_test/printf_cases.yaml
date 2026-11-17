@@ -96,6 +96,12 @@ cases:
     - signed_int: -42
   expected_output: "-0042"
 
+- test_id: "int_precision_zero_val_zero"
+  format_string: "%.0d"
+  args:
+    - signed_int: 0
+  expected_output: ""
+
 - test_id: "int_width_and_precision"
   format_string: "%6.4d"
   args:
@@ -142,6 +148,12 @@ cases:
     - unsigned_int: 255
   expected_output: "FF"
 
+- test_id: "hex_alt_zero"
+  format_string: "%#x"
+  args:
+    - unsigned_int: 0
+  expected_output: "0"
+
 - test_id: "hex_zero_pad"
   format_string: "%04x"
   args:
@@ -176,11 +188,23 @@ cases:
     - signed_int: -128
   expected_output: "-128"
 
+- test_id: "int_length_char_overflow"
+  format_string: "%hhd"
+  args:
+    - signed_int: 300
+  expected_output: "44"
+
 - test_id: "int_length_short"
   format_string: "%hd"
   args:
     - signed_int: -32768
   expected_output: "-32768"
+
+- test_id: "int_length_short_overflow"
+  format_string: "%hd"
+  args:
+    - signed_int: 65537
+  expected_output: "1"
 
 - test_id: "int_length_long"
   format_string: "%ld"
@@ -199,6 +223,12 @@ cases:
   args:
     - unsigned_int: 255
   expected_output: "255"
+
+- test_id: "uint_length_char_overflow"
+  format_string: "%hhu"
+  args:
+    - unsigned_int: 256
+  expected_output: "0"
 
 - test_id: "uint_length_short"
   format_string: "%hu"
@@ -236,8 +266,32 @@ cases:
     - signed_int: 12345
   expected_output: "12345"
 
+- test_id: "int_length_long_uint_arg"
+  format_string: "%ld"
+  args:
+    - unsigned_int: 2000000000
+  expected_output: "2000000000"
+
+- test_id: "int_length_size_uint_arg"
+  format_string: "%zd"
+  args:
+    - unsigned_int: 2000000000
+  expected_output: "2000000000"
+
+- test_id: "int_length_ptrdiff_uint_arg"
+  format_string: "%td"
+  args:
+    - unsigned_int: 2000000000
+  expected_output: "2000000000"
+
+- test_id: "int_length_long_long_uint_arg"
+  format_string: "%lld"
+  args:
+    - unsigned_int: 5000000000
+  expected_output: "5000000000"
+
 # ==============================================================================
-# Floating Point (%f)
+# Floating Point (%f, %F, %e, %E, %g, %G, %a, %A)
 # ==============================================================================
 
 - test_id: "float_default_precision"
@@ -257,6 +311,12 @@ cases:
   args:
     - floating_point: 3.14159
   expected_output: "3"
+
+- test_id: "float_zero_precision_alt"
+  format_string: "%#.0f"
+  args:
+    - floating_point: 3.14159
+  expected_output: "3."
 
 - test_id: "float_width_and_precision"
   format_string: "%8.2f"
@@ -293,6 +353,114 @@ cases:
   args:
     - floating_point: 3.14159
   expected_output: " 3.141590"
+
+- test_id: "float_upper"
+  format_string: "%F"
+  args:
+    - floating_point: 3.14159
+  expected_output: "3.141590"
+
+- test_id: "float_exp_lower"
+  format_string: "%e"
+  args:
+    - floating_point: 1234.56
+  expected_output: "1.234560e+03"
+
+- test_id: "float_exp_upper"
+  format_string: "%E"
+  args:
+    - floating_point: 1234.56
+  expected_output: "1.234560E+03"
+
+- test_id: "float_exp_precision"
+  format_string: "%.2e"
+  args:
+    - floating_point: 1234.56
+  expected_output: "1.23e+03"
+
+- test_id: "float_exp_zero"
+  format_string: "%e"
+  args:
+    - floating_point: 0.0
+  expected_output: "0.000000e+00"
+
+- test_id: "float_general_decimal"
+  format_string: "%g"
+  args:
+    - floating_point: 12.34
+  expected_output: "12.34"
+
+- test_id: "float_general_exp"
+  format_string: "%g"
+  args:
+    - floating_point: 1234567.0
+  expected_output: "1.23457e+06"
+
+- test_id: "float_general_upper"
+  format_string: "%G"
+  args:
+    - floating_point: 1234567.0
+  expected_output: "1.23457E+06"
+
+- test_id: "float_general_precision"
+  format_string: "%.3g"
+  args:
+    - floating_point: 123.456
+  expected_output: "123"
+
+- test_id: "float_hex_lower"
+  format_string: "%a"
+  args:
+    - floating_point: 1.0
+  expected_output: "0x1p+0"
+
+- test_id: "float_hex_upper"
+  format_string: "%A"
+  args:
+    - floating_point: 1.0
+  expected_output: "0X1P+0"
+
+- test_id: "float_hex_precision"
+  format_string: "%.2a"
+  args:
+    - floating_point: 1.0
+  expected_output: "0x1.00p+0"
+
+- test_id: "float_hex_precision_zero"
+  format_string: "%.0a"
+  args:
+    - floating_point: 1.0
+  expected_output: "0x1p+0"
+
+- test_id: "float_hex_precision_zero_alt"
+  format_string: "%#.0a"
+  args:
+    - floating_point: 1.0
+  expected_output: "0x1.p+0"
+
+- test_id: "float_hex_precision_zero_upper"
+  format_string: "%.0A"
+  args:
+    - floating_point: 1.0
+  expected_output: "0X1P+0"
+
+- test_id: "float_hex_precision_zero_upper_alt"
+  format_string: "%#.0A"
+  args:
+    - floating_point: 1.0
+  expected_output: "0X1.P+0"
+
+- test_id: "float_hex_zero_precision_zero"
+  format_string: "%.0a"
+  args:
+    - floating_point: 0.0
+  expected_output: "0x0p+0"
+
+- test_id: "float_hex_zero_precision_zero_alt"
+  format_string: "%#.0a"
+  args:
+    - floating_point: 0.0
+  expected_output: "0x0.p+0"
 
 # ==============================================================================
 # Strings and Characters (%s, %c)
@@ -334,6 +502,36 @@ cases:
     - string_value: "hello"
   expected_output: "hel     "
 
+- test_id: "str_multibyte_utf8_basic"
+  format_string: "%s"
+  args:
+    - string_value: "maté"
+  expected_output: "maté"
+
+- test_id: "str_multibyte_utf8_width_right"
+  format_string: "%8s"
+  args:
+    - string_value: "maté"
+  expected_output: "   maté"
+
+- test_id: "str_multibyte_utf8_width_left"
+  format_string: "%-8s"
+  args:
+    - string_value: "maté"
+  expected_output: "maté   "
+
+- test_id: "str_multibyte_utf8_precision"
+  format_string: "%.3s"
+  args:
+    - string_value: "maté"
+  expected_output: "mat"
+
+- test_id: "str_multibyte_utf8_width_and_precision"
+  format_string: "%8.3s"
+  args:
+    - string_value: "maté"
+  expected_output: "     mat"
+
 - test_id: "char_basic"
   format_string: "%c"
   args:
@@ -351,6 +549,18 @@ cases:
   args:
     - char_value: "A"
   expected_output: "A  "
+
+- test_id: "char_from_int"
+  format_string: "%c"
+  args:
+    - signed_int: 65
+  expected_output: "A"
+
+- test_id: "char_from_uint"
+  format_string: "%c"
+  args:
+    - unsigned_int: 97
+  expected_output: "a"
 
 # ==============================================================================
 # Pointers (%p)
@@ -393,6 +603,39 @@ cases:
   expected_output: "50%"
 
 # ==============================================================================
+# Dynamic Width and Precision (%*, %.*)
+# ==============================================================================
+
+- test_id: "dynamic_width_int"
+  format_string: "%*d"
+  args:
+    - signed_int: 5
+    - signed_int: 42
+  expected_output: "   42"
+
+- test_id: "dynamic_width_int_negative"
+  format_string: "%*d"
+  args:
+    - signed_int: -5
+    - signed_int: 42
+  expected_output: "42   "
+
+- test_id: "dynamic_precision_str"
+  format_string: "%.*s"
+  args:
+    - signed_int: 3
+    - string_value: "hello"
+  expected_output: "hel"
+
+- test_id: "dynamic_width_and_precision_float"
+  format_string: "%*.*f"
+  args:
+    - signed_int: 8
+    - signed_int: 2
+    - floating_point: 3.14159
+  expected_output: "    3.14"
+
+# ==============================================================================
 # Multi-Argument Test Cases
 # ==============================================================================
 
@@ -428,8 +671,14 @@ cases:
   expected_output: "Item Widget: ID=002a, Price=$19.99, Grade=A"
 
 # ==============================================================================
-# Edge Cases: Alternate Form, Precision, Padding, and Zero Formatting
+# Edge Cases: Alternate Form, Precision, Padding, Zero & NaN Formatting
 # ==============================================================================
+
+- test_id: "oct_prec_0_zero"
+  format_string: "[%.0o]"
+  args:
+    - unsigned_int: 0
+  expected_output: "[]"
 
 - test_id: "oct_prec_0_eight"
   format_string: "[%.0o]"
@@ -479,11 +728,23 @@ cases:
     - unsigned_int: 1
   expected_output: "[001]"
 
+- test_id: "hex_alt_zero_bracketed"
+  format_string: "[%#x]"
+  args:
+    - unsigned_int: 0
+  expected_output: "[0]"
+
 - test_id: "hex_alt_16"
   format_string: "[%#x]"
   args:
     - unsigned_int: 16
   expected_output: "[0x10]"
+
+- test_id: "upper_hex_alt_zero"
+  format_string: "[%#X]"
+  args:
+    - unsigned_int: 0
+  expected_output: "[0]"
 
 - test_id: "upper_hex_alt_16"
   format_string: "[%#X]"
@@ -491,11 +752,23 @@ cases:
     - unsigned_int: 16
   expected_output: "[0X10]"
 
+- test_id: "hex_alt_prec_0_zero"
+  format_string: "[%#.0x]"
+  args:
+    - unsigned_int: 0
+  expected_output: "[]"
+
 - test_id: "hex_alt_prec_0_16"
   format_string: "[%#.0x]"
   args:
     - unsigned_int: 16
   expected_output: "[0x10]"
+
+- test_id: "hex_alt_zero_pad_zero"
+  format_string: "[%#08x]"
+  args:
+    - unsigned_int: 0
+  expected_output: "[00000000]"
 
 - test_id: "hex_alt_zero_pad_16"
   format_string: "[%#08x]"
@@ -508,6 +781,66 @@ cases:
   args:
     - signed_int: 1
   expected_output: "[     1]"
+
+- test_id: "g_alt_prec_0_2_5"
+  format_string: "[%#.0g]"
+  args:
+    - floating_point: 2.5
+  expected_output: "[2.]"
+
+- test_id: "upper_g_alt_prec_0_2_5"
+  format_string: "[%#.0G]"
+  args:
+    - floating_point: 2.5
+  expected_output: "[2.]"
+
+- test_id: "g_alt_prec_0_float"
+  format_string: "[%#.0g]"
+  args:
+    - floating_point: 1.234567
+  expected_output: "[1.]"
+
+- test_id: "upper_g_alt_prec_0_float"
+  format_string: "[%#.0G]"
+  args:
+    - floating_point: 1.234567
+  expected_output: "[1.]"
+
+- test_id: "g_alt_prec_0_100k"
+  format_string: "[%#.0g]"
+  args:
+    - floating_point: 100000.0
+  expected_output: "[1.e+05]"
+
+- test_id: "upper_g_alt_prec_0_100k"
+  format_string: "[%#.0G]"
+  args:
+    - floating_point: 100000.0
+  expected_output: "[1.E+05]"
+
+- test_id: "f_nan"
+  format_string: "[%f]"
+  args:
+    - floating_point: .nan
+  expected_output: "[nan]"
+
+- test_id: "f_alt_prec_0_one"
+  format_string: "[%#.0f]"
+  args:
+    - floating_point: 1.0
+  expected_output: "[1.]"
+
+- test_id: "f_zero_nan"
+  format_string: "[%0f]"
+  args:
+    - floating_point: .nan
+  expected_output: "[nan]"
+
+- test_id: "f_left_zero_pad_nan"
+  format_string: "[%-010f]"
+  args:
+    - floating_point: .nan
+  expected_output: "[nan       ]"
 
 # ==============================================================================
 # Error Handling Test Cases (Missing and Mismatched Arguments)
@@ -558,6 +891,41 @@ cases:
     - floating_point: 3.14
   expected_output: "Addr: %p"
   skip_snprintf: "Pigweed leaves specifier literal on argument type mismatch"
+
+- test_id: "err_dynamic_width_missing"
+  format_string: "%*d"
+  expected_output: "%*d"
+  skip_snprintf: "Pigweed leaves specifier literal when argument is missing"
+
+- test_id: "err_dynamic_precision_missing"
+  format_string: "%.*s"
+  args:
+    - signed_int: 5
+  expected_output: "%.*s"
+  skip_snprintf: "Pigweed leaves specifier literal when argument is missing"
+
+- test_id: "err_dynamic_width_type_error"
+  format_string: "%*d"
+  args:
+    - string_value: "bad"
+    - signed_int: 42
+  expected_output: "%*d"
+  skip_snprintf: "Pigweed leaves specifier literal on argument type mismatch"
+
+- test_id: "err_dynamic_precision_type_error"
+  format_string: "%.*s"
+  args:
+    - string_value: "bad"
+    - string_value: "hello"
+  expected_output: "%.*s"
+  skip_snprintf: "Pigweed leaves specifier literal on argument type mismatch"
+
+- test_id: "err_dynamic_width_and_precision_missing"
+  format_string: "%*.*f"
+  args:
+    - signed_int: 8
+  expected_output: "%*.*f"
+  skip_snprintf: "Pigweed leaves specifier literal when argument is missing"
 
 # ==============================================================================
 # Parser Test Cases
@@ -628,6 +996,38 @@ cases:
     - floating_point: 3.14159
   expected_output: "    3.141590"
 
+- test_id: "parser_prec_dot_f"
+  format_string: "%.f"
+  args:
+    - floating_point: 3.14159
+  expected_output: "3"
+
+- test_id: "parser_width_fixed_prec_dyn_float"
+  format_string: "%10.*f"
+  args:
+    - signed_int: 2
+    - floating_point: 3.14159
+  expected_output: "      3.14"
+
+- test_id: "parser_width_dyn_prec_fixed_float"
+  format_string: "%*.5f"
+  args:
+    - signed_int: 10
+    - floating_point: 3.14159
+  expected_output: "   3.14159"
+
+- test_id: "parser_float_plus_width_prec_exp"
+  format_string: "%+12.4e"
+  args:
+    - floating_point: 3.14159
+  expected_output: " +3.1416e+00"
+
+- test_id: "parser_float_hash_zero_general"
+  format_string: "%#08.2g"
+  args:
+    - floating_point: 3.14159
+  expected_output: "000003.1"
+
 - test_id: "parser_mixed_status_rate"
   format_string: "TI%d: CCI=0x%x (status=%+08d, rate=%.2f%%)"
   args:
@@ -672,6 +1072,13 @@ cases:
     - string_value: "helloworld"
   expected_output: "hello     "
 
+- test_id: "parser_str_zero_flag_ignored"
+  format_string: "%010s"
+  args:
+    - string_value: "hello"
+  expected_output: "     hello"
+  skip_snprintf: "UB in C: '0' flag with '%s'"
+
 - test_id: "parser_str_hash_flag_ignored"
   format_string: "%#s"
   args:
@@ -685,6 +1092,230 @@ cases:
     - string_value: "hello"
   expected_output: "hello"
   skip_snprintf: "UB in C: '+' flag with '%s'"
+
+# --- Literal Fallbacks for Incomplete and Invalid Specifiers ---
+
+- test_id: "parser_fallback_single_percent"
+  format_string: "%"
+  expected_output: "%"
+  skip_snprintf: "Pigweed literal fallback for incomplete specifier"
+
+- test_id: "parser_fallback_triple_percent"
+  format_string: "%%%"
+  expected_output: "%%"
+  skip_snprintf: "Pigweed literal fallback for incomplete specifier"
+
+- test_id: "parser_fallback_trailing_percent"
+  format_string: "Value: %"
+  expected_output: "Value: %"
+  skip_snprintf: "Pigweed literal fallback for incomplete specifier"
+
+- test_id: "parser_fallback_incomplete_minus"
+  format_string: "Value: %-5"
+  expected_output: "Value: %-5"
+  skip_snprintf: "Pigweed literal fallback for incomplete specifier"
+
+- test_id: "parser_fallback_incomplete_plus"
+  format_string: "Value: %+"
+  expected_output: "Value: %+"
+  skip_snprintf: "Pigweed literal fallback for incomplete specifier"
+
+- test_id: "parser_fallback_incomplete_zero"
+  format_string: "Value: %0"
+  expected_output: "Value: %0"
+  skip_snprintf: "Pigweed literal fallback for incomplete specifier"
+
+- test_id: "parser_fallback_incomplete_dot"
+  format_string: "Value: %."
+  expected_output: "Value: %."
+  skip_snprintf: "Pigweed literal fallback for incomplete specifier"
+
+- test_id: "parser_fallback_incomplete_dot_star"
+  format_string: "Value: %.*"
+  expected_output: "Value: %.*"
+  skip_snprintf: "Pigweed literal fallback for incomplete specifier"
+
+- test_id: "parser_fallback_incomplete_length_h"
+  format_string: "Value: %h"
+  expected_output: "Value: %h"
+  skip_snprintf: "Pigweed literal fallback for incomplete specifier"
+
+- test_id: "parser_fallback_incomplete_length_ll"
+  format_string: "Value: %ll"
+  expected_output: "Value: %ll"
+  skip_snprintf: "Pigweed literal fallback for incomplete specifier"
+
+- test_id: "parser_fallback_incomplete_width_star"
+  format_string: "Value: %*"
+  expected_output: "Value: %*"
+  skip_snprintf: "Pigweed literal fallback for incomplete specifier"
+
+- test_id: "parser_fallback_incomplete_star_dot_star"
+  format_string: "Value: %*.*"
+  expected_output: "Value: %*.*"
+  skip_snprintf: "Pigweed literal fallback for incomplete specifier"
+
+- test_id: "parser_fallback_incomplete_width_dot_prec"
+  format_string: "Value: %5.2"
+  expected_output: "Value: %5.2"
+  skip_snprintf: "Pigweed literal fallback for incomplete specifier"
+
+- test_id: "parser_fallback_illegal_repeated_star_d"
+  format_string: "%**d"
+  expected_output: "%**d"
+  skip_snprintf: "Pigweed literal fallback for invalid specifier"
+
+- test_id: "parser_fallback_illegal_repeated_star_f"
+  format_string: "%*.*.*f"
+  expected_output: "%*.*.*f"
+  skip_snprintf: "Pigweed literal fallback for invalid specifier"
+
+- test_id: "parser_fallback_illegal_repeated_dots"
+  format_string: "%..5d"
+  expected_output: "%..5d"
+  skip_snprintf: "Pigweed literal fallback for invalid specifier"
+
+- test_id: "parser_fallback_illegal_dot_star_star"
+  format_string: "%.*.*f"
+  expected_output: "%.*.*f"
+  skip_snprintf: "Pigweed literal fallback for invalid specifier"
+
+- test_id: "parser_fallback_illegal_star_in_text"
+  format_string: "Hello %**d world"
+  expected_output: "Hello %**d world"
+  skip_snprintf: "Pigweed literal fallback for invalid specifier"
+
+- test_id: "parser_fallback_invalid_spec_q"
+  format_string: "%q"
+  expected_output: "%q"
+  skip_snprintf: "Pigweed literal fallback for invalid specifier"
+
+- test_id: "parser_fallback_invalid_spec_with_width"
+  format_string: "%10k"
+  expected_output: "%10k"
+  skip_snprintf: "Pigweed literal fallback for invalid specifier"
+
+- test_id: "parser_fallback_invalid_spec_in_text"
+  format_string: "Value: %q done"
+  expected_output: "Value: %q done"
+  skip_snprintf: "Pigweed literal fallback for invalid specifier"
+
+- test_id: "parser_fallback_invalid_spec_question"
+  format_string: "Value: % 10? done"
+  expected_output: "Value: % 10? done"
+  skip_snprintf: "Pigweed literal fallback for invalid specifier"
+
+- test_id: "parser_fallback_multiple_invalid_specs"
+  format_string: "%y %z %w"
+  expected_output: "%y %z %w"
+  skip_snprintf: "Pigweed literal fallback for invalid specifier"
+
+- test_id: "parser_fallback_invalid_spec_before_valid_int"
+  format_string: "%q %d"
+  args:
+    - signed_int: 5
+  expected_output: "%q 5"
+  skip_snprintf: "Pigweed literal fallback for invalid specifier"
+
+- test_id: "parser_fallback_invalid_spec_between_valid_args"
+  format_string: "%s: %q = %d"
+  args:
+    - string_value: "count"
+    - signed_int: 5
+  expected_output: "count: %q = 5"
+  skip_snprintf: "Pigweed literal fallback for invalid specifier"
+
+- test_id: "parser_fallback_incomplete_width_before_valid_str"
+  format_string: "Value: %-5 and %s"
+  args:
+    - string_value: "ok"
+  expected_output: "Value: %-5 and ok"
+  skip_snprintf: "Pigweed literal fallback for incomplete specifier"
+
+- test_id: "parser_fallback_double_star_before_valid_int"
+  format_string: "%**d %d"
+  args:
+    - signed_int: 5
+  expected_output: "%**d 5"
+  skip_snprintf: "Pigweed literal fallback for invalid specifier"
+
+- test_id: "parser_fallback_invalid_percent_flag_before_valid_int"
+  format_string: "%+% %d"
+  args:
+    - signed_int: 5
+  expected_output: "%+% 5"
+  skip_snprintf: "Pigweed literal fallback for invalid specifier"
+
+- test_id: "parser_fallback_overflow_prec_before_valid_int"
+  format_string: "%.99999999999999999999999d %d"
+  args:
+    - signed_int: 5
+  expected_output: "%.99999999999999999999999d 5"
+  skip_snprintf: "Pigweed literal fallback for invalid specifier"
+
+- test_id: "parser_fallback_star_before_invalid_spec_and_valid_int"
+  format_string: "%*.*q %+10.2hhq %d"
+  args:
+    - signed_int: 5
+  expected_output: "%*.*q %+10.2hhq 5"
+  skip_snprintf: "Pigweed literal fallback for invalid specifier"
+
+# ==============================================================================
+# Dynamic Width & Precision Semantics (Negative Values & Combinations)
+# ==============================================================================
+
+- test_id: "dyn_neg_width_int"
+  format_string: "%*d"
+  args:
+    - signed_int: -6
+    - signed_int: 42
+  expected_output: "42    "
+
+- test_id: "dyn_neg_prec_int"
+  format_string: "%.*d"
+  args:
+    - signed_int: -1
+    - signed_int: 42
+  expected_output: "42"
+
+- test_id: "dyn_neg_prec_str"
+  format_string: "%.*s"
+  args:
+    - signed_int: -1
+    - string_value: "hello"
+  expected_output: "hello"
+
+- test_id: "dyn_width_prec_str"
+  format_string: "%*.*s"
+  args:
+    - signed_int: 10
+    - signed_int: 3
+    - string_value: "hello"
+  expected_output: "       hel"
+
+- test_id: "dyn_left_width_prec_str"
+  format_string: "%-*.*s"
+  args:
+    - signed_int: 10
+    - signed_int: 3
+    - string_value: "hello"
+  expected_output: "hel       "
+
+- test_id: "dyn_width_prec_int"
+  format_string: "%*.*d"
+  args:
+    - signed_int: 8
+    - signed_int: 4
+    - signed_int: 42
+  expected_output: "    0042"
+
+- test_id: "dyn_width_prec_float"
+  format_string: "%*.*f"
+  args:
+    - signed_int: 10
+    - signed_int: 2
+    - floating_point: 3.14159
+  expected_output: "      3.14"
 
 # ==============================================================================
 # 64-bit Integer Extreme Limits
@@ -727,7 +1358,7 @@ cases:
   expected_output: "1777777777777777777777"
 
 # ==============================================================================
-# Floating Point Special Values and Signs
+# Floating Point Special Values, Signs, and Switching Thresholds
 # ==============================================================================
 
 - test_id: "float_neg_zero"
@@ -772,11 +1403,165 @@ cases:
     - floating_point: .inf
   expected_output: "       inf"
 
+- test_id: "float_pos_inf_zero_pad"
+  format_string: "%010f"
+  args:
+    - floating_point: .inf
+  expected_output: "       inf"
+
+- test_id: "float_neg_inf_zero_pad"
+  format_string: "%010f"
+  args:
+    - floating_point: -.inf
+  expected_output: "      -inf"
+
+- test_id: "float_nan_zero_pad"
+  format_string: "%010f"
+  args:
+    - floating_point: .nan
+  expected_output: "       nan"
+
 - test_id: "float_neg_inf_left_width"
   format_string: "%-10f"
   args:
     - floating_point: -.inf
   expected_output: "-inf      "
+
+- test_id: "float_upper_inf"
+  format_string: "%F"
+  args:
+    - floating_point: .inf
+  expected_output: "INF"
+
+- test_id: "float_upper_nan"
+  format_string: "%F"
+  args:
+    - floating_point: .nan
+  expected_output: "NAN"
+
+- test_id: "float_upper_exp_inf"
+  format_string: "%E"
+  args:
+    - floating_point: .inf
+  expected_output: "INF"
+
+- test_id: "float_upper_gen_nan"
+  format_string: "%G"
+  args:
+    - floating_point: .nan
+  expected_output: "NAN"
+
+- test_id: "gen_thresh_low_dec"
+  format_string: "%g"
+  args:
+    - floating_point: 0.0001
+  expected_output: "0.0001"
+
+- test_id: "gen_thresh_low_exp"
+  format_string: "%g"
+  args:
+    - floating_point: 0.000099999
+  expected_output: "9.9999e-05"
+
+- test_id: "gen_thresh_high_dec"
+  format_string: "%g"
+  args:
+    - floating_point: 999999.0
+  expected_output: "999999"
+
+- test_id: "gen_thresh_high_exp"
+  format_string: "%g"
+  args:
+    - floating_point: 1000000.0
+  expected_output: "1e+06"
+
+- test_id: "gen_strip_trailing"
+  format_string: "%.4g"
+  args:
+    - floating_point: 1.5
+  expected_output: "1.5"
+
+- test_id: "gen_keep_trailing_hash"
+  format_string: "%#.4g"
+  args:
+    - floating_point: 1.5
+  expected_output: "1.500"
+
+- test_id: "gen_strip_whole"
+  format_string: "%.4g"
+  args:
+    - floating_point: 10.0
+  expected_output: "10"
+
+- test_id: "gen_keep_whole_hash"
+  format_string: "%#.4g"
+  args:
+    - floating_point: 10.0
+  expected_output: "10.00"
+
+# ==============================================================================
+# Hexadecimal Floating Point (%a, %A)
+# ==============================================================================
+
+- test_id: "hex_float_zero"
+  format_string: "%a"
+  args:
+    - floating_point: 0.0
+  expected_output: "0x0p+0"
+
+- test_id: "hex_float_half"
+  format_string: "%a"
+  args:
+    - floating_point: 0.5
+  expected_output: "0x1p-1"
+
+- test_id: "hex_float_two"
+  format_string: "%a"
+  args:
+    - floating_point: 2.0
+  expected_output: "0x1p+1"
+
+- test_id: "hex_float_one_half"
+  format_string: "%a"
+  args:
+    - floating_point: 1.5
+  expected_output: "0x1.8p+0"
+
+- test_id: "hex_float_prec"
+  format_string: "%.2a"
+  args:
+    - floating_point: 1.5
+  expected_output: "0x1.80p+0"
+
+- test_id: "upper_hex_float_one_half"
+  format_string: "%A"
+  args:
+    - floating_point: 1.5
+  expected_output: "0X1.8P+0"
+
+- test_id: "hex_float_zero_pad"
+  format_string: "%010a"
+  args:
+    - floating_point: 1.0
+  expected_output: "0x00001p+0"
+
+- test_id: "hex_float_neg_zero_pad"
+  format_string: "%012a"
+  args:
+    - floating_point: -1.5
+  expected_output: "-0x0001.8p+0"
+
+- test_id: "hex_float_plus_zero_pad"
+  format_string: "%+012a"
+  args:
+    - floating_point: 1.5
+  expected_output: "+0x0001.8p+0"
+
+- test_id: "upper_hex_float_zero_pad"
+  format_string: "%012A"
+  args:
+    - floating_point: 1.5
+  expected_output: "0X00001.8P+0"
 
 # ==============================================================================
 # Integer Precision, Field Width, Zero Padding, and Sign Interaction
@@ -806,6 +1591,18 @@ cases:
     - signed_int: -42
   expected_output: "   -0042"
 
+- test_id: "int_prec_0_zero_width_5"
+  format_string: "%5.0d"
+  args:
+    - signed_int: 0
+  expected_output: "     "
+
+- test_id: "int_prec_0_zero_plus_width_5"
+  format_string: "%+5.0d"
+  args:
+    - signed_int: 0
+  expected_output: "    +"
+
 # ==============================================================================
 # String and Character Precision / Empty Strings
 # ==============================================================================
@@ -833,6 +1630,49 @@ cases:
   args:
     - string_value: ""
   expected_output: "     "
+
+# ==============================================================================
+# Hexadecimal Floating Point Rounding (%a, %A)
+# ==============================================================================
+
+- test_id: "hex_float_round_prec_zero_up"
+  format_string: "%.0a"
+  args:
+    - floating_point: 1.5
+  expected_output: "0x2p+0"
+  skip_snprintf: "Host libc %a midpoint tie-rounding varies across platforms (Apple libc rounds ties down)"
+
+- test_id: "hex_float_round_prec_one_up"
+  format_string: "%.1a"
+  args:
+    - floating_point: 1.046875
+  expected_output: "0x1.1p+0"
+
+- test_id: "hex_float_round_tie_to_even_down"
+  format_string: "%.1a"
+  args:
+    - floating_point: 1.03125
+  expected_output: "0x1.0p+0"
+
+- test_id: "hex_float_round_tie_to_even_up"
+  format_string: "%.1a"
+  args:
+    - floating_point: 1.09375
+  expected_output: "0x1.2p+0"
+  skip_snprintf: "Host libc %a midpoint tie-rounding varies across platforms (Apple libc rounds ties down)"
+
+- test_id: "hex_float_round_carry_fraction"
+  format_string: "%.1a"
+  args:
+    - floating_point: 1.99609375
+  expected_output: "0x2.0p+0"
+
+- test_id: "hex_float_upper_round_tie_to_even_up"
+  format_string: "%.1A"
+  args:
+    - floating_point: 1.09375
+  expected_output: "0X1.2P+0"
+  skip_snprintf: "Host libc %A midpoint tie-rounding varies across platforms (Apple libc rounds ties down)"
 
 # ==============================================================================
 # 64-bit Integer Formatting
