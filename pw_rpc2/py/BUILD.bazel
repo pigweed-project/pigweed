@@ -42,6 +42,7 @@ pw_py_library(
     srcs = [
         "pw_rpc2/__init__.py",
         "pw_rpc2/_call.py",
+        "pw_rpc2/_connection.py",
         "pw_rpc2/_packets.py",
     ],
     imports = ["."],
@@ -108,6 +109,20 @@ pw_py_test(
     ],
 )
 
+pw_py_library(
+    name = "test_utils",
+    testonly = True,
+    srcs = [
+        "tests/fake_server.py",
+    ],
+    imports = ["tests"],
+    deps = [
+        ":pw_rpc2",
+        "//pw_transport/py:forwarding_socket",
+        "//pw_transport/py:pw_transport",
+    ],
+)
+
 pw_py_test(
     name = "packets_test",
     size = "small",
@@ -153,5 +168,17 @@ pw_py_test(
     deps = [
         ":pw_rpc2",
         "//pw_rpc2:pw_rpc2_test_py_pb2",
+    ],
+)
+
+pw_py_test(
+    name = "connection_test",
+    size = "small",
+    srcs = ["tests/connection_test.py"],
+    deps = [
+        ":pw_rpc2",
+        ":test_utils",
+        "//pw_rpc2:pw_rpc2_test_py_pb2",
+        "//pw_transport/py:forwarding_socket",
     ],
 )

@@ -398,7 +398,7 @@ class CallState:  # pylint: disable=too-many-instance-attributes
             notify_server=True,
         )
 
-    def read(self, timeout: float) -> Message | None:
+    def read(self, timeout: float) -> Any | None:
         """Blocks for the next response; returns None at the end of the call.
 
         Raises:
@@ -409,7 +409,7 @@ class CallState:  # pylint: disable=too-many-instance-attributes
         payload = self._wait(self._poll_message_locked, timeout)
         return None if payload is None else self._decode(payload)
 
-    def response(self, timeout: float) -> Message:
+    def response(self, timeout: float) -> Any:
         """Blocks for the single response of a call.
 
         Raises:
@@ -419,12 +419,12 @@ class CallState:  # pylint: disable=too-many-instance-attributes
         """
         return self._wait(self._poll_response_locked, timeout)
 
-    async def read_async(self, timeout: float) -> Message | None:
+    async def read_async(self, timeout: float) -> Any | None:
         """Awaits the next response; returns None at the end of the call."""
         payload = await self._wait_async(self._poll_message_locked, timeout)
         return None if payload is None else self._decode(payload)
 
-    async def response_async(self, timeout: float) -> Message:
+    async def response_async(self, timeout: float) -> Any:
         """Awaits the single response of a call."""
         return await self._wait_async(self._poll_response_locked, timeout)
 
@@ -649,7 +649,7 @@ class Call(BaseCall):
 class _ResponseStream(Call):
     """A call that receives a stream of responses."""
 
-    def read(self, timeout: float | None = None) -> Message | None:
+    def read(self, timeout: float | None = None) -> Any | None:
         """Waits for the next response.
 
         Returns:
@@ -663,7 +663,7 @@ class _ResponseStream(Call):
         """
         return self._state.read(self._timeout_for(timeout))
 
-    def __iter__(self) -> Iterator[Message]:
+    def __iter__(self) -> Iterator[Any]:
         """Yields responses until the server finishes the stream.
 
         Each response is subject to the call's default timeout.
@@ -700,7 +700,7 @@ class UnaryCall(Call):
     instead, for example to issue several RPCs before waiting on any.
     """
 
-    def response(self, timeout: float | None = None) -> Message:
+    def response(self, timeout: float | None = None) -> Any:
         """Waits for and returns the response.
 
         Raises:
@@ -724,7 +724,7 @@ class ClientStreamingCall(_RequestStream):
     request stream and receive the response.
     """
 
-    def finish(self, timeout: float | None = None) -> Message:
+    def finish(self, timeout: float | None = None) -> Any:
         """Ends the request stream and waits for the response.
 
         The server may respond before the request stream ends, in which case

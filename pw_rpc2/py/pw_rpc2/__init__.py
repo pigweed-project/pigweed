@@ -33,6 +33,7 @@ from pw_rpc2._call import (
     StreamClosedError,
     UnaryCall,
 )
+from pw_rpc2._connection import DEFAULT_HANDSHAKE_TIMEOUT, HandshakeError
 from pw_rpc2._descriptors import MethodType, ProtoSource
 from pw_rpc2._packets import DecodeError, RpcStatus
 
@@ -40,7 +41,9 @@ __all__ = [
     'BidirectionalStreamingCall',
     'Call',
     'ClientStreamingCall',
+    'DEFAULT_HANDSHAKE_TIMEOUT',
     'DecodeError',
+    'HandshakeError',
     'MethodType',
     'ProtoSource',
     'RpcError',
