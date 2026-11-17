@@ -375,6 +375,102 @@ impl ConversionSpec {
     }
 }
 
+/// Domain specification for a nested token.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NestedDomain {
+    /// Default / not-specified domain (e.g. `$#%08x` or `${}#%08x`).
+    Default,
+
+    /// A literal domain string (e.g. `${domain}#%08x`).
+    Literal(String),
+
+    /// A literal token that gives the domain string (e.g. `${$#01234567}#%08x` or `${${domain}#01234567}#%08x`).
+    LiteralToken {
+        /// Optional domain for looking up the token (empty for default domain).
+        domain: String,
+        /// The literal token value.
+        token: u32,
+    },
+
+    /// A variable domain token requiring a read from the argument data (e.g. `${$#%08x}#%08x` or `${${domain}#%08x}#%08x`).
+    VariableToken {
+        /// Optional domain for looking up the variable token (empty for default domain).
+        domain: String,
+    },
+}
+
+/// Token specification for a nested token.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NestedTokenValue {
+    /// A literal token value (e.g. `$#01234567` or `$10#0000000010`).
+    Literal(u32),
+
+    /// A variable token requiring a read from the argument data (`%08x` or `%010d`).
+    Variable,
+}
+
+/// A nested token specification (e.g. `$#%08x`, `${domain}#%08x`, `${$#%08x}#%08x`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NestedTokenSpec {
+    /// Prefix character, typically `'$'`.
+    pub prefix: char,
+
+    /// Domain specification.
+    pub domain: NestedDomain,
+
+    /// The token value specification.
+    pub token: NestedTokenValue,
+
+    /// Additional token argument data decoded from base64 (`None` if not base64).
+    pub token_data: Option<Vec<u8>>,
+
+    /// The raw format string slice representing this nested token.
+    ///
+    /// Preserved verbatim because parsing SEED-0105 nested tokens into
+    /// `(prefix, domain, token)` is intentionally lossy across:
+    /// - stripped whitespace inside `{ ... }` domain braces (e.g. `${ my domain }#...`
+    ///   and `${}#%08x` vs `$#%08x`),
+    /// - explicit radix specifiers (`$10#...`, `$16#...`, `$64#...`),
+    /// - hex letter casing (`$#DEADBEEF` vs `$#deadbeef`), and
+    /// - Base64 nested tokens with embedded binary argument payloads (`$AQIDBA==`).
+    ///
+    /// Retaining the verbatim source slice ensures fallback formatting when a
+    /// nested token cannot be decoded reproduces the exact original text.
+    pub raw: String,
+}
+
+impl Default for NestedTokenSpec {
+    fn default() -> Self {
+        Self {
+            prefix: FormatString::DEFAULT_NESTED_PREFIX,
+            domain: NestedDomain::Default,
+            token: NestedTokenValue::Variable,
+            token_data: None,
+            raw: String::new(),
+        }
+    }
+}
+
+impl NestedTokenSpec {
+    /// Returns the additional token argument data as an optional byte slice.
+    #[must_use]
+    pub fn token_data(&self) -> Option<&[u8]> {
+        self.token_data.as_deref()
+    }
+
+    /// Returns the raw format string slice for this nested token.
+    #[must_use]
+    pub fn raw(&self) -> &str {
+        &self.raw
+    }
+
+    /// Reconstructs the nested token specification back to its printf format string representation.
+    #[must_use]
+    pub fn to_printf(&self) -> String {
+        self.raw.clone()
+    }
+}
+
 /// A fragment of a printf format string.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FormatFragment {
@@ -383,6 +479,9 @@ pub enum FormatFragment {
 
     /// A conversion specification (i.e. %d).
     Conversion(ConversionSpec),
+
+    /// A nested token specification (i.e. $#%08x or ${domain}#%08x).
+    NestedToken(NestedTokenSpec),
 }
 
 impl FormatFragment {
@@ -443,6 +542,21 @@ pub trait FormatError {
 
     /// Renders a conversion specifier that decoded successfully but failed to format (type mismatch).
     fn format_type_error(&self, spec: &ConversionSpec, arg: &Arg) -> String;
+
+    /// Renders a nested token specification that failed with a domain-specific error.
+    fn format_nested_token_error(&self, spec: &NestedTokenSpec, _error: &Self::Error) -> String {
+        spec.to_printf()
+    }
+
+    /// Renders a nested token specification that was missing from the supplied arguments.
+    fn format_nested_token_missing(&self, spec: &NestedTokenSpec) -> String {
+        spec.to_printf()
+    }
+
+    /// Renders a nested token specification that decoded successfully but failed to format (type mismatch).
+    fn format_nested_token_type_error(&self, spec: &NestedTokenSpec, _arg: &Arg) -> String {
+        spec.to_printf()
+    }
 }
 
 /// Formatter that retains the original conversion specifier when formatting fails,
@@ -522,28 +636,71 @@ impl FormatString {
         output
     }
 
-    /// Parses a printf style format string.
+    /// Default prefix character for nested token specifiers.
+    pub const DEFAULT_NESTED_PREFIX: char = '$';
+
+    /// Parses a printf style format string using the default nested token prefix ('$').
     pub fn parse_printf(s: &str) -> Result<Self, String> {
+        Self::parse_printf_with_prefix(s, Self::DEFAULT_NESTED_PREFIX)
+    }
+
+    /// Parses a printf style format string using a specified nested token prefix.
+    pub fn parse_printf_with_prefix(s: &str, prefix: char) -> Result<Self, String> {
+        Self::parse_printf_opt_prefix(s, Some(prefix))
+    }
+
+    /// Parses a pure printf style format string without nested token parsing.
+    pub fn parse_pure_printf(s: &str) -> Result<Self, String> {
+        Self::parse_printf_opt_prefix(s, None)
+    }
+
+    fn parse_printf_opt_prefix(s: &str, prefix: Option<char>) -> Result<Self, String> {
         // TODO: b/281858500 - Add better errors to failed parses.
-        let (rest, result) = printf::format_string(s)
+        let (rest, result) = printf::format_string(s, prefix)
             .map_err(|e| format!("Failed to parse format string \"{s}\": {e}"))?;
 
         // If the parser did not consume all the input, return an error.
         if !rest.is_empty() {
             return Err(format!(
-                "Failed to parse format string fragment: \"{rest}\""
+                "Failed to parse format string fragment \"{rest}\" in \"{s}\""
             ));
         }
 
         Ok(result)
     }
 
-    /// Parses a printf style format string infallibly for runtime formatting,
-    /// treating any invalid or incomplete `%` sequence as a literal `'%'` and
-    /// continuing to parse subsequent conversion specifiers.
+    /// Parses a printf style format string infallibly using the default nested
+    /// token prefix (`'$'`), treating any invalid or incomplete `%` sequence as
+    /// a literal `'%'` and continuing to parse subsequent conversion specifiers
+    /// and nested tokens.
     #[must_use]
     pub fn parse_printf_lossy(s: &str) -> Self {
-        printf::format_string_lossy(s)
+        Self::parse_printf_lossy_with_prefix(s, Self::DEFAULT_NESTED_PREFIX)
+    }
+
+    /// Parses a printf style format string infallibly using a specified nested
+    /// token prefix, treating any invalid or incomplete `%` sequence as a
+    /// literal `'%'` and continuing to parse subsequent conversion specifiers
+    /// and nested tokens.
+    #[must_use]
+    pub fn parse_printf_lossy_with_prefix(s: &str, prefix: char) -> Self {
+        printf::format_string_lossy(s, Some(prefix))
+    }
+
+    /// Parses plain text containing nested token specifiers using the default prefix (`'$'`),
+    /// treating `%` characters as literal text rather than conversion specifiers.
+    #[must_use]
+    pub fn parse_nested_tokens(s: &str) -> Self {
+        Self::parse_nested_tokens_with_prefix(s, Self::DEFAULT_NESTED_PREFIX)
+    }
+
+    /// Parses plain text containing nested token specifiers using a specified prefix,
+    /// treating `%` characters as literal text rather than conversion specifiers.
+    #[must_use]
+    pub fn parse_nested_tokens_with_prefix(s: &str, prefix: char) -> Self {
+        let (_, result) = printf::nested_tokens_string(s, prefix)
+            .expect("nested_tokens_string is infallible on all UTF-8 inputs");
+        result
     }
 
     /// Parses a core::fmt style format string.
@@ -554,7 +711,9 @@ impl FormatString {
 
         // If the parser did not consume all the input, return an error.
         if !rest.is_empty() {
-            return Err(format!("Failed to parse format string: \"{rest}\""));
+            return Err(format!(
+                "Failed to parse format string fragment \"{rest}\" in \"{s}\""
+            ));
         }
 
         Ok(result)
@@ -654,7 +813,38 @@ where
     fn format_fragment(&mut self, fragment: &FormatFragment) {
         match fragment {
             FormatFragment::Literal(s) => self.output.push_str(s),
+            FormatFragment::NestedToken(token_spec) => self.format_nested_token(token_spec),
             FormatFragment::Conversion(spec) => self.format_conversion(spec),
+        }
+    }
+
+    fn format_nested_token(&mut self, token_spec: &NestedTokenSpec) {
+        let Some(decoded) = self.args.next() else {
+            self.output
+                .push_str(&self.error_formatter.format_nested_token_missing(token_spec));
+            return;
+        };
+
+        let arg = match decoded {
+            Ok(arg) => arg,
+            Err(err) => {
+                self.output.push_str(
+                    &self
+                        .error_formatter
+                        .format_nested_token_error(token_spec, err),
+                );
+                return;
+            }
+        };
+
+        if let Arg::Str(s) = arg {
+            self.output.push_str(s);
+        } else {
+            self.output.push_str(
+                &self
+                    .error_formatter
+                    .format_nested_token_type_error(token_spec, arg),
+            );
         }
     }
 

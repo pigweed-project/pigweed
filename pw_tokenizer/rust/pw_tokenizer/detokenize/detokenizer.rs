@@ -413,7 +413,7 @@ impl Detokenizer {
 
         let entries = self.database_lookup(token, domain);
         for entry in entries {
-            let fmt_str_res = FormatString::parse_printf(&entry.format_string)
+            let fmt_str_res = FormatString::parse_pure_printf(&entry.format_string)
                 .map_err(|_| pw_status::Error::InvalidArgument);
             let res = self.attempt_detokenize(
                 &entry.format_string,
@@ -464,7 +464,7 @@ impl Detokenizer {
                 .iter()
                 .filter_map(|fragment| match fragment {
                     FormatFragment::Conversion(spec) => Some(spec),
-                    FormatFragment::Literal(_) => None,
+                    FormatFragment::Literal(_) | FormatFragment::NestedToken(_) => None,
                 })
                 .collect();
 
@@ -951,7 +951,7 @@ impl<'a> NestedMessageDetokenizer<'a> {
         }
 
         if let Some(entry) = matching_entry {
-            if let Ok(fmt_str) = FormatString::parse_printf(&entry.format_string) {
+            if let Ok(fmt_str) = FormatString::parse_pure_printf(&entry.format_string) {
                 let replacement = fmt_str.format(&[], FormatStyle::Printf);
                 self.output
                     .replace_range(self.message_start..self.output.len(), &replacement);

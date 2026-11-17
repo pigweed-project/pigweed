@@ -15,7 +15,10 @@
 use std::ffi::CString;
 use std::os::raw::{c_char, c_int};
 
-use crate::{Arg, ConversionSpec, FormatError, FormatFragment, FormatString, FormatStyle};
+use crate::{
+    Arg, ConversionSpec, FormatError, FormatFragment, FormatString, FormatStyle, Ilp32Platform,
+    Llp64Platform, Lp64Platform, NestedTokenSpec,
+};
 
 unsafe extern "C" {
     fn snprintf(str: *mut c_char, size: usize, format: *const c_char, ...) -> c_int;
@@ -737,6 +740,7 @@ enum TestError {
     BadValue,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct TestFormatter;
 
 impl FormatError for TestFormatter {
@@ -749,6 +753,16 @@ impl FormatError for TestFormatter {
         format!("<[{} MISSING]>", spec.to_printf())
     }
     fn format_type_error(&self, spec: &ConversionSpec, arg: &Arg) -> String {
+        format!("<[{} TYPE_ERROR: {:?}]>", spec.to_printf(), arg)
+    }
+
+    fn format_nested_token_error(&self, spec: &NestedTokenSpec, error: &TestError) -> String {
+        format!("<[{} ERROR: {:?}]>", spec.to_printf(), error)
+    }
+    fn format_nested_token_missing(&self, spec: &NestedTokenSpec) -> String {
+        format!("<[{} MISSING]>", spec.to_printf())
+    }
+    fn format_nested_token_type_error(&self, spec: &NestedTokenSpec, arg: &Arg) -> String {
         format!("<[{} TYPE_ERROR: {:?}]>", spec.to_printf(), arg)
     }
 }
@@ -803,6 +817,71 @@ fn format_with_errors_renders_missing_arguments_via_format_missing() {
     assert_eq!(
         result,
         "Value: 42, String: <[%s MISSING]>, Float: <[%f MISSING]>"
+    );
+}
+
+#[test]
+fn format_with_errors_renders_nested_tokens_normally() {
+    let parsed = FormatString::parse_printf("Value: %d, Token: ${foo}#%08x, Status: %s").unwrap();
+    let args = [
+        Ok(Arg::Int(42)),
+        Ok(Arg::Str("RESOLVED".to_string())),
+        Ok(Arg::Str("ok".to_string())),
+    ];
+    let result = parsed.format_with_errors(&args, FormatStyle::Printf, &TestFormatter);
+    assert_eq!(result, "Value: 42, Token: RESOLVED, Status: ok");
+}
+
+#[test]
+fn format_with_errors_renders_nested_token_domain_errors() {
+    let parsed = FormatString::parse_printf("Value: %d, Token: ${foo}#%08x, Status: %s").unwrap();
+    let args = [
+        Ok(Arg::Int(42)),
+        Err(TestError::BadValue),
+        Ok(Arg::Str("ok".to_string())),
+    ];
+    let result = parsed.format_with_errors(&args, FormatStyle::Printf, &TestFormatter);
+    assert_eq!(
+        result,
+        "Value: 42, Token: <[${foo}#%08x ERROR: BadValue]>, Status: ok"
+    );
+}
+
+#[test]
+fn format_with_errors_renders_nested_token_type_mismatches() {
+    let parsed = FormatString::parse_printf("Token: ${foo}#%08x").unwrap();
+    let args = [Ok(Arg::Int(123))]; // non-string argument
+    let result = parsed.format_with_errors(&args, FormatStyle::Printf, &TestFormatter);
+    assert_eq!(result, "Token: <[${foo}#%08x TYPE_ERROR: Int(123)]>");
+}
+
+#[test]
+fn format_with_errors_renders_nested_token_missing_arguments() {
+    let parsed = FormatString::parse_printf("Token: ${foo}#%08x, Extra: %s").unwrap();
+    let args = [];
+    let result = parsed.format_with_errors(&args, FormatStyle::Printf, &TestFormatter);
+    assert_eq!(
+        result,
+        "Token: <[${foo}#%08x MISSING]>, Extra: <[%s MISSING]>"
+    );
+}
+
+#[test]
+fn format_renders_nested_tokens_via_format_api() {
+    let parsed = FormatString::parse_printf("Token: ${foo}#%08x").unwrap();
+    let args = [Arg::Str("EXPANDED".to_string())];
+    assert_eq!(parsed.format(&args, FormatStyle::Printf), "Token: EXPANDED");
+
+    // When missing, DefaultFormatter falls back to spec.to_printf()
+    assert_eq!(
+        parsed.format(&[], FormatStyle::Printf),
+        "Token: ${foo}#%08x"
+    );
+
+    // When type mismatch, DefaultFormatter falls back to spec.to_printf()
+    assert_eq!(
+        parsed.format(&[Arg::Int(42)], FormatStyle::Printf),
+        "Token: ${foo}#%08x"
     );
 }
 
@@ -1115,8 +1194,6 @@ fn test_literal_precision_overflow() {
 
 #[test]
 fn test_platform_types_length_modifiers() {
-    use crate::{Ilp32Platform, Llp64Platform, Lp64Platform};
-
     // Value exceeding 32-bit signed/unsigned range: 0x1_0000_0001 (4_294_967_297)
     let val_signed = Arg::Int(0x1_0000_0001);
     let val_unsigned = Arg::Uint(0x1_0000_0001);

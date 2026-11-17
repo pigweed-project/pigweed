@@ -51,6 +51,7 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         ":pw_format_core",
+        "//pw_base64/rust:pw_base64",
         "//pw_status/rust:pw_status",
         "@rust_crates//:nom",
         "@rust_crates//:proc-macro2",

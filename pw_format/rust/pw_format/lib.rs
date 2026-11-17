@@ -123,8 +123,10 @@ mod printf;
 pub use format_string::{
     Alignment, Arg, Argument, ConversionSpec, Flag, FormatError, FormatFragment, FormatString,
     FormatStyle, FormatValueError, Ilp32Platform, Length, Llp64Platform, Lp64Platform,
-    MinFieldWidth, PlatformTypes, PointerInt, Precision, Primitive, SignedInt, Style, UnsignedInt,
+    MinFieldWidth, NestedDomain, NestedTokenSpec, NestedTokenValue, PlatformTypes, PointerInt,
+    Precision, Primitive, SignedInt, Style, UnsignedInt,
 };
+pub use printf::{canonicalize_domain, canonicalize_domain_cow};
 
 #[cfg(test)]
 mod tests;

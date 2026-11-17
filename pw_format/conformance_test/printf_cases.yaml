@@ -1772,3 +1772,921 @@ cases:
   args:
     - unsigned_int: 1311768467463790320
   expected_output: "0x123456789abcdef0"
+
+# ==============================================================================
+# Nested Token Data in String Arguments (%s)
+# Demonstrates that pw_format recognizes patterns only in format strings,
+# and not in the string arguments or output strings that are generated.
+# ==============================================================================
+
+- test_id: "nested_data_base64_arg"
+  format_string: "%s"
+  args:
+    - string_value: "$AQAAAA=="
+  expected_output: "$AQAAAA=="
+
+- test_id: "nested_data_base64_domain_arg"
+  format_string: "%s"
+  args:
+    - string_value: "${custom}AQAAAA=="
+  expected_output: "${custom}AQAAAA=="
+
+- test_id: "nested_data_hex_variable_arg"
+  format_string: "%s"
+  args:
+    - string_value: "$#%08x"
+  expected_output: "$#%08x"
+
+- test_id: "nested_data_hex_variable_domain_arg"
+  format_string: "%s"
+  args:
+    - string_value: "${domain}#%08x"
+  expected_output: "${domain}#%08x"
+
+- test_id: "nested_data_hex_literal_arg"
+  format_string: "%s"
+  args:
+    - string_value: "$#01234567"
+  expected_output: "$#01234567"
+
+- test_id: "nested_data_hex_literal_domain_arg"
+  format_string: "%s"
+  args:
+    - string_value: "${domain}#01234567"
+  expected_output: "${domain}#01234567"
+
+- test_id: "nested_data_doubly_nested_variable_arg"
+  format_string: "%s"
+  args:
+    - string_value: "${$#%08x}#%08x"
+  expected_output: "${$#%08x}#%08x"
+
+- test_id: "nested_data_doubly_nested_domain_arg"
+  format_string: "%s"
+  args:
+    - string_value: "${${domain}#%08x}#%08x"
+  expected_output: "${${domain}#%08x}#%08x"
+
+- test_id: "nested_data_doubly_nested_literal_token_arg"
+  format_string: "%s"
+  args:
+    - string_value: "${$#01234567}#%08x"
+  expected_output: "${$#01234567}#%08x"
+
+- test_id: "nested_data_radix10_arg"
+  format_string: "%s"
+  args:
+    - string_value: "$10#0000000010"
+  expected_output: "$10#0000000010"
+
+- test_id: "nested_data_radix16_variable_arg"
+  format_string: "%s"
+  args:
+    - string_value: "$16#%08x"
+  expected_output: "$16#%08x"
+
+- test_id: "nested_data_radix16_literal_arg"
+  format_string: "%s"
+  args:
+    - string_value: "$16#01234567"
+  expected_output: "$16#01234567"
+
+- test_id: "nested_data_radix64_arg"
+  format_string: "%s"
+  args:
+    - string_value: "$64#AAAAAaAA"
+  expected_output: "$64#AAAAAaAA"
+
+- test_id: "nested_data_sentence_arg"
+  format_string: "Message: %s"
+  args:
+    - string_value: "$AQAAAA=="
+  expected_output: "Message: $AQAAAA=="
+
+- test_id: "nested_data_multiple_args"
+  format_string: "%s and %s"
+  args:
+    - string_value: "$#%08x"
+    - string_value: "${domain}#%08x"
+  expected_output: "$#%08x and ${domain}#%08x"
+
+- test_id: "nested_data_mixed_args"
+  format_string: "Token %s with id %d"
+  args:
+    - string_value: "$AQAAAA=="
+    - signed_int: 42
+  expected_output: "Token $AQAAAA== with id 42"
+
+- test_id: "nested_data_width_precision"
+  format_string: "%15.10s"
+  args:
+    - string_value: "$AQAAAA=="
+  expected_output: "      $AQAAAA=="
+
+# ==============================================================================
+# Valid Nested Tokens in Format String (Argument Substitution)
+# Verified with pw_format recognizing nested token character sequences.
+# ==============================================================================
+
+- test_id: "nested_token_domain_and_variable"
+  format_string: "xxx${foo}#%08xyyy"
+  args:
+    - signed_int: 123
+  expected_output: "xxx<NESTED foo#123>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_doubly_nested_variable"
+  format_string: "xxx${$#%08x}#%08xyyy"
+  args:
+    - signed_int: 123
+    - signed_int: 456
+  expected_output: "xxx<NESTED (#123)#456>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_doubly_nested_named_domain_variable"
+  format_string: "xxx${${foo}#%08x}#%08xyyy"
+  args:
+    - signed_int: 123
+    - signed_int: 456
+  expected_output: "xxx<NESTED (foo#123)#456>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_default_domain_variable"
+  format_string: "xxx$#%08xyyy"
+  args:
+    - signed_int: 456
+  expected_output: "xxx<NESTED #456>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_empty_domain_variable"
+  format_string: "xxx${}#%08xyyy"
+  args:
+    - signed_int: 456
+  expected_output: "xxx<NESTED #456>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_whitespace_domain_variable"
+  format_string: "xxx${   }#%08xyyy"
+  args:
+    - signed_int: 456
+  expected_output: "xxx<NESTED #456>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_hex_literal"
+  format_string: "xxx$#01234567yyy"
+  expected_output: "xxx<NESTED #19088743>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_domain_hex_literal"
+  format_string: "xxx${foo}#01234567yyy"
+  expected_output: "xxx<NESTED foo#19088743>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_doubly_nested_literal_domain_token"
+  format_string: "xxx${$#01234567}#%08xyyy"
+  args:
+    - signed_int: 456
+  expected_output: "xxx<NESTED (#19088743)#456>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_doubly_nested_named_domain_literal_token"
+  format_string: "xxx${${foo}#01234567}#%08xyyy"
+  args:
+    - signed_int: 456
+  expected_output: "xxx<NESTED (foo#19088743)#456>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_radix16_variable"
+  format_string: "xxx$16#%08xyyy"
+  args:
+    - signed_int: 456
+  expected_output: "xxx<NESTED #456>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_radix16_literal"
+  format_string: "xxx$16#00000020yyy"
+  expected_output: "xxx<NESTED #32>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_radix10_literal"
+  format_string: "xxx$10#0000000010yyy"
+  expected_output: "xxx<NESTED #10>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_base64_default"
+  format_string: "xxx$AQAAAA==yyy"
+  expected_output: "xxx<NESTED #1>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_base64_with_data"
+  format_string: "xxx$IwEAAEFCQw==yyy"
+  expected_output: "xxx<NESTED #291 \"ABC\">yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_base64_domain"
+  format_string: "xxx${foo}IwEAAEFCQw==yyy"
+  expected_output: "xxx<NESTED foo#291 \"ABC\">yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_radix64_default"
+  format_string: "xxx$64#AQAAAA==yyy"
+  expected_output: "xxx<NESTED #1>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_radix64_with_data"
+  format_string: "xxx$64#IwEAAEFCQw==yyy"
+  expected_output: "xxx<NESTED #291 \"ABC\">yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_radix64_domain"
+  format_string: "xxx${foo}64#IwEAAEFCQw==yyy"
+  expected_output: "xxx<NESTED foo#291 \"ABC\">yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_mixed_with_printf"
+  format_string: "Status %d: $#%08x (%s)"
+  args:
+    - signed_int: 0
+    - signed_int: 456
+    - string_value: "ok"
+  expected_output: "Status 0: <NESTED #456> (ok)"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_multiple_in_one"
+  format_string: "${foo}#%08x and ${bar}#%08x"
+  args:
+    - signed_int: 10
+    - signed_int: 20
+  expected_output: "<NESTED foo#10> and <NESTED bar#20>"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_domain_whitespace_padded"
+  format_string: "xxx${  foo  }#%08xyyy"
+  args:
+    - signed_int: 123
+  expected_output: "xxx<NESTED foo#123>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_domain_interior_whitespace"
+  format_string: "xxx${  Domain 1  }#%08xyyy"
+  args:
+    - signed_int: 123
+  expected_output: "xxx<NESTED Domain1#123>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_doubly_nested_named_domain_whitespace"
+  format_string: "xxx${${  Domain 1  }#01234567}#%08xyyy"
+  args:
+    - signed_int: 456
+  expected_output: "xxx<NESTED (Domain1#19088743)#456>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_doubly_nested_empty_inner_domain"
+  format_string: "xxx${${   }#01234567}#%08xyyy"
+  args:
+    - signed_int: 456
+  expected_output: "xxx<NESTED (#19088743)#456>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_radix10_variable"
+  format_string: "xxx$10#%010dyyy"
+  args:
+    - signed_int: 123
+  expected_output: "xxx<NESTED #123>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_radix10_variable_domain"
+  format_string: "xxx${foo}10#%010dyyy"
+  args:
+    - signed_int: 123
+  expected_output: "xxx<NESTED foo#123>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_radix10_domain_literal"
+  format_string: "xxx${foo}10#0000000010yyy"
+  expected_output: "xxx<NESTED foo#10>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_doubly_nested_radix10_variable"
+  format_string: "xxx${$10#%010d}#%08xyyy"
+  args:
+    - signed_int: 123
+    - signed_int: 456
+  expected_output: "xxx<NESTED (#123)#456>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_doubly_nested_radix10_literal"
+  format_string: "xxx${$10#0000000010}#%08xyyy"
+  args:
+    - signed_int: 456
+  expected_output: "xxx<NESTED (#10)#456>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_doubly_nested_radix10_named_domain_literal"
+  format_string: "xxx${${foo}10#0000000010}#%08xyyy"
+  args:
+    - signed_int: 456
+  expected_output: "xxx<NESTED (foo#10)#456>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_doubly_nested_radix16_variable"
+  format_string: "xxx${$16#%08x}#%08xyyy"
+  args:
+    - signed_int: 123
+    - signed_int: 456
+  expected_output: "xxx<NESTED (#123)#456>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_doubly_nested_radix16_literal"
+  format_string: "xxx${$16#00000020}#%08xyyy"
+  args:
+    - signed_int: 456
+  expected_output: "xxx<NESTED (#32)#456>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_doubly_nested_radix16_named_domain_literal"
+  format_string: "xxx${${foo}16#00000020}#%08xyyy"
+  args:
+    - signed_int: 456
+  expected_output: "xxx<NESTED (foo#32)#456>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_doubly_nested_radix64_literal"
+  format_string: "xxx${$64#AQAAAA==}#%08xyyy"
+  args:
+    - signed_int: 456
+  expected_output: "xxx<NESTED (#1)#456>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_doubly_nested_radix64_inner_domain"
+  format_string: "xxx${${foo}64#AQAAAA==}#%08xyyy"
+  args:
+    - signed_int: 456
+  expected_output: "xxx<NESTED (foo#1)#456>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_doubly_nested_direct_base64"
+  format_string: "xxx${$AQAAAA==}#%08xyyy"
+  args:
+    - signed_int: 456
+  expected_output: "xxx<NESTED (#1)#456>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_doubly_nested_direct_base64_inner_domain"
+  format_string: "xxx${${foo}AQAAAA==}#%08xyyy"
+  args:
+    - signed_int: 456
+  expected_output: "xxx<NESTED (foo#1)#456>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_base64_url_safe"
+  format_string: "xxx$-_AAAA==yyy"
+  expected_output: "xxx<NESTED #61691>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_radix64_url_safe"
+  format_string: "xxx$64#-_AAAA==yyy"
+  expected_output: "xxx<NESTED #61691>yyy"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+# ==============================================================================
+# Valid Nested Tokens in Format String (Missing Arguments)
+# ==============================================================================
+
+- test_id: "nested_token_missing_arg_variable"
+  format_string: "$#%08x"
+  expected_output: "<NESTED #<MISSING>>"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_missing_domain_arg"
+  format_string: "${$#%08x}#%08x"
+  expected_output: "<NESTED (#<MISSING>)#<MISSING>>"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+- test_id: "nested_token_missing_token_arg_only"
+  format_string: "${$#%08x}#%08x"
+  args:
+    - signed_int: 123
+  expected_output: "<NESTED (#123)#<MISSING>>"
+  skip_snprintf: "Pigweed nested token AST serialization"
+
+# ==============================================================================
+# Nested Tokens Formatting Path (FormatString::format Replacement & Fallback)
+# Tests that FormatString::format replaces nested token fragments with string
+# values or retains the raw nested token syntax on missing/mismatched arguments.
+# ==============================================================================
+
+- test_id: "nested_token_format_single"
+  format_string: "Result: ${foo}#%08x done"
+  args:
+    - string_value: "RESOLVED"
+  expected_output: "Result: RESOLVED done"
+  skip_snprintf: "Pigweed nested token runtime formatting"
+
+- test_id: "nested_token_format_default_domain"
+  format_string: "Result: $#%08x done"
+  args:
+    - string_value: "RESOLVED"
+  expected_output: "Result: RESOLVED done"
+  skip_snprintf: "Pigweed nested token runtime formatting"
+
+- test_id: "nested_token_format_mixed_printf"
+  format_string: "Code %d: ${domain}#01234567 -> %s"
+  args:
+    - signed_int: 200
+    - string_value: "OK_MSG"
+    - string_value: "success"
+  expected_output: "Code 200: OK_MSG -> success"
+  skip_snprintf: "Pigweed nested token runtime formatting"
+
+- test_id: "nested_token_format_multiple"
+  format_string: "${first}#%08x and ${second}#%08x"
+  args:
+    - string_value: "ONE"
+    - string_value: "TWO"
+  expected_output: "ONE and TWO"
+  skip_snprintf: "Pigweed nested token runtime formatting"
+
+- test_id: "nested_token_format_missing_arg"
+  format_string: "Status: ${foo}#%08x"
+  expected_output: "Status: ${foo}#%08x"
+  skip_snprintf: "Pigweed nested token runtime formatting"
+
+- test_id: "nested_token_format_type_mismatch"
+  format_string: "Status: ${foo}#%08x"
+  args:
+    - signed_int: 42
+  expected_output: "Status: ${foo}#%08x"
+  skip_snprintf: "Pigweed nested token runtime formatting"
+
+- test_id: "nested_token_format_prefix_amp_single"
+  format_string: "Status: &{foo}#%08x done"
+  args:
+    - string_value: "EXPANDED"
+  expected_output: "Status: EXPANDED done"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_format_prefix_amp_missing"
+  format_string: "Status: &{foo}#%08x"
+  expected_output: "Status: &{foo}#%08x"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+# ==============================================================================
+# Nested Tokens with Custom Prefix '&'
+# ==============================================================================
+
+- test_id: "nested_token_prefix_amp_literal_domain_variable_token"
+  format_string: "xxx&{foo}#%08xyyy"
+  args:
+    - signed_int: 123
+  expected_output: "xxx<NESTED foo#123>yyy"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_prefix_amp_doubly_nested_variable"
+  format_string: "xxx&{&#%08x}#%08xyyy"
+  args:
+    - signed_int: 123
+    - signed_int: 456
+  expected_output: "xxx<NESTED (#123)#456>yyy"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_prefix_amp_doubly_nested_named_domain_variable"
+  format_string: "xxx&{&{foo}#%08x}#%08xyyy"
+  args:
+    - signed_int: 123
+    - signed_int: 456
+  expected_output: "xxx<NESTED (foo#123)#456>yyy"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_prefix_amp_default_hex"
+  format_string: "xxx&#%08xyyy"
+  args:
+    - signed_int: 456
+  expected_output: "xxx<NESTED #456>yyy"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_prefix_amp_literal_hex"
+  format_string: "xxx&#01234567yyy"
+  expected_output: "xxx<NESTED #19088743>yyy"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_prefix_amp_base64"
+  format_string: "xxx&AQAAAA==yyy"
+  expected_output: "xxx<NESTED #1>yyy"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_prefix_amp_base64_with_data"
+  format_string: "xxx&IwEAAEFCQw==yyy"
+  expected_output: "xxx<NESTED #291 \"ABC\">yyy"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_prefix_amp_radix10"
+  format_string: "xxx&10#0000000010yyy"
+  expected_output: "xxx<NESTED #10>yyy"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_prefix_amp_radix16"
+  format_string: "xxx&16#00000020yyy"
+  expected_output: "xxx<NESTED #32>yyy"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_prefix_amp_radix16_variable"
+  format_string: "xxx&16#%08xyyy"
+  args:
+    - signed_int: 456
+  expected_output: "xxx<NESTED #456>yyy"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_prefix_amp_corner_unclosed"
+  format_string: "xxx&{unclosed#%08xyyy"
+  args:
+    - unsigned_int: 42
+  expected_output: "xxx&{unclosed#0000002ayyy"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_prefix_amp_corner_wrong_conv"
+  format_string: "xxx&{}#%dyyy"
+  args:
+    - signed_int: 42
+  expected_output: "xxx&{}#42yyy"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_prefix_amp_corner_short_hex"
+  format_string: "xxx&#123yyy"
+  expected_output: "xxx&#123yyy"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_prefix_amp_corner_short_dec"
+  format_string: "xxx&10#123yyy"
+  expected_output: "xxx&10#123yyy"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_prefix_amp_corner_short_base64"
+  format_string: "xxx&64#AAAyyy"
+  expected_output: "xxx<NESTED #3276800>yy"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_prefix_amp_corner_currency"
+  format_string: "Cost is &100 or &5 per item"
+  expected_output: "Cost is &100 or &5 per item"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_prefix_amp_domain_whitespace"
+  format_string: "xxx&{  Domain 1  }#%08xyyy"
+  args:
+    - signed_int: 123
+  expected_output: "xxx<NESTED Domain1#123>yyy"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_prefix_amp_radix10_variable"
+  format_string: "xxx&10#%010dyyy"
+  args:
+    - signed_int: 123
+  expected_output: "xxx<NESTED #123>yyy"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_prefix_amp_doubly_nested_radix10_variable"
+  format_string: "xxx&{&10#%010d}#%08xyyy"
+  args:
+    - signed_int: 123
+    - signed_int: 456
+  expected_output: "xxx<NESTED (#123)#456>yyy"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_prefix_amp_doubly_nested_radix64_literal"
+  format_string: "xxx&{&64#AQAAAA==}#%08xyyy"
+  args:
+    - signed_int: 456
+  expected_output: "xxx<NESTED (#1)#456>yyy"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_prefix_amp_base64_url_safe"
+  format_string: "xxx&-_AAAA==yyy"
+  expected_output: "xxx<NESTED #61691>yyy"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_prefix_amp_corner_radix8_domain"
+  format_string: "xxx&{&8#01234567}#%08xyyy"
+  args:
+    - unsigned_int: 42
+  expected_output: "xxx&{&8#01234567}#0000002ayyy"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_prefix_amp_corner_utf8_multibyte"
+  format_string: "Malformed &#€€€ tail"
+  expected_output: "Malformed &#€€€ tail"
+  skip_snprintf: "Pigweed custom '&' nested token prefix"
+
+- test_id: "nested_token_format_after_invalid_printf_spec"
+  format_string: "%q ${foo}#%08x %d"
+  args:
+    - string_value: "RESOLVED"
+    - signed_int: 5
+  expected_output: "%q RESOLVED 5"
+  skip_snprintf: "Pigweed literal fallback with nested token runtime formatting"
+
+# ==============================================================================
+# Corner Cases: Sequences Not Recognized as Nested Tokens
+# Tests that close-but-not-matching sequences fall back to literals or normal printf conversions.
+# ==============================================================================
+
+# Fallback to literal prefix + standard printf conversions
+- test_id: "nested_corner_empty_domain_int"
+  format_string: "${}#%d"
+  args:
+    - signed_int: 42
+  expected_output: "${}#42"
+
+- test_id: "nested_corner_empty_domain_hex6"
+  format_string: "${}#%06x"
+  args:
+    - unsigned_int: 42
+  expected_output: "${}#00002a"
+
+- test_id: "nested_corner_empty_domain_hex_width8"
+  format_string: "${}#%8x"
+  args:
+    - unsigned_int: 42
+  expected_output: "${}#      2a"
+
+- test_id: "nested_corner_empty_domain_dec_pad8"
+  format_string: "${}#%08d"
+  args:
+    - signed_int: 42
+  expected_output: "${}#00000042"
+
+- test_id: "nested_corner_empty_domain_hex_upper8"
+  format_string: "${}#%08X"
+  args:
+    - unsigned_int: 42
+  expected_output: "${}#0000002A"
+
+- test_id: "nested_corner_empty_domain_uint_pad8"
+  format_string: "${}#%08u"
+  args:
+    - unsigned_int: 42
+  expected_output: "${}#00000042"
+
+- test_id: "nested_corner_empty_domain_int_pad8"
+  format_string: "${}#%08i"
+  args:
+    - signed_int: 42
+  expected_output: "${}#00000042"
+
+- test_id: "nested_corner_domain_int"
+  format_string: "${my_domain}#%d"
+  args:
+    - signed_int: 42
+  expected_output: "${my_domain}#42"
+
+- test_id: "nested_corner_domain_hex6"
+  format_string: "${my_domain}#%06x"
+  args:
+    - unsigned_int: 42
+  expected_output: "${my_domain}#00002a"
+
+- test_id: "nested_corner_domain_str"
+  format_string: "${my_domain}#%s"
+  args:
+    - string_value: "hello"
+  expected_output: "${my_domain}#hello"
+
+- test_id: "nested_corner_hex_unpadded"
+  format_string: "$#%x"
+  args:
+    - unsigned_int: 42
+  expected_output: "$#2a"
+
+- test_id: "nested_corner_hex_pad4"
+  format_string: "$#%04x"
+  args:
+    - unsigned_int: 42
+  expected_output: "$#002a"
+
+- test_id: "nested_corner_uint_pad8"
+  format_string: "$#%08u"
+  args:
+    - unsigned_int: 42
+  expected_output: "$#00000042"
+
+- test_id: "nested_corner_int_conversion"
+  format_string: "$#%d"
+  args:
+    - signed_int: 42
+  expected_output: "$#42"
+
+- test_id: "nested_corner_radix10_hex_var"
+  format_string: "$10#%08x"
+  args:
+    - unsigned_int: 42
+  expected_output: "$10#0000002a"
+
+- test_id: "nested_corner_radix10_int"
+  format_string: "$10#%d"
+  args:
+    - signed_int: 42
+  expected_output: "$10#42"
+
+- test_id: "nested_corner_radix16_int"
+  format_string: "$16#%d"
+  args:
+    - signed_int: 42
+  expected_output: "$16#42"
+
+- test_id: "nested_corner_radix64_hex_var"
+  format_string: "$64#%08x"
+  args:
+    - unsigned_int: 42
+  expected_output: "$64#0000002a"
+
+# Fallback to literal due to digit count or invalid characters
+- test_id: "nested_corner_radix10_short3"
+  format_string: "$10#123"
+  expected_output: "$10#123"
+
+- test_id: "nested_corner_radix10_short9"
+  format_string: "$10#123456789"
+  expected_output: "$10#123456789"
+
+- test_id: "nested_corner_radix10_invalid_char"
+  format_string: "$10#123456789a"
+  expected_output: "$10#123456789a"
+
+- test_id: "nested_corner_radix16_short3"
+  format_string: "$16#123"
+  expected_output: "$16#123"
+
+- test_id: "nested_corner_radix16_short7"
+  format_string: "$16#1234567"
+  expected_output: "$16#1234567"
+
+- test_id: "nested_corner_radix16_invalid_char"
+  format_string: "$16#1234567g"
+  expected_output: "$16#1234567g"
+
+- test_id: "nested_corner_hex_short3"
+  format_string: "$#123"
+  expected_output: "$#123"
+
+- test_id: "nested_corner_hex_short7"
+  format_string: "$#1234567"
+  expected_output: "$#1234567"
+
+- test_id: "nested_corner_hex_invalid_char"
+  format_string: "$#1234567g"
+  expected_output: "$#1234567g"
+
+# Invalid base64 length or characters
+- test_id: "nested_corner_base64_len3"
+  format_string: "$64#AAA"
+  expected_output: "$64#AAA"
+
+- test_id: "nested_corner_base64_len5"
+  format_string: "$64#AAAAA"
+  args:
+    - string_value: "EXPANDED"
+  expected_output: "EXPANDEDA"
+  skip_snprintf: "Pigweed nested token 4-character Base64 prefix"
+
+- test_id: "nested_corner_direct_base64_len7"
+  format_string: "$/+7u3Q="
+  args:
+    - string_value: "EXPANDED"
+  expected_output: "EXPANDED3Q="
+  skip_snprintf: "Pigweed nested token 4-character Base64 prefix"
+
+- test_id: "nested_corner_direct_base64_len3"
+  format_string: "$123"
+  expected_output: "$123"
+
+# Currency and plain dollar signs
+- test_id: "nested_corner_currency_sentence"
+  format_string: "Cost is $100 or $5 per item"
+  expected_output: "Cost is $100 or $5 per item"
+
+- test_id: "nested_corner_price"
+  format_string: "Price: $99.99"
+  expected_output: "Price: $99.99"
+
+- test_id: "nested_corner_single_dollar"
+  format_string: "Single dollar: $"
+  expected_output: "Single dollar: $"
+
+- test_id: "nested_corner_double_dollar"
+  format_string: "Double dollar: $$"
+  expected_output: "Double dollar: $$"
+
+- test_id: "nested_corner_dollar_and_percent"
+  format_string: "Dollar and percent: $ %d"
+  args:
+    - signed_int: 5
+  expected_output: "Dollar and percent: $ 5"
+
+# Malformed domains / unclosed braces
+- test_id: "nested_corner_unclosed_brace"
+  format_string: "${unclosed"
+  expected_output: "${unclosed"
+
+- test_id: "nested_corner_unclosed_brace_with_hex"
+  format_string: "${unclosed#%08x"
+  args:
+    - unsigned_int: 42
+  expected_output: "${unclosed#0000002a"
+
+- test_id: "nested_corner_unclosed_domain_with_hex"
+  format_string: "${domain#%08x"
+  args:
+    - unsigned_int: 42
+  expected_output: "${domain#0000002a"
+
+- test_id: "nested_corner_hash_alone"
+  format_string: "$#"
+  expected_output: "$#"
+
+- test_id: "nested_corner_empty_braces_alone"
+  format_string: "${}"
+  expected_output: "${}"
+
+- test_id: "nested_corner_whitespace_braces_alone"
+  format_string: "${   }"
+  expected_output: "${   }"
+
+# Multi-byte UTF-8 sequences not recognized as nested tokens
+- test_id: "nested_corner_utf8_multibyte_hex"
+  format_string: "Malformed $#€€€ tail"
+  expected_output: "Malformed $#€€€ tail"
+
+- test_id: "nested_corner_utf8_multibyte_radix16"
+  format_string: "Malformed $16#€€€ tail"
+  expected_output: "Malformed $16#€€€ tail"
+
+- test_id: "nested_corner_utf8_multibyte_radix10"
+  format_string: "Malformed $10#€€€€ tail"
+  expected_output: "Malformed $10#€€€€ tail"
+
+- test_id: "nested_corner_utf8_multibyte_emoji"
+  format_string: "Emoji $10#🚀🚀🚀 tail"
+  expected_output: "Emoji $10#🚀🚀🚀 tail"
+
+- test_id: "nested_corner_utf8_multibyte_domain"
+  format_string: "Domain ${$#€€€}#%08x tail"
+  args:
+    - unsigned_int: 42
+  expected_output: "Domain ${$#€€€}#0000002a tail"
+
+# Unsupported radices or mismatched format specifiers
+- test_id: "nested_corner_radix8_literal"
+  format_string: "$8#00000001"
+  expected_output: "$8#00000001"
+
+- test_id: "nested_corner_radix8_domain"
+  format_string: "${$8#01234567}#%08x"
+  args:
+    - unsigned_int: 42
+  expected_output: "${$8#01234567}#0000002a"
+
+- test_id: "nested_corner_radix8_inner_domain"
+  format_string: "${${my_domain}8#01234567}#%08x"
+  args:
+    - unsigned_int: 42
+  expected_output: "${${my_domain}8#01234567}#0000002a"
+
+- test_id: "nested_corner_radix10_hex_in_domain"
+  format_string: "${$10#%08x}#%08x"
+  args:
+    - unsigned_int: 10
+    - unsigned_int: 42
+  expected_output: "${$10#0000000a}#0000002a"
+
+- test_id: "nested_corner_radix64_hex_in_domain"
+  format_string: "${$64#%08x}#%08x"
+  args:
+    - unsigned_int: 10
+    - unsigned_int: 42
+  expected_output: "${$64#0000000a}#0000002a"
+
+- test_id: "nested_corner_invalid_domain_leading_digit"
+  format_string: "${123bad}#%08x"
+  args:
+    - unsigned_int: 42
+  expected_output: "${123bad}#0000002a"
+
+- test_id: "nested_corner_invalid_domain_whitespace_leading_digit"
+  format_string: "${ 123bad}#%08x"
+  args:
+    - unsigned_int: 42
+  expected_output: "${ 123bad}#0000002a"
+
+- test_id: "nested_corner_invalid_inner_domain_leading_digit"
+  format_string: "${${123bad}#01234567}#%08x"
+  args:
+    - unsigned_int: 42
+  expected_output: "${${123bad}#01234567}#0000002a"
+
+- test_id: "nested_corner_invalid_domain_bad_dot"
+  format_string: "${bad.domain}#%08x"
+  args:
+    - unsigned_int: 42
+  expected_output: "${bad.domain}#0000002a"
+
+

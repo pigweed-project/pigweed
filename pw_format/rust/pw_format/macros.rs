@@ -44,8 +44,8 @@ use syn::spanned::Spanned;
 use syn::{Expr, ExprCast, LitStr, Token};
 
 use crate::{
-    ConversionSpec, Flag, FormatFragment, FormatString, Length, MinFieldWidth, Precision,
-    Primitive, Style,
+    ConversionSpec, Flag, FormatFragment, FormatString, Length, MinFieldWidth, NestedDomain,
+    NestedTokenSpec, NestedTokenValue, Precision, Primitive, Style,
 };
 
 mod keywords {
@@ -483,6 +483,86 @@ fn handle_conversion(
     }
 }
 
+const NESTED_TOKEN_HEX_WIDTH: u32 = 8;
+const NESTED_TOKEN_DEC_WIDTH: u32 = 10;
+
+fn nested_token_conversion_spec(width: u32, primitive: Primitive, style: Style) -> ConversionSpec {
+    ConversionSpec {
+        flags: [Flag::LeadingZeros].into_iter().collect(),
+        min_field_width: MinFieldWidth::Fixed(width),
+        primitive,
+        style,
+        ..Default::default()
+    }
+}
+
+fn split_variable_token_conversion(s: &str) -> Result<(&str, ConversionSpec)> {
+    if let Some(prefix) = s.strip_suffix("%010d") {
+        Ok((
+            prefix,
+            nested_token_conversion_spec(NESTED_TOKEN_DEC_WIDTH, Primitive::Integer, Style::None),
+        ))
+    } else if let Some(prefix) = s.strip_suffix("%08x") {
+        Ok((
+            prefix,
+            nested_token_conversion_spec(NESTED_TOKEN_HEX_WIDTH, Primitive::Unsigned, Style::Hex),
+        ))
+    } else {
+        Err(Error::new(&format!(
+            "Unsupported variable nested token specifier in \"{s}\""
+        )))
+    }
+}
+
+fn find_variable_domain_end(raw: &str, prefix: char) -> Result<usize> {
+    let prefix_len = prefix.len_utf8();
+    let mut pos = prefix_len + '{'.len_utf8() + prefix_len;
+    if raw[pos..].starts_with('{') {
+        let inner_close = raw[pos..]
+            .find('}')
+            .ok_or_else(|| Error::new(&format!("Unclosed inner domain brace in \"{raw}\"")))?;
+        pos += inner_close + '}'.len_utf8();
+    }
+    let outer_close = raw[pos..]
+        .find('}')
+        .ok_or_else(|| Error::new(&format!("Unclosed outer domain brace in \"{raw}\"")))?;
+    Ok(pos + outer_close)
+}
+
+fn handle_nested_token(
+    generator: &mut dyn FormatMacroGenerator,
+    token_spec: &NestedTokenSpec,
+    args: &mut VecDeque<Arg>,
+) -> Result<()> {
+    let raw = token_spec.raw();
+    // Purely literal nested tokens require no runtime arguments and can emit their
+    // verbatim raw text directly (preserving exact radix, casing, whitespace, or base64 data).
+    if !matches!(token_spec.domain, NestedDomain::VariableToken { .. })
+        && matches!(token_spec.token, NestedTokenValue::Literal(_))
+    {
+        return generator.string_fragment(raw);
+    }
+
+    let rest = if matches!(token_spec.domain, NestedDomain::VariableToken { .. }) {
+        let domain_end = find_variable_domain_end(raw, token_spec.prefix)?;
+        let (before_inner_conv, inner_spec) = split_variable_token_conversion(&raw[..domain_end])?;
+        generator.string_fragment(before_inner_conv)?;
+        handle_conversion(generator, &inner_spec, args)?;
+        &raw[domain_end..]
+    } else {
+        raw
+    };
+
+    match token_spec.token {
+        NestedTokenValue::Literal(_) => generator.string_fragment(rest),
+        NestedTokenValue::Variable => {
+            let (before_outer_conv, outer_spec) = split_variable_token_conversion(rest)?;
+            generator.string_fragment(before_outer_conv)?;
+            handle_conversion(generator, &outer_spec, args)
+        }
+    }
+}
+
 /// Generate code for a `pw_format` style proc macro.
 ///
 /// `generate` takes a [`FormatMacroGenerator`] and a [`FormatAndArgs`] struct
@@ -498,6 +578,9 @@ pub fn generate(
         let result = match fragment {
             FormatFragment::Conversion(spec) => handle_conversion(&mut generator, &spec, &mut args),
             FormatFragment::Literal(string) => generator.string_fragment(&string),
+            FormatFragment::NestedToken(token_spec) => {
+                handle_nested_token(&mut generator, &token_spec, &mut args)
+            }
         };
         if let Err(e) = result {
             errors.push(syn::Error::new_spanned(

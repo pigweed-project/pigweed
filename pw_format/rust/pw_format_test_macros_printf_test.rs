@@ -401,4 +401,160 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn nested_token_literal_generates_string_fragment() {
+        assert_eq!(
+            printf_format_printf_generator_test_macro!("Nested: ${custom}#0000000a"),
+            (
+                "Nested: ${custom}#0000000a",
+                vec![
+                    PrintfTestGeneratorOps::StringFragment("Nested: ".to_string()),
+                    PrintfTestGeneratorOps::StringFragment("${custom}#0000000a".to_string()),
+                    PrintfTestGeneratorOps::Finalize,
+                ]
+            )
+        );
+    }
+
+    #[test]
+    fn nested_token_variable_outer_consumes_one_arg() {
+        assert_eq!(
+            printf_format_printf_generator_test_macro!("Nested: ${custom}#%08x", 10u32),
+            (
+                "Nested: ${custom}#%08x",
+                vec![
+                    PrintfTestGeneratorOps::StringFragment("Nested: ".to_string()),
+                    PrintfTestGeneratorOps::StringFragment("${custom}#".to_string()),
+                    PrintfTestGeneratorOps::IntegerConversion {
+                        ty: "u32".to_string(),
+                        arg: "10u32".to_string(),
+                    },
+                    PrintfTestGeneratorOps::Finalize,
+                ]
+            )
+        );
+    }
+
+    #[test]
+    fn nested_token_variable_domain_literal_outer_consumes_one_arg() {
+        assert_eq!(
+            printf_format_printf_generator_test_macro!("Nested: ${$#%08x}#0000000a", 20u32),
+            (
+                "Nested: ${$#%08x}#0000000a",
+                vec![
+                    PrintfTestGeneratorOps::StringFragment("Nested: ".to_string()),
+                    PrintfTestGeneratorOps::StringFragment("${$#".to_string()),
+                    PrintfTestGeneratorOps::IntegerConversion {
+                        ty: "u32".to_string(),
+                        arg: "20u32".to_string(),
+                    },
+                    PrintfTestGeneratorOps::StringFragment("}#0000000a".to_string()),
+                    PrintfTestGeneratorOps::Finalize,
+                ]
+            )
+        );
+    }
+
+    #[test]
+    fn nested_token_literal_token_domain_variable_outer_consumes_one_arg() {
+        assert_eq!(
+            printf_format_printf_generator_test_macro!("Nested: ${$#0000000a}#%08x", 30u32),
+            (
+                "Nested: ${$#0000000a}#%08x",
+                vec![
+                    PrintfTestGeneratorOps::StringFragment("Nested: ".to_string()),
+                    PrintfTestGeneratorOps::StringFragment("${$#0000000a}#".to_string()),
+                    PrintfTestGeneratorOps::IntegerConversion {
+                        ty: "u32".to_string(),
+                        arg: "30u32".to_string(),
+                    },
+                    PrintfTestGeneratorOps::Finalize,
+                ]
+            )
+        );
+    }
+
+    #[test]
+    fn nested_token_variable_domain_variable_outer_consumes_two_args() {
+        assert_eq!(
+            printf_format_printf_generator_test_macro!(
+                "Nested: ${${custom}#%08x}#%08x",
+                20u32,
+                30u32
+            ),
+            (
+                "Nested: ${${custom}#%08x}#%08x",
+                vec![
+                    PrintfTestGeneratorOps::StringFragment("Nested: ".to_string()),
+                    PrintfTestGeneratorOps::StringFragment("${${custom}#".to_string()),
+                    PrintfTestGeneratorOps::IntegerConversion {
+                        ty: "u32".to_string(),
+                        arg: "20u32".to_string(),
+                    },
+                    PrintfTestGeneratorOps::StringFragment("}#".to_string()),
+                    PrintfTestGeneratorOps::IntegerConversion {
+                        ty: "u32".to_string(),
+                        arg: "30u32".to_string(),
+                    },
+                    PrintfTestGeneratorOps::Finalize,
+                ]
+            )
+        );
+    }
+
+    #[test]
+    fn nested_token_variable_domain_preserves_outer_base64_payload() {
+        assert_eq!(
+            printf_format_printf_generator_test_macro!("Nested: ${$#%08x}IwEAAEFCQw==", 20u32),
+            (
+                "Nested: ${$#%08x}IwEAAEFCQw==",
+                vec![
+                    PrintfTestGeneratorOps::StringFragment("Nested: ".to_string()),
+                    PrintfTestGeneratorOps::StringFragment("${$#".to_string()),
+                    PrintfTestGeneratorOps::IntegerConversion {
+                        ty: "u32".to_string(),
+                        arg: "20u32".to_string(),
+                    },
+                    PrintfTestGeneratorOps::StringFragment("}IwEAAEFCQw==".to_string()),
+                    PrintfTestGeneratorOps::Finalize,
+                ]
+            )
+        );
+    }
+
+    #[test]
+    fn nested_token_variable_decimal_preserves_radix_and_signedness() {
+        assert_eq!(
+            printf_format_printf_generator_test_macro!("Nested: $10#%010d", -42i32),
+            (
+                "Nested: $10#%010d",
+                vec![
+                    PrintfTestGeneratorOps::StringFragment("Nested: ".to_string()),
+                    PrintfTestGeneratorOps::StringFragment("$10#".to_string()),
+                    PrintfTestGeneratorOps::IntegerConversion {
+                        ty: "i32".to_string(),
+                        arg: "- 42i32".to_string(),
+                    },
+                    PrintfTestGeneratorOps::Finalize,
+                ]
+            )
+        );
+
+        assert_eq!(
+            printf_format_core_fmt_generator_test_macro!("Nested: ${custom}#%08x", 10u32),
+            (
+                "Nested: ${{custom}}#{:08x}",
+                vec![
+                    PrintfTestGeneratorOps::StringFragment("Nested: ".to_string()),
+                    PrintfTestGeneratorOps::StringFragment("${custom}#".to_string()),
+                    PrintfTestGeneratorOps::IntegerConversion {
+                        ty: "u32".to_string(),
+                        arg: "10u32".to_string(),
+                    },
+                    PrintfTestGeneratorOps::Finalize,
+                ]
+            )
+        );
+    }
 }
