@@ -190,6 +190,7 @@ go_test(
         "perfbudget_test.go",
         "profile_test.go",
         "project_config_test.go",
+        "push_memo_test.go",
         "push_pipeline_test.go",
         "push_test.go",
         "ready_test.go",
