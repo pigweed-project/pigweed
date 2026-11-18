@@ -24,6 +24,7 @@ The following table lists all modules related to Testing.
    ":ref:`module-pw_unit_test`", ":bdg-primary:`stable`", "GoogleTest for embedded", ""
    ":ref:`module-pw_compilation_testing`", ":bdg-primary:`stable`", "", ""
    ":ref:`module-pw_daq`", ":bdg-warning:`experimental`", "", "Python"
+   ":ref:`module-pw_dhalsim`", ":bdg-warning:`experimental`", "", "C++, Python"
    ":ref:`module-pw_fuzzer`", ":bdg-secondary:`unstable`", "Better C++ code through easier fuzzing", "C++"
    ":ref:`module-pw_hil`", ":bdg-warning:`experimental`", "", ""
    ":ref:`module-pw_perf_test`", ":bdg-secondary:`unstable`", "Micro-benchmarks that are easy to write and run", "C++"
@@ -40,6 +41,7 @@ The following table lists all modules related to Testing.
    Unit testing <../pw_unit_test/docs>
    Compilation testing <../pw_compilation_testing/docs>
    Data acquisition <../pw_daq/docs>
+   Hardware simulator <../pw_dhalsim/docs>
    Fuzzing <../pw_fuzzer/docs>
    Hardware-in-the-loop <../pw_hil/docs>
    Performance testing <../pw_perf_test/docs>

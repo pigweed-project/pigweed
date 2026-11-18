@@ -94,6 +94,7 @@ declare_args() {
       get_path_info("../pw_cpu_exception_risc_v", "abspath")
   dir_pw_crypto = get_path_info("../pw_crypto", "abspath")
   dir_pw_daq = get_path_info("../pw_daq", "abspath")
+  dir_pw_dhalsim = get_path_info("../pw_dhalsim", "abspath")
   dir_pw_digital_io = get_path_info("../pw_digital_io", "abspath")
   dir_pw_digital_io_linux = get_path_info("../pw_digital_io_linux", "abspath")
   dir_pw_digital_io_mcuxpresso =
@@ -308,6 +309,7 @@ declare_args() {
     dir_pw_cpu_exception_risc_v,
     dir_pw_crypto,
     dir_pw_daq,
+    dir_pw_dhalsim,
     dir_pw_digital_io,
     dir_pw_digital_io_linux,
     dir_pw_digital_io_mcuxpresso,
@@ -510,6 +512,7 @@ declare_args() {
     "$dir_pw_cpu_exception_risc_v:tests",
     "$dir_pw_crypto:tests",
     "$dir_pw_daq:tests",
+    "$dir_pw_dhalsim:tests",
     "$dir_pw_digital_io:tests",
     "$dir_pw_digital_io_linux:tests",
     "$dir_pw_digital_io_mcuxpresso:tests",
