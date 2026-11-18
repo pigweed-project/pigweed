@@ -31,6 +31,7 @@ pw_python_package("py") {
   python_deps = [ "$dir_pw_env_setup/py" ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
+  pyrefly_toml = "$dir_pigweed/.pyrefly.toml"
   ruff_toml = "$dir_pigweed/.ruff.toml"
   tests = [
     "find_config_test.py",

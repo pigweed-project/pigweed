@@ -25,6 +25,7 @@ pw_python_script("find_core_owners") {
   python_deps = [ ":find_core_owners_lib" ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
+  pyrefly_toml = "$dir_pigweed/.pyrefly.toml"
   ruff_toml = "$dir_pigweed/.ruff.toml"
 }
 
@@ -33,6 +34,7 @@ pw_python_script("demo_freshness_scanner") {
   python_deps = [ ":demo_freshness_scanner_lib" ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
+  pyrefly_toml = "$dir_pigweed/.pyrefly.toml"
   ruff_toml = "$dir_pigweed/.ruff.toml"
 }
 
@@ -41,6 +43,7 @@ pw_python_script("demo_issue_tracker") {
   python_deps = [ ":demo_freshness_scanner_lib" ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
+  pyrefly_toml = "$dir_pigweed/.pyrefly.toml"
   ruff_toml = "$dir_pigweed/.ruff.toml"
 }
 
@@ -67,6 +70,7 @@ pw_python_package("find_core_owners_lib") {
   ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
+  pyrefly_toml = "$dir_pigweed/.pyrefly.toml"
   ruff_toml = "$dir_pigweed/.ruff.toml"
 }
 
@@ -126,6 +130,7 @@ pw_python_package("freshness_scan_lib") {
   ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
+  pyrefly_toml = "$dir_pigweed/.pyrefly.toml"
   ruff_toml = "$dir_pigweed/.ruff.toml"
 }
 
@@ -159,6 +164,7 @@ pw_python_package("security_scan_lib") {
   ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
+  pyrefly_toml = "$dir_pigweed/.pyrefly.toml"
   ruff_toml = "$dir_pigweed/.ruff.toml"
 }
 
@@ -200,6 +206,7 @@ pw_python_package("pipeline_lib") {
   python_deps = [ ":find_core_owners_lib" ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
+  pyrefly_toml = "$dir_pigweed/.pyrefly.toml"
   ruff_toml = "$dir_pigweed/.ruff.toml"
 }
 
@@ -221,6 +228,7 @@ pw_python_package("demo_freshness_scanner_lib") {
   ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
+  pyrefly_toml = "$dir_pigweed/.pyrefly.toml"
   ruff_toml = "$dir_pigweed/.ruff.toml"
 }
 

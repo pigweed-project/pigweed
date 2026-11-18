@@ -676,6 +676,14 @@ cipd_ext.require(
 )
 use_repo(cipd_ext, go = "pigweed.go")
 
+cipd_dev_ext.require(
+    name = "pigweed.pyrefly",
+    packages = {
+        "fuchsia/third_party/3pp/pyrefly/${platform}": "version:2@1.3.2.3",
+    },
+)
+use_repo(cipd_dev_ext, pyrefly = "pigweed.pyrefly")
+
 # Set up legacy pw_transfer test binaries.
 # Required by: pigweed.
 # Used in modules: //pw_transfer.

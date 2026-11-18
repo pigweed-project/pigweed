@@ -62,8 +62,16 @@ pw_python_package("py") {
     ":descriptors_test_proto.python",
     "$dir_pw_rpc2:pw_rpc2_test_proto.python",
   ]
+
+  # GN splits pw_rpc2 across multiple PYTHONPATH directories using runtime
+  # pkgutil.extend_path shims; Bazel overlays them and runs pyrefly on pw_rpc2.
+  static_analysis = [
+    "mypy",
+    "pylint",
+  ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
+  pyrefly_toml = "$dir_pigweed/.pyrefly.toml"
   ruff_toml = "$dir_pigweed/.ruff.toml"
 }
 

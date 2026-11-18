@@ -60,6 +60,7 @@ import("$dir_pw_build/test_info.gni")
 #         static_analysis
 #         pylintrc
 #         mypy_ini
+#         pyrefly_toml
 #         ruff_toml
 #
 #   - action: Optional string or scope. If a string, this should be a label to
@@ -123,6 +124,7 @@ template("pw_python_action_test") {
                                  "testonly",
                                  "pylintrc",
                                  "mypy_ini",
+                                 "pyrefly_toml",
                                  "ruff_toml",
                                ])
         sources = _sources
@@ -134,6 +136,9 @@ template("pw_python_action_test") {
         }
         if (!defined(mypy_ini)) {
           mypy_ini = "$dir_pigweed/.mypy.ini"
+        }
+        if (!defined(pyrefly_toml)) {
+          pyrefly_toml = "$dir_pigweed/.pyrefly.toml"
         }
         if (!defined(ruff_toml)) {
           ruff_toml = "$dir_pigweed/.ruff.toml"

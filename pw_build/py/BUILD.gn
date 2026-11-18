@@ -51,6 +51,7 @@ pw_python_package("workflows") {
   ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
+  pyrefly_toml = "$dir_pigweed/.pyrefly.toml"
   ruff_toml = "$dir_pigweed/.ruff.toml"
   proto_library = "..:workflows_proto"
 }
@@ -144,6 +145,7 @@ pw_python_package("py") {
   python_test_deps = [ "gn_tests:test_dist1" ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
+  pyrefly_toml = "$dir_pigweed/.pyrefly.toml"
   ruff_toml = "$dir_pigweed/.ruff.toml"
   inputs = [
     "pw_build/zephyr_default_CMakeLists.txt",

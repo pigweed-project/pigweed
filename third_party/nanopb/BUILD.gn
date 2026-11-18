@@ -65,6 +65,7 @@ if (dir_pw_third_party_nanopb != "") {
     sources = [ "generate_nanopb_proto.py" ]
     pylintrc = "$dir_pigweed/.pylintrc"
     mypy_ini = "$dir_pigweed/.mypy.ini"
+    pyrefly_toml = "$dir_pigweed/.pyrefly.toml"
     ruff_toml = "$dir_pigweed/.ruff.toml"
 
     # Path to protoc binary. This variable is relative to the build directory,

@@ -662,6 +662,7 @@ template("pw_python_pip_install") {
         "lint",
         "lint.mypy",
         "lint.pylint",
+        "lint.pyrefly",
         "lint.ruff",
       ]
       if (pw_build_TEST_TRANSITIVE_PYTHON_DEPS ||

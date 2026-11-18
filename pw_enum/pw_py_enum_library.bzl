@@ -82,6 +82,12 @@ def _pw_py_enum_library_impl(ctx):
             default_runfiles = ctx.runfiles(transitive_files = srcs),
         ),
         PyInfo(
+            # Populate direct_original_sources and transitive_original_sources
+            # in addition to transitive_sources so static analysis aspects
+            # (such as pyrefly_aspect) can discover generated enum modules on
+            # pw_py_enum_library targets and their dependents.
+            direct_original_sources = srcs,
+            transitive_original_sources = srcs,
             transitive_sources = srcs,
             imports = depset(transitive = [i.imports for i in infos]),
         ),

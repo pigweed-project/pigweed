@@ -33,6 +33,9 @@ These are the tools we recommend using when developing firmware with Pigweed.
    * - :ref:`docs-automatic-analysis-mypy`
      - Python type checker
      - |checkbox|
+   * - :ref:`docs-automatic-analysis-pyrefly`
+     - Fast Python type checker
+     - |checkbox|
    * - :ref:`docs-automatic-analysis-sanitizers`
      - C++ runtime checks
      - |checkbox|
@@ -242,6 +245,40 @@ How to enable Mypy
 
       Similarly to Pylint, Mypy can be configured to run every time your project
       is built by adding ``python.lint.mypy`` to your default build group.
+
+.. _docs-automatic-analysis-pyrefly:
+
+Pyrefly
+=======
+`Pyrefly`_ is a fast, Rust-based Python type checker and language server.
+Pigweed runs Pyrefly alongside Mypy and Pylint to provide rapid type-checking
+feedback across both Bazel and GN builds.
+
+.. _Pyrefly: https://pyrefly.org/
+
+How to enable Pyrefly
+---------------------
+.. tab-set::
+
+   .. tab-item:: Bazel
+      :sync: bazel
+
+      Pigweed provides ``//pw_build/pyrefly:pyrefly.bzl%pyrefly_aspect`` to run
+      Pyrefly as a Bazel aspect:
+
+      .. code-block:: sh
+
+         bazelisk build --config=pyrefly //...
+
+      To exempt an individual target from Pyrefly checking, add ``tags =
+      ["nopyrefly"]`` to its attributes.
+
+   .. tab-item:: GN
+      :sync: gn
+
+      Add ``"pyrefly"`` to ``pw_build_PYTHON_STATIC_ANALYSIS_TOOLS`` in ``.gn``
+      (included by default in upstream Pigweed) and add ``python.lint.pyrefly``
+      to your default build group.
 
 .. _docs-automatic-analysis-sanitizers:
 

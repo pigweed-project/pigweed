@@ -40,6 +40,7 @@ pw_python_package("py") {
   ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
+  pyrefly_toml = "pyproject.toml"
   ruff_toml = "$dir_pigweed/.ruff.toml"
   python_deps = [
     "$dir_pw_build/py",
@@ -51,6 +52,7 @@ pw_python_script("mock_emu") {
   sources = [ "mock_emu.py" ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
+  pyrefly_toml = "pyproject.toml"
   ruff_toml = "$dir_pigweed/.ruff.toml"
   action = {
     stamp = true
@@ -59,9 +61,13 @@ pw_python_script("mock_emu") {
 
 pw_python_script("mock_emu_frontend") {
   sources = [ "mock_emu_frontend.py" ]
-  python_deps = [ "$dir_pw_env_setup/py" ]
+  python_deps = [
+    ":py",
+    "$dir_pw_env_setup/py",
+  ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
+  pyrefly_toml = "pyproject.toml"
   ruff_toml = "$dir_pigweed/.ruff.toml"
   action = {
     stamp = true

@@ -63,7 +63,7 @@ declare_args() {
   # lib_b.tests) OR if the pw_python_package is placed in a pw_python_group AND
   # you build the group.tests target.
   #
-  # This applies to mypy, pylint, ruff and tests.
+  # This applies to mypy, pylint, pyrefly, ruff and tests.
   #
   # While this defaults to true for compatibility reasons, it's strongly
   # recommended to turn this off so you're not linting and testing all of your
@@ -82,6 +82,7 @@ pw_python_package_subtargets = [
   "lint",
   "lint.mypy",
   "lint.pylint",
+  "lint.pyrefly",
   "lint.ruff",
   "install",
   "wheel",
@@ -256,14 +257,63 @@ template("_pw_python_static_analysis_ruff") {
   }
 }
 
+template("_pw_python_static_analysis_pyrefly") {
+  # Create a target to run pyrefly on the Python files in this
+  # package and its dependencies.
+  pw_python_action(target_name) {
+    script = "$dir_pw_build/py/pw_build/exec.py"
+    args = [
+      "--",
+      "pyrefly",
+      "check",
+      "--color=always",
+      "--summary=none",
+    ]
+
+    if (defined(invoker.pyrefly_toml)) {
+      args += [
+        "--config",
+        rebase_path(invoker.pyrefly_toml, root_build_dir),
+      ]
+      inputs = [ invoker.pyrefly_toml ]
+    } else {
+      args += [ "--preset=legacy" ]
+    }
+
+    args += rebase_path(invoker.sources, root_build_dir)
+
+    stamp = true
+
+    deps = invoker.deps
+
+    if (defined(invoker.python_deps)) {
+      python_deps = invoker.python_deps
+      if (pw_build_TEST_TRANSITIVE_PYTHON_DEPS) {
+        foreach(dep, python_deps) {
+          # filter_labels_exclude is more apt, but not as backwards compatible
+          if ([] != filter_exclude(
+                  [ get_label_info(dep, "label_no_toolchain") ],
+                  pw_build_TEST_TRANSITIVE_PYTHON_DEPS_FILTER_EXCLUDES)) {
+            deps += [ string_replace(dep, "(", ".lint.pyrefly(") ]
+          }
+        }
+      }
+    }
+    if (defined(invoker.python_metadata_deps)) {
+      python_metadata_deps = invoker.python_metadata_deps
+    }
+  }
+}
+
 # Defines a Python package. GN Python packages contain several GN targets:
 #
 #   - $name - Provides the Python files in the build, but does not take any
 #         actions. All subtargets depend on this target.
 #   - $name.lint - Runs static analyis tools on the Python code. This is a group
-#     of two subtargets:
+#     of subtargets:
 #     - $name.lint.mypy - Runs mypy (if enabled).
 #     - $name.lint.pylint - Runs pylint (if enabled).
+#     - $name.lint.pyrefly - Runs pyrefly (if enabled).
 #     - $name.lint.ruff - Runs ruff (if enabled).
 #   - $name.tests - Runs all tests for this package.
 #   - $name.install - Installs the package in a venv.
@@ -287,7 +337,8 @@ template("_pw_python_static_analysis_ruff") {
 #   proto_library: A pw_proto_library target to embed in this Python package.
 #       generate_setup is required in place of setup if proto_library is used.
 #   static_analysis: List of static analysis tools to run; "*" (default) runs
-#       all tools. The supported tools are "mypy", "pylint" and "ruff".
+#       all tools. The supported tools are "mypy", "pylint", "pyrefly", and
+#       "ruff".
 #   pylintrc: Path to a pylintrc configuration file to use. If not provided,
 #       Pylint's default rcfile search is used. As this may use the local
 #       user's configuration file, it is highly recommended to pass this option
@@ -296,6 +347,7 @@ template("_pw_python_static_analysis_ruff") {
 #       provided, mypy's default configuration file search is used. mypy is
 #       executed from the package's setup directory, so mypy.ini files in that
 #       directory will take precedence over others.
+#   pyrefly_toml: Path to a pyrefly.toml configuration file to use.
 #   ruff_toml: Path to a ruff.toml configuration file to use.
 #
 template("pw_python_package") {
@@ -383,6 +435,7 @@ template("pw_python_package") {
   _supported_static_analysis_tools = [
     "mypy",
     "pylint",
+    "pyrefly",
     "ruff",
   ]
   not_needed([ "_supported_static_analysis_tools" ])
@@ -724,6 +777,7 @@ template("pw_python_package") {
         _optional_variables = [
           "mypy_ini",
           "pylintrc",
+          "pyrefly_toml",
           "ruff_toml",
         ]
         forward_variables_from(invoker, _optional_variables)
@@ -739,6 +793,9 @@ template("pw_python_package") {
         }
         if (defined(invoker.mypy_ini)) {
           inputs += [ invoker.mypy_ini ]
+        }
+        if (defined(invoker.pyrefly_toml)) {
+          inputs += [ invoker.pyrefly_toml ]
         }
         if (defined(invoker.ruff_toml)) {
           inputs += [ invoker.ruff_toml ]
@@ -952,6 +1009,7 @@ template("pw_python_script") {
     "inputs",
     "pylintrc",
     "mypy_ini",
+    "pyrefly_toml",
     "ruff_toml",
     "static_analysis",
   ]

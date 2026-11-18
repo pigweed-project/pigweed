@@ -767,10 +767,11 @@ subtarget represents different functionality in the Python build.
   - ``<name>.tests.<test_file>`` - Runs the specified test.
 
 - ``<name>.lint`` - Runs static analysis tools on the Python code. This is a
-  group of three subtargets:
+  group of subtargets:
 
   - ``<name>.lint.mypy`` - Runs Mypy on all Python files, if enabled.
   - ``<name>.lint.pylint`` - Runs Pylint on all Python files, if enabled.
+  - ``<name>.lint.pyrefly`` - Runs Pyrefly on all Python files, if enabled.
   - ``<name>.lint.ruff`` - Runs ruff on all Python files, if enabled.
 
 - ``<name>.install`` - Installs the package in a Python virtual environment.
@@ -788,12 +789,12 @@ dependencies is updated.
 
 Static analysis
 ^^^^^^^^^^^^^^^
-``pw_python_package`` targets are preconfigured to run Pylint, Mypy and Ruff on
-their source and test files. Users may specify which ``pylintrc``, ``mypy_ini``
-and ``ruff_toml`` files to use on a per-package basis. The configuration files
-may also be provided in the directory structure; the tools will locate them
-using their standard means. Like tests, static analysis is only run when files
-or their dependencies change.
+``pw_python_package`` targets are preconfigured to run Pylint, Mypy, Pyrefly,
+and Ruff on their source and test files. Users may specify which ``pylintrc``,
+``mypy_ini``, ``pyrefly_toml``, and ``ruff_toml`` files to use on a per-package
+basis. The configuration files may also be provided in the directory structure;
+the tools will locate them using their standard means. Like tests, static
+analysis is only run when files or their dependencies change.
 
 Packages may opt out of static analysis as necessary by setting
 ``static_analysis`` on the ``pw_python_package`` target.

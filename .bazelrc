@@ -248,6 +248,12 @@ build:mypy --output_groups=mypy
 # No build_tag_filters needed: the mypy aspect has built-in support for the
 # "nomypy" tag.
 
+# pyrefly aspect configuration
+build:pyrefly --aspects //pw_build/pyrefly:pyrefly.bzl%pyrefly_aspect
+build:pyrefly --output_groups=pyrefly
+# No build_tag_filters needed: the pyrefly aspect has built-in support for
+# suppression tags ("nopyrefly", "no-pyrefly").
+
 # For some platforms i.e. google/oss-fuzz we need to use the system provided
 # rather than the hermetic toolchains. This allows oss-fuzz to override the
 # build with specialised compilers that are tightly coupled to the fuzzing

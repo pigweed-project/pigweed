@@ -20,3 +20,7 @@ filterwarnings = [
     'error::DeprecationWarning:pw_emu.*',
     'error::DeprecationWarning:__main__',
 ]
+
+[tool.pyrefly]
+preset = 'legacy'
+search-path = ['tests']

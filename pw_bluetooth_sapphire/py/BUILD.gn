@@ -29,6 +29,7 @@ pw_python_package("py") {
   tests = [ "tests/fuchsia_utils_test.py" ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
+  pyrefly_toml = "$dir_pigweed/.pyrefly.toml"
   ruff_toml = "$dir_pigweed/.ruff.toml"
   python_deps = [
     "$dir_pw_bluetooth/py",

@@ -32,6 +32,7 @@ pw_python_package("py") {
   python_test_deps = [ "$dir_pw_build/py" ]
   pylintrc = "$dir_pigweed/.pylintrc"
   mypy_ini = "$dir_pigweed/.mypy.ini"
+  pyrefly_toml = "$dir_pigweed/.pyrefly.toml"
   ruff_toml = "$dir_pigweed/.ruff.toml"
   inputs = [
     "pw_sensor/dependency_schema.json",

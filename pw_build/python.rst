@@ -123,7 +123,8 @@ Arguments
   ``generate_setup`` is required in place of setup if proto_library is used. See
   :ref:`module-pw_protobuf_compiler-add-to-python-package`.
 - ``static_analysis`` List of static analysis tools to run; ``"*"`` (default)
-  runs all tools. The supported tools are ``"mypy"`` and ``"pylint"``.
+  runs all tools. The supported tools are ``"mypy"``, ``"pylint"``,
+  ``"pyrefly"``, and ``"ruff"``.
 - ``pylintrc`` - Optional path to a pylintrc configuration file to use. If not
   provided, Pylint's default rcfile search is used. Pylint is executed
   from the package's setup directory, so pylintrc files in that directory
@@ -132,6 +133,11 @@ Arguments
   provided, mypy's default configuration file search is used. mypy is
   executed from the package's setup directory, so mypy.ini files in that
   directory will take precedence over others.
+- ``pyrefly_toml`` - Optional path to a Pyrefly configuration file (such as
+  ``.pyrefly.toml`` or ``pyproject.toml``) to use. If not provided, Pyrefly's
+  default configuration file search from the package's setup directory is used.
+- ``ruff_toml`` - Optional path to a Ruff configuration file to use. If not
+  provided, Ruff's default configuration file search is used.
 
 Example
 -------
