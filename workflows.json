@@ -939,6 +939,13 @@
       "type": "GENERAL"
     },
     {
+      "name": "daq",
+      "description": "Configure and control DAQ devices",
+      "use_config": "bazel_default",
+      "target": "//pw_daq/py:daq-cli",
+      "type": "GENERAL"
+    },
+    {
       "name": "format",
       "description": "Find and fix code formatting issues",
       "use_config": "bazel_default",

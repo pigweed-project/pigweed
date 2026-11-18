@@ -19,6 +19,12 @@ package(default_visibility = ["//visibility:private"])
 
 licenses(["notice"])
 
+alias(
+    name = "cli",
+    actual = "//pw_daq/py:daq-cli",
+    visibility = ["//visibility:public"],
+)
+
 sphinx_docs_library(
     name = "docs",
     srcs = [

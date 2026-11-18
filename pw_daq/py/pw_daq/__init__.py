@@ -11,7 +11,7 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-"""Pigweed Data Acquisition (DAQ) package."""
+"""Pigweed Data Acquisition (DAQ) package and CLI."""
 
 # The `pw_daq` package is split across multiple Bazel `pw_py_library` targets
 # (`common`, `backend`, `pw_daq`, and backend subpackages), so

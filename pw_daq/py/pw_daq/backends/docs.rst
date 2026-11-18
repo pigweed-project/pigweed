@@ -45,12 +45,45 @@ hardware resources simultaneously.
    In cases where the backend does not support a command, the process will
    return ``1`` (error) and print details to stderr.
 
-Configuration
-=============
+Configuration and registration
+==============================
 Backends may define their own configuration fields in a device config. The
 selected device's configuration dictionary (including ``capabilities`` and, when
 present, ``dev`` connection settings) is passed to the backend via the
 ``configure`` API.
+
+* **Device configuration (YAML)**: Devices are configured declaratively via
+  ``$PW_PROJECT_ROOT/.pw_daq.yaml``, ``$PW_PROJECT_ROOT/.pw_daq.user.yaml``,
+  ``~/.pw_daq.yaml``, ``PW_DAQ_CONFIG``, or ``-c`` / ``--config-file`` (see
+  :ref:`module-pw_daq-daq-cli-configuration`), referencing a registered backend
+  by name (for example, ``backend: dhalsim``).
+* **Built-in backends**: Upstream backends are pre-registered in
+  ``BackendRegistry`` and imported lazily when the selected device requests
+  them.
+* **Custom wrapper binaries (Bazel)**: Downstream projects can register custom
+  ``DaqBackend`` subclasses or factories in Python by passing
+  ``extra_backends`` (or a custom ``BackendRegistry``) to ``pw_daq.cli.main()``
+  or ``pw_daq.cli.run_cli()`` in their own ``pw_py_binary`` target:
+
+  .. code-block:: python
+
+     import sys
+     from my_package.my_backend import MyBackend
+     from pw_daq import cli
+
+     if __name__ == "__main__":
+         sys.exit(cli.main(extra_backends={"my_backend": MyBackend}))
+
+* **Python package entry points**: Installed Python distributions (via ``pip``
+  or GN virtual environments) can advertise backends under the
+  ``pw_daq.backends`` entry-point group, which ``BackendRegistry`` discovers
+  automatically and loads lazily on demand:
+
+  .. code-block:: ini
+
+     [options.entry_points]
+     pw_daq.backends =
+         my_backend = my_package.my_backend:MyBackend
 
 -----------
 Backend API

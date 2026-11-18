@@ -102,6 +102,9 @@ yarn-error.log
 .pw_ide.user.yaml
 .vscode-test
 
+# pw_daq
+.pw_daq.user.yaml
+
 # Emboss
 *.emb.h
 
