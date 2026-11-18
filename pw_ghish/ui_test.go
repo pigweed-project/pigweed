@@ -16,6 +16,7 @@ package pw_ghish
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -55,6 +56,12 @@ func TestIsTTY(t *testing.T) {
 	if IsTTY(nil) {
 		t.Error("expected IsTTY(nil) == false")
 	}
+	if IsTTY((*os.File)(nil)) {
+		t.Error("expected IsTTY((*os.File)(nil)) == false")
+	}
+	if IsTTY(strings.NewReader("")) {
+		t.Error("expected IsTTY(strings.NewReader) == false")
+	}
 	var buf bytes.Buffer
 	if IsTTY(&buf) {
 		t.Error("expected IsTTY(*bytes.Buffer) == false")
@@ -64,7 +71,10 @@ func TestIsTTY(t *testing.T) {
 		defer r.Close()
 		defer w.Close()
 		if IsTTY(w) {
-			t.Error("expected IsTTY(os.Pipe) == false")
+			t.Error("expected IsTTY(os.Pipe writer) == false")
+		}
+		if IsTTY(io.Reader(r)) {
+			t.Error("expected IsTTY(os.Pipe reader) == false")
 		}
 	}
 }

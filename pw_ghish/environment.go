@@ -44,13 +44,10 @@ func IsAgentEnv() bool {
 	return false
 }
 
-// IsTTY returns true only if w is an *os.File whose Stat() has
+// IsTTY returns true only if v is an *os.File whose Stat() has
 // os.ModeCharDevice != 0.
-func IsTTY(w io.Writer) bool {
-	if w == nil {
-		return false
-	}
-	f, ok := w.(*os.File)
+func IsTTY(v any) bool {
+	f, ok := v.(*os.File)
 	if !ok || f == nil {
 		return false
 	}
