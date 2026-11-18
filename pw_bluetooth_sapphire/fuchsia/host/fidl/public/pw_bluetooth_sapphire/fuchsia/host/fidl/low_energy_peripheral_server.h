@@ -218,9 +218,6 @@ class LowEnergyPeripheralServer
   // `Advertise`. bt::gap::AdvertisementId cannot be used as a map key because
   // it is received asynchronously, and we need an advertisement ID to refer to
   // before advertising starts.
-  // TODO: https://fxbug.dev/42157682 - Support AdvertisedPeripheral protocols
-  // that outlive this Peripheral protocol. This may require passing
-  // AdvertisementInstances to HostServer.
   AdvertisementInstanceId next_advertisement_instance_id_ = 0u;
   std::unordered_map<AdvertisementInstanceId, AdvertisementInstance>
       advertisements_;
