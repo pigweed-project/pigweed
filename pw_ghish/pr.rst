@@ -676,6 +676,10 @@ following target formats:
 * **Branch name**: Local branch names (e.g. ``my-feature``, ``cl/472267``,
   ``change-472267``), resolved by inspecting the branch tip commit's
   ``Change-Id`` or ``branch.<name>.gerrit-change-id`` in Git config.
+* **Commit SHA or ref**: Any commit-ish accepted by ``git rev-parse`` (e.g.
+  ``1170aeea2``, ``HEAD~1``, ``origin/main``), resolved by reading the commit's
+  ``Change-Id`` trailer. All-numeric abbreviated SHAs of 9 or fewer digits are
+  treated as change numbers; pass a longer prefix (at least 10 characters).
 
 .. _module-pw_ghish-pr-comparison:
 

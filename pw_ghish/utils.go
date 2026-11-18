@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"regexp"
@@ -755,6 +756,7 @@ func findChangeIDInCommitRange(ctx context.Context, git GitClient, rangeSpec str
 // If an argument is provided:
 // - If it is a change identifier (number, Change-Id, URL, shortlink), it is returned.
 // - If it corresponds to a local branch or git config, the branch's Change-Id is resolved.
+// - If it resolves to a commit-ish accepted by git rev-parse, the commit's Change-Id trailer is returned.
 // Otherwise, it attempts to resolve the active change ID from the local git branch/HEAD commit.
 func ResolveTargetChangeID(ctx context.Context, cmd *cobra.Command, args []string) (string, error) {
 	cfg := GetConfig(cmd)
@@ -787,7 +789,7 @@ func ResolveTargetChangeID(ctx context.Context, cmd *cobra.Command, args []strin
 			return target, nil
 		}
 	}
-	if cfg != nil && cfg.Git != nil {
+	if cfg != nil && cfg.Git != nil && !strings.HasPrefix(target, "-") {
 		git := cfg.GitClient()
 		// 1. Check if git config branch.<target>.gerrit-change-id is set
 		if id, err := git.BranchChangeID(ctx, target); err == nil && id != "" {
@@ -812,6 +814,29 @@ func ResolveTargetChangeID(ctx context.Context, cmd *cobra.Command, args []strin
 			}
 
 			return "", fmt.Errorf("branch %q has no associated Gerrit Change-Id", target)
+		}
+
+		// 3. Check if target is a commit-ish accepted by git rev-parse (e.g. "1170aeea2", "HEAD~2", or "origin/main")
+		sha, err := git.RevParse(ctx, "--verify", target+"^{commit}")
+		if err != nil {
+			// OK: non-commit targets (such as project~branch~Change-Id triplets or unrecognised identifiers) fall through to Gerrit.
+			slog.Debug("target did not resolve as a git commit; passing through to Gerrit", "target", target, "err", err)
+		} else if commitSHA := strings.TrimSpace(sha); commitSHA != "" {
+			msg, err := git.CommitMessage(ctx, commitSHA)
+			if err != nil {
+				return "", fmt.Errorf("reading commit message for %s: %w", commitSHA, err)
+			}
+			if id := ExtractChangeID(msg); id != "" {
+				return id, nil
+			}
+			cleanTarget := sanitizeSingleLineTerminal(target)
+			return "", fmt.Errorf(
+				"commit %q (%s) has no Gerrit Change-Id trailer.\n\n"+
+					"Install the commit-msg hook, then run an interactive rebase and mark the commit as 'reword':\n"+
+					"  ./gh hook install --git\n"+
+					"  git rebase -i %s~1",
+				cleanTarget, commitSHA, commitSHA,
+			)
 		}
 	}
 

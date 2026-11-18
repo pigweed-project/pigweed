@@ -1075,6 +1075,133 @@ func TestResolveTargetChangeID(t *testing.T) {
 			t.Errorf("got %q, want I9999888877776666555544443333222211110000", id)
 		}
 	})
+
+	t.Run("dash-prefixed target is returned without invoking git", func(t *testing.T) {
+		mock := &MockGitRunner{}
+		mock.OnError("config --get branch.--upload-pack=x", fmt.Errorf("unexpected git call"))
+		mock.OnError("rev-parse --verify refs/heads/--upload-pack=x", fmt.Errorf("unexpected git call"))
+		mock.OnError("rev-parse --verify --upload-pack=x", fmt.Errorf("unexpected git call"))
+		cmd := mockCmdWithGit(ctx, mock)
+
+		id, err := ResolveTargetChangeID(ctx, cmd, []string{"--upload-pack=x"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if id != "--upload-pack=x" {
+			t.Errorf("got %q, want %q", id, "--upload-pack=x")
+		}
+		if mock.HasCall("--upload-pack") {
+			t.Errorf("expected no git call with --upload-pack, got calls: %v", mock.Calls)
+		}
+	})
+
+	t.Run("commit-ish with Change-Id", func(t *testing.T) {
+		const (
+			baseSHA    = "1170aeea20000000000000000000000000000001"
+			fullNumSHA = "1234567890120000000000000000000000000000"
+			baseID     = "Icb4065c8a7a932f8d8b42d0190cb9280b8b7ee32"
+		)
+		tests := []struct {
+			name string
+			ref  string
+			sha  string
+		}{
+			{name: "1170aeea2", ref: "1170aeea2", sha: baseSHA},
+			{name: "HEAD~1", ref: "HEAD~1", sha: baseSHA},
+			{name: "origin/main", ref: "origin/main", sha: baseSHA},
+			{name: "12-digit numeric SHA is not a change number", ref: "123456789012", sha: fullNumSHA},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				mock := (&MockGitRunner{
+					RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+						return fmt.Errorf("not handled: %s", strings.Join(args, " "))
+					},
+				}).
+					OnCommand("rev-parse --verify "+tc.ref+"^{commit}", tc.sha+"\n").
+					OnCommand("log -1 --format=%B "+tc.sha, "pw_foo: Base commit\n\nChange-Id: "+baseID+"\n")
+				cmd := mockCmdWithGit(ctx, mock)
+
+				id, err := ResolveTargetChangeID(ctx, cmd, []string{tc.ref})
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if id != baseID {
+					t.Errorf("got %q, want %q", id, baseID)
+				}
+			})
+		}
+	})
+
+	t.Run("unresolvable target falls through unchanged", func(t *testing.T) {
+		mock := &MockGitRunner{
+			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+				return fmt.Errorf("not handled: %s", strings.Join(args, " "))
+			},
+		}
+		cmd := mockCmdWithGit(ctx, mock)
+
+		id, err := ResolveTargetChangeID(ctx, cmd, []string{"unknown-ref"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if id != "unknown-ref" {
+			t.Errorf("got %q, want %q", id, "unknown-ref")
+		}
+		if !mock.HasCall("rev-parse --verify unknown-ref^{commit}") {
+			t.Errorf("expected rev-parse probe for unknown-ref, got calls: %v", mock.Calls)
+		}
+	})
+
+	t.Run("commit-ish CommitMessage failure returns error", func(t *testing.T) {
+		const baseSHA = "1170aeea20000000000000000000000000000001"
+		mock := (&MockGitRunner{
+			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+				return fmt.Errorf("not handled: %s", strings.Join(args, " "))
+			},
+		}).
+			OnCommand("rev-parse --verify 1170aeea2^{commit}", baseSHA+"\n").
+			OnError("log -1 --format=%B "+baseSHA, fmt.Errorf("corrupt commit object"))
+		cmd := mockCmdWithGit(ctx, mock)
+
+		_, err := ResolveTargetChangeID(ctx, cmd, []string{"1170aeea2"})
+		if err == nil {
+			t.Fatal("expected error when CommitMessage fails, got nil")
+		}
+		for _, want := range []string{"reading commit message for " + baseSHA, "corrupt commit object"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("expected error to contain %q, got: %v", want, err)
+			}
+		}
+	})
+
+	t.Run("local commit without Change-Id returns error", func(t *testing.T) {
+		const baseSHA = "1170aeea20000000000000000000000000000001"
+		mock := (&MockGitRunner{
+			RunFn: func(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
+				return fmt.Errorf("not handled: %s", strings.Join(args, " "))
+			},
+		}).
+			OnCommand("rev-parse --verify HEAD~1^{commit}", baseSHA+"\n").
+			OnCommand("log -1 --format=%B "+baseSHA, "pw_foo: Commit without change-id\n")
+		cmd := mockCmdWithGit(ctx, mock)
+
+		_, err := ResolveTargetChangeID(ctx, cmd, []string{"HEAD~1"})
+		if err == nil {
+			t.Fatal("expected error when commit has no Change-Id, got nil")
+		}
+		for _, want := range []string{
+			"has no Gerrit Change-Id trailer",
+			baseSHA,
+			"./gh hook install --git",
+			"reword",
+			"git rebase -i " + baseSHA + "~1",
+		} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("expected error to contain %q, got: %v", want, err)
+			}
+		}
+	})
 }
 
 func TestExtractTrailers(t *testing.T) {
