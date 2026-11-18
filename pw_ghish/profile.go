@@ -62,11 +62,22 @@ type PushOptions struct {
 	Nightly               bool
 	SubmitAt              string
 	ChangeNumber          int
+	// SourceRef is the local Git commit/ref pushed to refs/for/<branch>.
+	// Defaults to "HEAD" when empty.
+	SourceRef string
 	// StackChangeIDs lists the Change-Ids of the commits pushed with
 	// --stack, bottom first. When it has more than one entry, --nightly and
 	// --submit-at schedule every change in it rather than only HEAD. It
 	// does not affect the push ref.
 	StackChangeIDs []string
+}
+
+// sourceRef returns the trimmed SourceRef, defaulting to "HEAD" when empty.
+func (o PushOptions) sourceRef() string {
+	if ref := strings.TrimSpace(o.SourceRef); ref != "" {
+		return ref
+	}
+	return "HEAD"
 }
 
 // ProjectProfile defines project-specific Gerrit and CI conventions.

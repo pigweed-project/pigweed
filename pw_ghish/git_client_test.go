@@ -515,7 +515,7 @@ func TestGitClient_IsHeadRemoteTip(t *testing.T) {
 	})
 }
 
-func TestGitClient_HeadAuthorEmail_And_UserEmail(t *testing.T) {
+func TestGitClient_CommitAuthorEmail_And_UserEmail(t *testing.T) {
 	ctx := context.Background()
 
 	mock := &MockGitRunner{
@@ -533,12 +533,12 @@ func TestGitClient_HeadAuthorEmail_And_UserEmail(t *testing.T) {
 	}
 	client := NewGitClient(mock)
 
-	author, err := client.HeadAuthorEmail(ctx)
+	author, err := client.CommitAuthorEmail(ctx, "HEAD")
 	if err != nil {
-		t.Fatalf("unexpected HeadAuthorEmail error: %v", err)
+		t.Fatalf("unexpected CommitAuthorEmail error: %v", err)
 	}
 	if author != "author@example.com" {
-		t.Errorf("HeadAuthorEmail got %q, want author@example.com", author)
+		t.Errorf("CommitAuthorEmail got %q, want author@example.com", author)
 	}
 
 	user, err := client.UserEmail(ctx)
@@ -1098,9 +1098,9 @@ func TestRealGitRunner_IgnoresInheritedGitDirWhenDirExplicit(t *testing.T) {
 		t.Fatalf("commit in innerDir failed under inherited GIT_DIR/GIT_CONFIG_*: %v", err)
 	}
 
-	authorEmail, err := innerClient.HeadAuthorEmail(ctx)
+	authorEmail, err := innerClient.CommitAuthorEmail(ctx, "HEAD")
 	if err != nil || authorEmail != "test@example.com" {
-		t.Errorf("HeadAuthorEmail() = (%q, %v), want (test@example.com, nil)", authorEmail, err)
+		t.Errorf("CommitAuthorEmail() = (%q, %v), want (test@example.com, nil)", authorEmail, err)
 	}
 	var authorNameBuf strings.Builder
 	if err := innerClient.Run(ctx, &authorNameBuf, io.Discard, "log", "-1", "--format=%an", "HEAD"); err != nil {

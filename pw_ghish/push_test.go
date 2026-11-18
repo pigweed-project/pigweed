@@ -459,7 +459,7 @@ func TestPush_Stack_NewCommitBelowExistingChange(t *testing.T) {
 		if err == nil {
 			t.Fatal("Expected error when an earlier commit in the stack does not match any Gerrit change")
 		}
-		for _, want := range []string{"aaa1111", id1, "gh pr push --stack --force --base main"} {
+		for _, want := range []string{"aaa1111", id1, "gh pr push --stack --force --base main", "gh pr create aaa1111"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("Expected error to mention %q, got: %v", want, err)
 			}

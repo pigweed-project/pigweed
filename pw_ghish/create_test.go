@@ -1061,8 +1061,10 @@ func TestCreate_Stack_ExistingHead(t *testing.T) {
 				t.Errorf("expected Stack plan output to contain %q, got:\n%s", want, out)
 			}
 		}
-		if !strings.Contains(err.Error(), "gh pr create --stack --force") {
-			t.Errorf("expected remediation to suggest 'gh pr create --stack --force', got: %v", err)
+		for _, want := range []string{"gh pr create --stack --force", "gh pr create aaa1111"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("expected remediation to suggest %q, got: %v", want, err)
+			}
 		}
 		if mockGit.HasCall("push") {
 			t.Errorf("expected no git push on unconfirmed stack reorder, got: %v", mockGit.Calls)
@@ -1138,6 +1140,242 @@ func TestCreate_Stack_ExistingHead(t *testing.T) {
 		}
 		if mockGit.HasCall("push") {
 			t.Errorf("expected no git push when single-commit stack already exists, got: %v", mockGit.Calls)
+		}
+	})
+}
+
+func TestCreate_TargetCommitArg(t *testing.T) {
+	baseSHA := "1170aeea20000000000000000000000000000001"
+	headSHA := "463730ae30000000000000000000000000000002"
+	baseID := "Icb4065c8a7a932f8d8b42d0190cb9280b8b7ee32"
+	headID := "I6367ee29192c1fff44d64e5e16d8d9446badb417"
+
+	t.Run("pushes only specified base commit without pushing HEAD", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.On("GET", "/changes/", func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Query().Get("q"), headID) {
+				server.RespondJSON(w, http.StatusOK, []map[string]any{DefaultMockChange(999999, WithChangeID(headID))})
+				return
+			}
+			server.RespondJSON(w, http.StatusOK, []map[string]any{})
+		})
+
+		mockGit := NewMockGit(t).WithBranch("main").
+			WithCommit("pw_bluetooth_sapphire: Top commit\n\nChange-Id: "+headID+"\n").
+			OnCommand("rev-parse --verify 1170aeea2^{commit}", baseSHA+"\n").
+			OnCommand("rev-parse HEAD", headSHA+"\n").
+			OnCommand("log -1 --format=%B "+baseSHA, "pw_bluetooth_sapphire: Base commit\n\nChange-Id: "+baseID+"\n").
+			OnCommand("rev-list --count origin/main.."+baseSHA, "1\n")
+
+		out, err := executeCommand(RootCmd, "pr", "create", "1170aeea2", "--base", "main")
+		if err != nil {
+			t.Fatalf("gh pr create 1170aeea2 failed: %v\nOutput: %s", err, out)
+		}
+		if !mockGit.HasCall("push origin " + baseSHA + ":refs/for/main") {
+			t.Errorf("expected push of %s:refs/for/main (not HEAD), got calls: %v", baseSHA, mockGit.Calls)
+		}
+		if n := countCalls(mockGit.Calls, "push origin "); n != 1 {
+			t.Errorf("expected exactly 1 git push, got %d (%v)", n, mockGit.Calls)
+		}
+		if mockGit.HasCall("commit --amend") {
+			t.Errorf("expected no git commit --amend, got calls: %v", mockGit.Calls)
+		}
+		if !strings.Contains(out, "gh pr checks 1170aeea2 --watch [--fail-fast]") {
+			t.Errorf("expected Next receipt hint for target commit 1170aeea2, got:\n%s", out)
+		}
+	})
+
+	t.Run("rejects combining <commit> with --stack or commit-message flags", func(t *testing.T) {
+		for _, tc := range []struct {
+			name    string
+			args    []string
+			wantErr string
+		}{
+			{
+				name:    "--stack",
+				args:    []string{"pr", "create", "1170aeea2", "--stack"},
+				wantErr: "cannot specify both a commit",
+			},
+			{
+				name:    "--title",
+				args:    []string{"pr", "create", "1170aeea2", "--title", "New title"},
+				wantErr: "cannot combine commit-message editing flags",
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				NewMockGerritServer(t)
+				mockGit := NewMockGit(t).WithBranch("main")
+				if _, err := executeCommand(RootCmd, tc.args...); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("expected error containing %q, got: %v", tc.wantErr, err)
+				}
+				if mockGit.HasCall("push") {
+					t.Errorf("expected no git push, got: %v", mockGit.Calls)
+				}
+			})
+		}
+	})
+
+	t.Run("schedules --nightly submit flow on target commit instead of HEAD", func(t *testing.T) {
+		SetTestProfile(t, "pigweed")
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/", http.StatusOK, []map[string]any{})
+		server.OnJSON("GET", "/changes/"+baseID, http.StatusOK,
+			DefaultMockChange(111111, WithChangeID(baseID), WithLabels("Code-Review", "Commit-Queue", "Pigweed-Auto-Submit")))
+		server.OnFlows(111111)
+		server.OnFlowsEnabled(111111, http.StatusOK, true)
+		server.OnJSON("POST", "/changes/111111/flows", http.StatusCreated, map[string]any{})
+
+		// scheduleSubmitFlowForPush resolves baseSHA via ResolveTargetChangeID(baseSHA);
+		// stub refs/heads/<baseSHA> to fail so MockGitRunner does not treat baseSHA
+		// as a branch name and fall back to WithCommit (HEAD).
+		mockGit := NewMockGit(t).WithBranch("main").
+			WithCommit("pw_bluetooth_sapphire: Top commit\n\nChange-Id: "+headID+"\n").
+			OnCommand("rev-parse --verify 1170aeea2^{commit}", baseSHA+"\n").
+			OnCommand("rev-parse --verify "+baseSHA+"^{commit}", baseSHA+"\n").
+			OnError("rev-parse --verify refs/heads/"+baseSHA, errors.New("not found")).
+			OnCommand("rev-parse HEAD", headSHA+"\n").
+			OnCommand("log -1 --format=%B "+baseSHA, "pw_bluetooth_sapphire: Base commit\n\nChange-Id: "+baseID+"\n").
+			OnCommand("rev-list --count origin/main.."+baseSHA, "1\n")
+
+		out, err := executeCommand(RootCmd, "pr", "create", "1170aeea2", "--base", "main", "--nightly")
+		if err != nil {
+			t.Fatalf("gh pr create 1170aeea2 --nightly failed: %v\nOutput: %s", err, out)
+		}
+		if server.CallCount("POST", "/changes/111111/flows") != 1 {
+			t.Errorf("expected POST /changes/111111/flows once on base commit, got %d", server.CallCount("POST", "/changes/111111/flows"))
+		}
+		if !mockGit.HasCall("push origin " + baseSHA + ":refs/for/main") {
+			t.Errorf("expected push of %s, got: %v", baseSHA, mockGit.Calls)
+		}
+	})
+
+	t.Run("enforces multi-commit and fixup guards on explicit HEAD and <commit>", func(t *testing.T) {
+		t.Run("explicit HEAD multi-commit guard", func(t *testing.T) {
+			NewMockGerritServer(t)
+			mockGit := NewMockGit(t).WithBranch("main").
+				WithCommit("pw_foo: Top commit\n\nChange-Id: "+headID+"\n").
+				OnCommand("rev-parse --verify HEAD^{commit}", headSHA+"\n").
+				OnCommand("rev-parse HEAD", headSHA+"\n").
+				OnCommand("rev-list --count origin/main..HEAD", "3\n")
+
+			_, err := executeCommand(RootCmd, "pr", "create", "HEAD", "--base", "main")
+			if err == nil || !strings.Contains(err.Error(), "would create 3 separate Gerrit changes") {
+				t.Fatalf("expected multi-commit guard on explicit HEAD target, got: %v", err)
+			}
+			if mockGit.HasCall("push") {
+				t.Errorf("expected no git push on multi-commit HEAD target, got: %v", mockGit.Calls)
+			}
+		})
+
+		t.Run("<commit> multi-commit guard", func(t *testing.T) {
+			NewMockGerritServer(t)
+			mockGit := NewMockGit(t).WithBranch("main").
+				OnCommand("rev-parse --verify 1170aeea2^{commit}", baseSHA+"\n").
+				OnCommand("rev-parse HEAD", headSHA+"\n").
+				OnCommand("log -1 --format=%B "+baseSHA, "pw_bluetooth_sapphire: Middle commit\n\nChange-Id: "+baseID+"\n").
+				OnCommand("rev-list --count origin/main.."+baseSHA, "3\n")
+			_, err := executeCommand(RootCmd, "pr", "create", "1170aeea2", "--base", "main")
+			if err == nil || !strings.Contains(err.Error(), "would create 3 separate Gerrit changes") {
+				t.Fatalf("expected multi-commit guard error on <commit>, got: %v", err)
+			}
+			if mockGit.HasCall("push") {
+				t.Errorf("expected no git push on multi-commit <commit> target, got: %v", mockGit.Calls)
+			}
+		})
+
+		t.Run("<commit> fixup guard", func(t *testing.T) {
+			NewMockGerritServer(t)
+			mockGit := NewMockGit(t).WithBranch("main").
+				OnCommand("rev-parse --verify 1170aeea2^{commit}", baseSHA+"\n").
+				OnCommand("rev-parse HEAD", headSHA+"\n").
+				OnCommand("log -1 --format=%B "+baseSHA, "fixup! pw_foo: Base\n\nChange-Id: "+baseID+"\n")
+			_, err := executeCommand(RootCmd, "pr", "create", "1170aeea2", "--base", "main")
+			if err == nil || !strings.Contains(err.Error(), "unsquashed fixup/squash commit") {
+				t.Fatalf("expected fixup guard error, got: %v", err)
+			}
+			if mockGit.HasCall("push") {
+				t.Errorf("expected no git push on fixup <commit> target, got: %v", mockGit.Calls)
+			}
+		})
+	})
+
+	t.Run("errors when <commit> is missing a Gerrit Change-Id trailer without amending or pushing", func(t *testing.T) {
+		NewMockGerritServer(t)
+		mockGit := NewMockGit(t).WithBranch("main").
+			WithCommit("pw_foo: Top commit\n\nChange-Id: "+headID+"\n").
+			OnCommand("rev-parse --verify 1170aeea2^{commit}", baseSHA+"\n").
+			OnCommand("rev-parse HEAD", headSHA+"\n").
+			OnCommand("log -1 --format=%B "+baseSHA, "pw_foo: Base commit without Change-Id\n")
+
+		_, err := executeCommand(RootCmd, "pr", "create", "1170aeea2", "--base", "main")
+		if err == nil || !strings.Contains(err.Error(), "missing a Gerrit Change-Id trailer") {
+			t.Fatalf("expected missing Change-Id error for <commit>, got: %v", err)
+		}
+		if mockGit.HasCall("commit --amend") {
+			t.Errorf("expected no git commit --amend on non-HEAD commit, got: %v", mockGit.Calls)
+		}
+		if mockGit.HasCall("push") {
+			t.Errorf("expected no git push when <commit> lacks Change-Id, got: %v", mockGit.Calls)
+		}
+	})
+
+	t.Run("suggests gh pr create <commit> --force when <commit> already has a Gerrit change", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/", http.StatusOK, []map[string]any{
+			DefaultMockChange(111111, WithChangeID(baseID)),
+		})
+		mockGit := NewMockGit(t).WithBranch("main").
+			WithCommit("pw_foo: Top commit\n\nChange-Id: "+headID+"\n").
+			OnCommand("rev-parse --verify 1170aeea2^{commit}", baseSHA+"\n").
+			OnCommand("rev-parse HEAD", headSHA+"\n").
+			OnCommand("log -1 --format=%B "+baseSHA, "pw_foo: Base commit\n\nChange-Id: "+baseID+"\n")
+
+		_, err := executeCommand(RootCmd, "pr", "create", "1170aeea2", "--base", "main")
+		if err == nil || !strings.Contains(err.Error(), "gh pr create 1170aeea2 --force") {
+			t.Fatalf("expected 'gh pr create 1170aeea2 --force' hint, got: %v", err)
+		}
+		if mockGit.HasCall("push") {
+			t.Errorf("expected no git push when <commit> already exists without --force, got: %v", mockGit.Calls)
+		}
+	})
+
+	t.Run("resolves @owners for <commit> files rather than HEAD files", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		for dir, owner := range map[string]string{
+			"dir_base": "base_owner@example.com\n",
+			"dir_head": "head_owner@example.com\n",
+		} {
+			if err := os.MkdirAll(filepath.Join(tmpDir, dir), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(tmpDir, dir, "OWNERS"), []byte(owner), 0644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		oldMockCWD := MockCWD
+		MockCWD = tmpDir
+		t.Cleanup(func() { MockCWD = oldMockCWD })
+
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/", http.StatusOK, []map[string]any{})
+		mockGit := NewMockGit(t).WithBranch("main").
+			OnCommand("rev-parse --show-toplevel", tmpDir+"\n").
+			OnCommand("rev-parse --verify 1170aeea2^{commit}", baseSHA+"\n").
+			OnCommand("rev-parse HEAD", headSHA+"\n").
+			OnCommand("log -1 --format=%B "+baseSHA, "pw_foo: Base\n\nChange-Id: "+baseID+"\n").
+			OnCommand("log -1 --format=%ae "+baseSHA, "author@example.com\n").
+			OnCommand("diff-tree --no-commit-id --name-only -r "+baseSHA, "dir_base/foo.cc\n").
+			OnCommand("diff-tree --no-commit-id --name-only -r HEAD", "dir_head/bar.cc\n").
+			OnCommand("rev-list --count origin/main.."+baseSHA, "1\n")
+
+		if _, err := executeCommand(RootCmd, "pr", "create", "1170aeea2", "--base", "main", "--owner"); err != nil {
+			t.Fatalf("gh pr create 1170aeea2 --owner failed: %v", err)
+		}
+		if !mockGit.HasCall("r=base_owner@example.com") {
+			t.Errorf("expected r=base_owner@example.com from base commit files, got: %v", mockGit.Calls)
+		}
+		if mockGit.HasCall("r=head_owner@example.com") {
+			t.Errorf("did not expect r=head_owner@example.com from HEAD commit files, got: %v", mockGit.Calls)
 		}
 	})
 }

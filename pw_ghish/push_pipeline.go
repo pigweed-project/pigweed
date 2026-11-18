@@ -382,13 +382,17 @@ func resolvePushBranch(ctx context.Context, cfg *Config, baseFlag string, stderr
 // and validates commit messages and Change-Ids across all commits in the stack when available.
 // Returns an actionable error if count > 1 and stack is false.
 func ValidateCommitStack(ctx context.Context, git GitClient, branch string, stack bool, commandName string) error {
-	// The default client hands back the base ref the count verified, so
-	// listing the stack below does not verify it a second time.
+	return validateCommitStackRef(ctx, git, branch, "", "", stack, commandName)
+}
+
+func validateCommitStackRef(ctx context.Context, git GitClient, branch, targetArg, targetSHA string, stack bool, commandName string) error {
 	dg, isDefault := git.(*defaultGitClient)
 	var count int
 	var verifiedBase string
 	var countErr error
-	if isDefault {
+	if targetSHA != "" {
+		count, verifiedBase, countErr = countCommitsAheadTo(ctx, git, branch, targetSHA)
+	} else if isDefault {
 		count, verifiedBase, countErr = dg.countCommitsAheadRef(ctx, branch)
 	} else {
 		count, countErr = git.CountCommitsAhead(ctx, branch)
@@ -399,7 +403,16 @@ func ValidateCommitStack(ctx context.Context, git GitClient, branch string, stac
 		}
 		return nil
 	}
+	cleanBranch := sanitizeSingleLineTerminal(branch)
 	if count == 0 && commandName == "create" {
+		if targetSHA != "" {
+			return fmt.Errorf(
+				"cannot create a new change for commit %s: 0 commits ahead of target branch %q.\n\n"+
+					"Inspect your unpushed commits with:\n"+
+					"  git log --oneline origin/%s..HEAD",
+				targetArg, cleanBranch, cleanBranch,
+			)
+		}
 		return fmt.Errorf("cannot create a new change: HEAD has 0 commits ahead of target branch %q.\n\n"+
 			"In Gerrit, each change corresponds to a local commit.\n"+
 			"To create a change, first stage and commit your modifications:\n"+
@@ -408,10 +421,22 @@ func ValidateCommitStack(ctx context.Context, git GitClient, branch string, stac
 			"  gh pr create", branch)
 	}
 	if count > 1 && !stack {
+		if targetSHA != "" {
+			return fmt.Errorf(
+				"pushing commit %s would create %d separate Gerrit changes targeting branch %q.\n\n"+
+					"  • To upload only %s without earlier unpushed commits, rebase it onto origin/%s first.\n"+
+					"  • To upload the full stack of commits, run:\n"+
+					"      gh pr create --stack",
+				targetArg, count, cleanBranch, targetArg, cleanBranch,
+			)
+		}
 		if commandName == "create" {
 			return fmt.Errorf("pushing HEAD would create %d separate Gerrit changes targeting branch %q.\n\nTo target a different base branch, specify:\n  gh pr create --base <branch>\n\nTo create a stack of %d changes, pass --stack", count, branch, count)
 		}
 		return fmt.Errorf("pushing HEAD would push %d commits targeting branch %q.\n\nTo target a different base branch, specify:\n  gh pr push --base <branch>\n\nTo push a stack of %d changes, pass --stack", count, branch, count)
+	}
+	if targetSHA != "" {
+		return nil
 	}
 
 	var commits []StackCommit
@@ -429,9 +454,8 @@ func ValidateCommitStack(ctx context.Context, git GitClient, branch string, stac
 	}
 	seenChangeIDs := make(map[string]StackCommit, len(commits))
 	for _, c := range commits {
-		lowerSubj := strings.ToLower(strings.TrimSpace(c.Subject))
-		if strings.HasPrefix(lowerSubj, "fixup!") || strings.HasPrefix(lowerSubj, "squash!") || strings.HasPrefix(lowerSubj, "amend!") {
-			return fmt.Errorf("commit %s (%q) is an unsquashed fixup/squash commit.\n\nRun 'git rebase -i --autosquash origin/%s' before pushing", c.Hash, c.Subject, branch)
+		if err := checkFixupCommitSubject(c.Subject, fmt.Sprintf("%s (%q)", c.Hash, c.Subject), branch); err != nil {
+			return err
 		}
 		commitLabel := fmt.Sprintf("commit %s (%q)", c.Hash, c.Subject)
 		if err := CheckGitHubIssueSyntax(c.Body, commitLabel); err != nil {
@@ -454,12 +478,18 @@ func ValidateCommitStack(ctx context.Context, git GitClient, branch string, stac
 // checkPushSubmodulePolicy resolves and caches the Gerrit remote on cfg, gathers stack
 // commits when stack is true, and enforces CheckSubmodulePolicy before pushing.
 func checkPushSubmodulePolicy(ctx context.Context, cmd *cobra.Command, cfg *Config, existing *ChangeInfo, branch string, stack bool) error {
+	return checkPushSubmodulePolicyRef(ctx, cmd, cfg, existing, branch, "", stack)
+}
+
+func checkPushSubmodulePolicyRef(ctx context.Context, cmd *cobra.Command, cfg *Config, existing *ChangeInfo, branch, sourceRef string, stack bool) error {
 	remote := cfg.ResolveRemote(ctx)
 	if cfg.Remote == "" {
 		cfg.Remote = remote
 	}
 	var stackCommits []StackCommit
-	if stack {
+	if strings.TrimSpace(sourceRef) != "" {
+		stackCommits = []StackCommit{{Hash: strings.TrimSpace(sourceRef)}}
+	} else if stack {
 		stackCommits, _ = cfg.GitClient().StackCommits(ctx, branch)
 	}
 	return CheckSubmodulePolicy(ctx, cfg.GitClient(), cfg.GetProjectConfig(ctx), existing, remote, branch, stackCommits, cmd.ErrOrStderr())
@@ -509,7 +539,8 @@ func executePush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch st
 	if noVerify {
 		pushArgs = append(pushArgs, "--no-verify")
 	}
-	pushArgs = append(pushArgs, remote, "HEAD:"+refStr)
+	srcRef := pushOpts.sourceRef()
+	pushArgs = append(pushArgs, remote, srcRef+":"+refStr)
 
 	pushCtx := withGitConfigEnv(ctx, "color.ui", "false")
 	outBuf, errBuf, err := runGitWithAuthFallback(pushCtx, cfg.GitClient(), cfg, remote, pushArgs, cmd.ErrOrStderr())
@@ -559,6 +590,13 @@ func hasMetadataUpdates(opts PushOptions) bool {
 		len(opts.Reviewers) > 0 || len(opts.CC) > 0
 }
 
+func pushSourceTargetArgs(opts PushOptions) []string {
+	if srcRef := opts.sourceRef(); srcRef != "HEAD" {
+		return []string{srcRef}
+	}
+	return nil
+}
+
 func applyPushOptionsViaREST(ctx context.Context, cmd *cobra.Command, cfg *Config, pushOpts PushOptions) (retErr error) {
 	if cmd == nil {
 		return fmt.Errorf("internal error: cmd is uninitialized in applyPushOptionsViaREST")
@@ -573,7 +611,7 @@ func applyPushOptionsViaREST(ctx context.Context, cmd *cobra.Command, cfg *Confi
 		}
 	}()
 
-	chCtx, err := ResolveChangeContext(cmd, nil)
+	chCtx, err := ResolveChangeContext(cmd, pushSourceTargetArgs(pushOpts))
 	if err != nil {
 		return err
 	}
@@ -836,6 +874,48 @@ func CheckCommitMessageWarnings(msg string, label string) []string {
 	return warnings
 }
 
+// resolveTargetCommitForCreate resolves an optional <commit> argument passed to
+// 'gh pr create [<commit>]' into its full SHA. When <commit> is omitted or
+// resolves to HEAD, it returns ("", "", nil) so the caller uses the standard
+// HEAD path.
+func resolveTargetCommitForCreate(ctx context.Context, cfg *Config, targetArg string) (string, string, error) {
+	targetArg = strings.TrimSpace(targetArg)
+	if targetArg == "" {
+		return "", "", nil
+	}
+	cleanArg := sanitizeSingleLineTerminal(targetArg)
+	if strings.HasPrefix(targetArg, "-") {
+		return "", "", fmt.Errorf("cannot create change for %q: commit reference must not start with '-'", cleanArg)
+	}
+	git := cfg.GitClient()
+	rawSHA, err := git.RevParse(ctx, "--verify", targetArg+"^{commit}")
+	targetSHA := strings.TrimSpace(rawSHA)
+	if err != nil || targetSHA == "" {
+		return "", "", fmt.Errorf(
+			"cannot create change for %q: not a valid local Git commit.\n\n"+
+				"Inspect your local commit stack to find the commit hash:\n"+
+				"  git log --oneline -n 20",
+			cleanArg,
+		)
+	}
+	if headSHA, _ := git.RevParse(ctx, "HEAD"); strings.TrimSpace(headSHA) != "" && targetSHA == strings.TrimSpace(headSHA) {
+		return "", "", nil
+	}
+	return cleanArg, targetSHA, nil
+}
+
+func checkFixupCommitSubject(commitMsg, commitRef, branch string) error {
+	subject := strings.TrimSpace(strings.SplitN(commitMsg, "\n", 2)[0])
+	lowerSubj := strings.ToLower(subject)
+	if strings.HasPrefix(lowerSubj, "fixup!") || strings.HasPrefix(lowerSubj, "squash!") || strings.HasPrefix(lowerSubj, "amend!") {
+		return fmt.Errorf(
+			"commit %s is an unsquashed fixup/squash commit.\n\nRun 'git rebase -i --autosquash origin/%s' before pushing",
+			commitRef, branch,
+		)
+	}
+	return nil
+}
+
 // VerifyHeadForPush ensures the HEAD commit has a valid Change-Id, checks that
 // the commit message contains no GitHub issue syntax or duplicate Change-Ids,
 // and optionally queries Gerrit for an existing change matching the Change-Id.
@@ -850,28 +930,65 @@ func verifyHeadForPush(
 	queryExisting, noVerify bool,
 	prefetched *VerifiedPushState,
 ) (*VerifiedPushState, error) {
-	logMsg, err := ensureChangeID(ctx, cfg, noVerify, cmd.OutOrStdout(), cmd.ErrOrStderr())
-	if err != nil {
-		return nil, fmt.Errorf("error verifying Change-Id: %w", err)
-	}
-	if logMsg == "" {
-		logMsg, err = cfg.GitClient().HeadCommitMessage(ctx)
+	return verifyCommitForPush(ctx, cmd, cfg, "", "", "", queryExisting, noVerify, prefetched)
+}
+
+func verifyCommitForPush(
+	ctx context.Context,
+	cmd *cobra.Command,
+	cfg *Config,
+	targetArg, targetSHA, branch string,
+	queryExisting, noVerify bool,
+	prefetched *VerifiedPushState,
+) (*VerifiedPushState, error) {
+	var logMsg string
+	var err error
+	msgLabel := "the HEAD commit message"
+	warnLabel := "HEAD commit"
+	if targetSHA == "" {
+		logMsg, err = ensureChangeID(ctx, cfg, noVerify, cmd.OutOrStdout(), cmd.ErrOrStderr())
 		if err != nil {
-			return nil, fmt.Errorf("error reading HEAD commit message: %w", err)
+			return nil, fmt.Errorf("error verifying Change-Id: %w", err)
 		}
+		if logMsg == "" {
+			logMsg, err = cfg.GitClient().HeadCommitMessage(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("error reading HEAD commit message: %w", err)
+			}
+		}
+	} else {
+		logMsg, err = cfg.GitClient().CommitMessage(ctx, targetSHA)
+		if err != nil {
+			return nil, fmt.Errorf("error reading commit message for %s: %w", targetArg, err)
+		}
+		subject := strings.TrimSpace(strings.SplitN(logMsg, "\n", 2)[0])
+		if err := checkFixupCommitSubject(logMsg, fmt.Sprintf("%s (%q)", targetArg, sanitizeSingleLineTerminal(subject)), sanitizeSingleLineTerminal(branch)); err != nil {
+			return nil, err
+		}
+		msgLabel = fmt.Sprintf("commit %s", targetArg)
+		warnLabel = msgLabel
 	}
-	if err := CheckGitHubIssueSyntax(logMsg, "the HEAD commit message"); err != nil {
+	if err := CheckGitHubIssueSyntax(logMsg, msgLabel); err != nil {
 		return nil, err
 	}
-	if err := CheckMultipleChangeIDs(logMsg, "the HEAD commit message"); err != nil {
+	if err := CheckMultipleChangeIDs(logMsg, msgLabel); err != nil {
 		return nil, err
 	}
 
-	for _, w := range CheckCommitMessageWarnings(logMsg, "HEAD commit") {
+	for _, w := range CheckCommitMessageWarnings(logMsg, warnLabel) {
 		fmt.Fprintln(cmd.ErrOrStderr(), w)
 	}
 
 	changeID := ExtractChangeID(logMsg)
+	if targetSHA != "" && changeID == "" {
+		return nil, fmt.Errorf(
+			"commit %s is missing a Gerrit Change-Id trailer.\n\n"+
+				"Because %s sits below HEAD, install the commit-msg hook and reword the commit via rebase:\n"+
+				"  gh hook install --git\n"+
+				"  git rebase -i %s~1",
+			targetArg, targetArg, targetArg,
+		)
+	}
 	var existing *ChangeInfo
 	var queried bool
 	if prefetched != nil && prefetched.ChangeID == changeID {
@@ -961,8 +1078,25 @@ func changeWebURL(ctx context.Context, cfg *Config, ch *ChangeInfo) string {
 }
 
 func formatExistingSingleChangeError(ctx context.Context, cfg *Config, changeID string, ex *ChangeInfo) error {
+	return formatExistingCommitChangeError(ctx, cfg, changeID, ex, "")
+}
+
+func formatExistingCommitChangeError(ctx context.Context, cfg *Config, changeID string, ex *ChangeInfo, targetCommitArg string) error {
 	changeURL := changeWebURL(ctx, cfg, ex)
+	if cleanArg := sanitizeSingleLineTerminal(strings.TrimSpace(targetCommitArg)); cleanArg != "" {
+		return fmt.Errorf("a pull request for Change-Id %s already exists:\n  %s\n\nTo upload a new patchset for commit %s, run:\n  gh pr create %s --force", sanitizeSingleLineTerminal(changeID), changeURL, cleanArg, cleanArg)
+	}
 	return fmt.Errorf("a pull request for Change-Id %s already exists:\n  %s\n\nTo upload a new patchset, run:\n  gh pr push", sanitizeSingleLineTerminal(changeID), changeURL)
+}
+
+func formatBaseCommitCreateHint(idx int, cleanHash string) string {
+	if idx != 0 {
+		return ""
+	}
+	return fmt.Sprintf(
+		"\n  • To upload only commit %s without pushing commits above it, run:\n      gh pr create %s",
+		cleanHash, cleanHash,
+	)
 }
 
 // VerifyStackChanges inspects all commits in origin/<branch>..HEAD when --stack
@@ -1088,8 +1222,8 @@ func VerifyStackChanges(ctx context.Context, cmd *cobra.Command, cfg *Config, br
 						"  • If a commit's Change-Id was overwritten during 'git commit --amend -m' or 'git rebase',\n"+
 						"    restore its original Change-Id trailer before pushing.\n"+
 						"  • If you intentionally inserted a new commit below existing CLs in the stack, run:\n"+
-						"      gh pr push --stack --force --base %s",
-					cleanHash, cleanSubj, cleanCID, existingAbove.Number, sanitizeSingleLineTerminal(branch),
+						"      gh pr push --stack --force --base %s%s",
+					cleanHash, cleanSubj, cleanCID, existingAbove.Number, sanitizeSingleLineTerminal(branch), formatBaseCommitCreateHint(i, cleanHash),
 				)
 			}
 			return fmt.Errorf(
@@ -1098,10 +1232,10 @@ func VerifyStackChanges(ctx context.Context, cmd *cobra.Command, cfg *Config, br
 					"This can happen when an earlier commit lost its Change-Id during a rebase, or when you inserted a new commit below existing CLs.\n"+
 					"  • If accidental, restore the original Change-Id on commit %s.\n"+
 					"  • If you intentionally inserted a new commit below existing CLs, run:\n"+
-					"      gh pr create --stack --force",
+					"      gh pr create --stack --force%s",
 				cleanHash, cleanSubj, cleanCID,
 				existingAbove.Number, sanitizeSingleLineTerminal(laterC.Hash), sanitizeSingleLineTerminal(laterC.Subject),
-				cleanHash,
+				cleanHash, formatBaseCommitCreateHint(i, cleanHash),
 			)
 		}
 	}

@@ -258,7 +258,7 @@ type GitClient interface {
 	// resolves to expectedCurrentSHA, leaving index and working tree untouched.
 	UpdateHeadRef(ctx context.Context, targetSHA, expectedCurrentSHA, reason string) error
 	IsHeadRemoteTip(ctx context.Context) (bool, []string, error)
-	HeadAuthorEmail(ctx context.Context) (string, error)
+	CommitAuthorEmail(ctx context.Context, ref string) (string, error)
 	UserEmail(ctx context.Context) (string, error)
 	RemoteURL(ctx context.Context, remote string) (string, error)
 	RemotePushURL(ctx context.Context, remote string) (string, error)
@@ -1423,10 +1423,14 @@ func (c *defaultGitClient) IsHeadRemoteTip(ctx context.Context) (bool, []string,
 	return len(remotes) > 0, remotes, nil
 }
 
-func (c *defaultGitClient) HeadAuthorEmail(ctx context.Context) (string, error) {
+func (c *defaultGitClient) CommitAuthorEmail(ctx context.Context, ref string) (string, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		ref = "HEAD"
+	}
 	var stdout, stderr bytes.Buffer
-	if err := c.Run(ctx, &stdout, &stderr, "log", "-1", "--format=%ae", "HEAD"); err != nil {
-		return "", fmt.Errorf("failed to get HEAD author email: %w (stderr: %s)", err, stderr.String())
+	if err := c.Run(ctx, &stdout, &stderr, "log", "-1", "--format=%ae", ref); err != nil {
+		return "", fmt.Errorf("failed to get commit author email for %s: %w (stderr: %s)", ref, err, stderr.String())
 	}
 	return strings.TrimSpace(stdout.String()), nil
 }

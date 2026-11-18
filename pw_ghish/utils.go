@@ -580,12 +580,20 @@ func CountCommitsAhead(ctx context.Context, git GitRunner, branch string) (int, 
 // <remote>/<branch> ref it verified, so a caller that goes on to list the
 // same range (StackCommits) need not verify it again.
 func countCommitsAhead(ctx context.Context, git GitRunner, branch string) (int, string, error) {
+	return countCommitsAheadTo(ctx, git, branch, "HEAD")
+}
+
+func countCommitsAheadTo(ctx context.Context, git GitRunner, branch, tipRef string) (int, string, error) {
 	if git == nil {
 		return 0, "", fmt.Errorf("git runner cannot be nil")
 	}
 	branch = strings.TrimSpace(branch)
 	if branch == "" {
 		return 0, "", fmt.Errorf("cannot count commits ahead: branch name is empty")
+	}
+	tipRef = strings.TrimSpace(tipRef)
+	if tipRef == "" {
+		tipRef = "HEAD"
 	}
 	remote := "origin"
 	if gc, ok := git.(GitClient); ok {
@@ -605,7 +613,7 @@ func countCommitsAhead(ctx context.Context, git GitRunner, branch string) (int, 
 		return 0, "", fmt.Errorf("git rev-parse --verify %s failed: %w", targetRef, err)
 	}
 	var outBuf, listErr bytes.Buffer
-	rangeSpec := fmt.Sprintf("%s/%s..HEAD", remote, branch)
+	rangeSpec := fmt.Sprintf("%s/%s..%s", remote, branch, tipRef)
 	if err := git.Run(ctx, &outBuf, &listErr, "rev-list", "--count", rangeSpec); err != nil {
 		errStr := strings.TrimSpace(listErr.String())
 		if errStr != "" {

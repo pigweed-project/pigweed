@@ -619,7 +619,8 @@ func scheduleRetryCommand(opts PushOptions, changeID string) string {
 // scheduleSubmitFlowForPush creates the scheduled submit flows requested by
 // --nightly or --submit-at once the push or metadata update has succeeded.
 // done describes that success, for the error message if scheduling fails.
-// chCtx may be nil, in which case the change is resolved from HEAD. If
+// chCtx may be nil, in which case the change is resolved from opts.SourceRef
+// (or HEAD when empty). If
 // opts.StackChangeIDs is set, every change in the stack is scheduled instead
 // (see scheduleSubmitFlowForStack).
 func scheduleSubmitFlowForPush(cmd *cobra.Command, chCtx *ChangeContext, opts PushOptions, done string) error {
@@ -631,7 +632,7 @@ func scheduleSubmitFlowForPush(cmd *cobra.Command, chCtx *ChangeContext, opts Pu
 	}
 	if chCtx == nil {
 		var err error
-		chCtx, err = ResolveChangeContext(cmd, nil)
+		chCtx, err = ResolveChangeContext(cmd, pushSourceTargetArgs(opts))
 		if err != nil {
 			return &ScheduleFlowError{Done: done, Retry: scheduleRetryCommand(opts, ""), Err: err}
 		}

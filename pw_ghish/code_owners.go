@@ -91,14 +91,15 @@ func ExpandReviewersForChange(cmd *cobra.Command, chCtx *ChangeContext, reviewer
 }
 
 // ExpandReviewersForPush expands any @owners tokens in reviewers prior to
-// pushing a change or patchset. If reviewers contains no @owners tokens, it is
-// returned as-is without extra RPCs or git calls.
-func ExpandReviewersForPush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch string, existingChange *ChangeInfo, reviewers []string) ([]string, error) {
+// pushing sourceRef (e.g. "HEAD" or a commit SHA) as a change or patchset. If
+// reviewers contains no @owners tokens, it is returned as-is without extra RPCs
+// or git calls.
+func ExpandReviewersForPush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch, sourceRef string, existingChange *ChangeInfo, reviewers []string) ([]string, error) {
 	items := splitReviewerArgs(reviewers)
 	if !hasOwnersTokenInItems(items) {
 		return items, nil
 	}
-	owners, err := ResolveCodeOwnersForPush(ctx, cmd, cfg, branch, existingChange)
+	owners, err := ResolveCodeOwnersForPush(ctx, cmd, cfg, branch, sourceRef, existingChange)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +147,7 @@ func ResolveCodeOwnersForChange(chCtx *ChangeContext) ([]string, error) {
 		return client.QueryChangeCodeOwners(ctx, changeID, "current", filePath)
 	}
 	recentAuthorsFn := func(filePath string) []string {
-		return listRecentFileAuthors(ctx, chCtx.Config, filePath)
+		return listRecentFileAuthors(ctx, chCtx.Config, "HEAD", filePath)
 	}
 
 	owners := selectOwnersForFiles(files, authorEmail, repoRoot, queryFn, recentAuthorsFn)
@@ -156,11 +157,12 @@ func ResolveCodeOwnersForChange(chCtx *ChangeContext) ([]string, error) {
 	return owners, nil
 }
 
-// ResolveCodeOwnersForPush finds the minimal covering set of code owners for a
-// commit being pushed via `gh pr create` or `gh pr push`.
-func ResolveCodeOwnersForPush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch string, existingChange *ChangeInfo) ([]string, error) {
-	authorEmail := resolveLocalAuthorEmail(ctx, cfg, existingChange)
-	files := listHeadChangedFiles(ctx, cfg)
+// ResolveCodeOwnersForPush finds the minimal covering set of code owners for
+// sourceRef (e.g. "HEAD" or a commit SHA) being pushed via `gh pr create` or
+// `gh pr push`.
+func ResolveCodeOwnersForPush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch, sourceRef string, existingChange *ChangeInfo) ([]string, error) {
+	authorEmail := resolveLocalAuthorEmail(ctx, cfg, sourceRef, existingChange)
+	files := listCommitChangedFiles(ctx, cfg, sourceRef)
 	repoRoot := resolveRepoRoot(ctx, cfg)
 
 	client, _ := NewGerritClient(ctx, cmd)
@@ -215,12 +217,16 @@ func ResolveCodeOwnersForPush(ctx context.Context, cmd *cobra.Command, cfg *Conf
 	}
 
 	recentAuthorsFn := func(filePath string) []string {
-		return listRecentFileAuthors(ctx, cfg, filePath)
+		return listRecentFileAuthors(ctx, cfg, sourceRef, filePath)
 	}
 
 	owners := selectOwnersForFiles(files, authorEmail, repoRoot, queryFn, recentAuthorsFn)
 	if len(owners) == 0 {
-		return nil, noEligibleOwnersError("HEAD commit")
+		subject := "HEAD commit"
+		if sourceRef != "HEAD" {
+			subject = fmt.Sprintf("commit %s", sanitizeSingleLineTerminal(sourceRef))
+		}
+		return nil, noEligibleOwnersError(subject)
 	}
 	return owners, nil
 }
@@ -245,17 +251,17 @@ func resolveChangeAuthorEmail(chCtx *ChangeContext) string {
 			return e
 		}
 	}
-	return resolveLocalAuthorEmail(chCtx.Context, chCtx.Config, nil)
+	return resolveLocalAuthorEmail(chCtx.Context, chCtx.Config, "HEAD", nil)
 }
 
-func resolveLocalAuthorEmail(ctx context.Context, cfg *Config, existing *ChangeInfo) string {
+func resolveLocalAuthorEmail(ctx context.Context, cfg *Config, ref string, existing *ChangeInfo) string {
 	// ChangeInfo.Owner is a value struct (AccountInfo), not a pointer.
 	if existing != nil && strings.TrimSpace(existing.Owner.Email) != "" {
 		return strings.TrimSpace(existing.Owner.Email)
 	}
 	if cfg != nil {
 		git := cfg.GitClient()
-		if email, err := git.HeadAuthorEmail(ctx); err == nil && email != "" {
+		if email, err := git.CommitAuthorEmail(ctx, ref); err == nil && email != "" {
 			return email
 		}
 		if email, err := git.UserEmail(ctx); err == nil && email != "" {
@@ -278,7 +284,7 @@ func listChangeFiles(chCtx *ChangeContext) []string {
 			return paths
 		}
 	}
-	return listHeadChangedFiles(chCtx.Context, chCtx.Config)
+	return listCommitChangedFiles(chCtx.Context, chCtx.Config, "HEAD")
 }
 
 func isGerritMagicFile(path string) bool {
@@ -302,22 +308,22 @@ func extractModifiedFilePaths(fMap map[string]FileInfo) []string {
 	return paths
 }
 
-func listHeadChangedFiles(ctx context.Context, cfg *Config) []string {
+func listCommitChangedFiles(ctx context.Context, cfg *Config, ref string) []string {
 	if cfg == nil {
 		return nil
 	}
 	var stdout bytes.Buffer
-	if err := cfg.GitClient().Run(ctx, &stdout, io.Discard, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"); err == nil {
+	if err := cfg.GitClient().Run(ctx, &stdout, io.Discard, "diff-tree", "--no-commit-id", "--name-only", "-r", ref); err == nil {
 		if files := parseSortedLines(stdout.String()); len(files) > 0 {
 			return files
 		}
 	}
-	// For merge commits, plain `git diff-tree HEAD` returns no files.
-	// `git show --remerge-diff --name-only --format= HEAD` diffs the merge
+	// For merge commits, plain `git diff-tree <ref>` returns no files.
+	// `git show --remerge-diff --name-only --format= <ref>` diffs the merge
 	// commit against the automatic merge of its parents, returning only the
 	// files where merge conflicts were manually resolved.
 	stdout.Reset()
-	if err := cfg.GitClient().Run(ctx, &stdout, io.Discard, "show", "--remerge-diff", "--name-only", "--format=", "HEAD"); err != nil {
+	if err := cfg.GitClient().Run(ctx, &stdout, io.Discard, "show", "--remerge-diff", "--name-only", "--format=", ref); err != nil {
 		return nil
 	}
 	return parseSortedLines(stdout.String())
@@ -334,12 +340,12 @@ func parseSortedLines(raw string) []string {
 	return files
 }
 
-func listRecentFileAuthors(ctx context.Context, cfg *Config, filePath string) []string {
+func listRecentFileAuthors(ctx context.Context, cfg *Config, ref, filePath string) []string {
 	if cfg == nil || strings.TrimSpace(filePath) == "" {
 		return nil
 	}
 	var stdout bytes.Buffer
-	if err := cfg.GitClient().Run(ctx, &stdout, io.Discard, "log", "--no-merges", "-n", "10", "--format=%ae", "HEAD", "--", filePath); err != nil {
+	if err := cfg.GitClient().Run(ctx, &stdout, io.Discard, "log", "--no-merges", "-n", "10", "--format=%ae", ref, "--", filePath); err != nil {
 		return nil
 	}
 	var authors []string

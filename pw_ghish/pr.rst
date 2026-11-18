@@ -41,11 +41,20 @@ Quick reference
 ---------------------------
 Creating changes: pr create
 ---------------------------
-Pushes your local ``HEAD`` commit to Gerrit as a **new** change:
+Pushes your local ``HEAD`` commit (or a specific commit ``<commit>`` at the base
+of your stack) to Gerrit as a **new** change:
 
 .. code-block:: console
 
+   # Create a CL from HEAD:
    $ ./gh pr create -r "reviewer@google.com" --cq --auto
+
+   # Create a CL for a single commit at the base of a stack without pushing commits above it:
+   $ ./gh pr create 1170aeea2 --cq
+
+When ``<commit>`` is specified, it must be a single unpushed commit directly
+ahead of ``<base>`` and cannot be combined with ``--stack`` or commit-message
+editing flags (``--title``/``--body``/``--body-file``/``--bug``/``--fixed``).
 
 Supported flags
 ===============
@@ -117,9 +126,10 @@ proceed:
 Automated Change-Id injection
 =============================
 Gerrit requires a ``Change-Id: I...`` footer in each commit message. If your
-commit is missing a ``Change-Id``, ``pr create`` automatically adds a fresh
-``Change-Id`` trailer, placed where Gerrit's ``commit-msg`` hook would put it,
-and amends ``HEAD`` before pushing.
+``HEAD`` commit is missing a ``Change-Id``, ``pr create`` automatically adds a
+fresh ``Change-Id`` trailer, placed where Gerrit's ``commit-msg`` hook would put
+it, and amends ``HEAD`` before pushing. Non-``HEAD`` ``<commit>`` targets are
+not amended automatically and must already have a ``Change-Id`` trailer.
 
 ----------------------------
 Uploading patchsets: pr push
@@ -693,8 +703,8 @@ Comparison with GitHub CLI (gh pr)
    * - Command / Flag
      - Gerrit Behavior in ``pw_ghish``
      - Difference from Upstream ``gh pr``
-   * - ``pr create``
-     - Pushes ``HEAD`` to ``refs/for/<base>`` as a **new** CL.
+   * - ``pr create [<commit>]``
+     - Pushes ``HEAD`` (or ``<commit>``) to ``refs/for/<base>`` as a **new** CL.
      - Stops if ``Change-Id`` already exists on Gerrit (use ``pr push``).
        Adds ``--bug``, ``--fixed``, ``--stack``, ``--cq``, ``--auto``,
        ``--nightly``, ``--submit-at``, ``--owner`` / ``--add-owner``,

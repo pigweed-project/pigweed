@@ -20,15 +20,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
 
 var createCmd = &cobra.Command{
-	Use:         "create",
+	Use:         "create [<commit>]",
+	Args:        cobra.MaximumNArgs(1),
 	Annotations: map[string]string{KindAnnotation: KindMutation},
-	Short:       "Create a new change by pushing current HEAD to Gerrit",
-	Long: `Create a new Gerrit change by pushing the current HEAD commit to refs/for/<branch>.
+	Short:       "Create a new change by pushing current HEAD (or <commit>) to Gerrit",
+	Long: `Create a new Gerrit change by pushing the current HEAD commit (or a specific
+local <commit> at the base of your stack) to refs/for/<branch>.
 
 If a single commit's Change-Id already exists on Gerrit, this command errors
 and suggests 'gh pr push'. With --stack, if every commit in the stack already
@@ -56,13 +59,47 @@ Supports rich push options:
 		}
 		force, _ := cmd.Flags().GetBool("force")
 
+		targetCommitArg := ""
+		if len(args) > 0 {
+			targetCommitArg = strings.TrimSpace(args[0])
+		}
+		cleanCommitArg := sanitizeSingleLineTerminal(targetCommitArg)
+		if targetCommitArg != "" && flags.Stack {
+			return fmt.Errorf(
+				"cannot specify both a commit (%q) and --stack.\n\n"+
+					"  • To create a single CL for commit %s only, run:\n"+
+					"      gh pr create %s\n"+
+					"  • To create CLs across the entire commit stack up to HEAD, run:\n"+
+					"      gh pr create --stack",
+				cleanCommitArg, cleanCommitArg, cleanCommitArg,
+			)
+		}
+		if targetCommitArg != "" {
+			cmFlags := ParseCommitMessageFlags(cmd)
+			if cmFlags.HasAny(cmd) {
+				return fmt.Errorf(
+					"cannot combine commit-message editing flags (--title/--body/--body-file/--bug/--fixed) with an explicit <commit> (%q).\n\n"+
+						"Commit-message flags only amend HEAD. Edit %s's message with 'git rebase -i %s~1' first, or omit <commit> to amend HEAD.",
+					cleanCommitArg, cleanCommitArg, cleanCommitArg,
+				)
+			}
+		}
+
 		guard, branch, err := prepareCommitForCreate(ctx, cmd, cfg, flags)
 		if err != nil {
 			return err
 		}
 		defer guard.Rollback(ctx, cmd.ErrOrStderr())
 
-		state, err := VerifyHeadForPush(ctx, cmd, cfg, !force, flags.NoVerify)
+		targetCommitArg, targetSHA, err := resolveTargetCommitForCreate(ctx, cfg, targetCommitArg)
+		if err != nil {
+			return err
+		}
+		if targetSHA != "" {
+			flags.PushOptions.SourceRef = targetSHA
+		}
+
+		state, err := verifyCommitForPush(ctx, cmd, cfg, targetCommitArg, targetSHA, branch, !force, flags.NoVerify, nil)
 		if err != nil {
 			return err
 		}
@@ -70,17 +107,15 @@ Supports rich push options:
 			return err
 		}
 		if state.ExistingChange != nil && !flags.Stack {
-			return formatExistingSingleChangeError(ctx, cfg, state.ChangeID, state.ExistingChange)
+			return formatExistingCommitChangeError(ctx, cfg, state.ChangeID, state.ExistingChange, targetCommitArg)
 		}
 
-		if err := ValidateCommitStack(ctx, cfg.GitClient(), branch, flags.Stack, "create"); err != nil {
+		if err := validateCommitStackRef(ctx, cfg.GitClient(), branch, targetCommitArg, targetSHA, flags.Stack, "create"); err != nil {
 			return err
 		}
-
-		if err := checkPushSubmodulePolicy(ctx, cmd, cfg, state.ExistingChange, branch, flags.Stack); err != nil {
+		if err := checkPushSubmodulePolicyRef(ctx, cmd, cfg, state.ExistingChange, branch, targetSHA, flags.Stack); err != nil {
 			return err
 		}
-
 		if flags.Stack && !force {
 			if err := VerifyStackChanges(ctx, cmd, cfg, branch, state, "create"); err != nil {
 				return err
@@ -100,7 +135,7 @@ Supports rich push options:
 			flags.PushOptions.AutoSubmitUnsupported = autoSubmit.Unsupported
 		}
 
-		flags.PushOptions.Reviewers, err = ExpandReviewersForPush(ctx, cmd, cfg, branch, nil, flags.PushOptions.Reviewers)
+		flags.PushOptions.Reviewers, err = ExpandReviewersForPush(ctx, cmd, cfg, branch, flags.PushOptions.sourceRef(), nil, flags.PushOptions.Reviewers)
 		if err != nil {
 			return err
 		}
@@ -154,11 +189,15 @@ Supports rich push options:
 		if flags.Stack {
 			summary = "Stack pushed successfully."
 		}
+		nextCmd := "gh pr checks --watch [--fail-fast]"
+		if targetCommitArg != "" {
+			nextCmd = fmt.Sprintf("gh pr checks %s --watch [--fail-fast]", targetCommitArg)
+		}
 		PrintReceipt(cmd.OutOrStdout(), Receipt{
 			Summary: summary,
 			Details: details,
 			URL:     ExtractGerritURLFromGitOutput(pushBuf.String()),
-			Next:    "gh pr checks --watch [--fail-fast]",
+			Next:    nextCmd,
 		})
 		// The change exists, so this is reported last: creating it is not the
 		// part that failed, the promise that something would submit it is.

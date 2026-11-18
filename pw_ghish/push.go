@@ -117,7 +117,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 		flags.PushOptions.AutoSubmitUnsupported = autoSubmit.Unsupported
 	}
 
-	flags.PushOptions.Reviewers, err = ExpandReviewersForPush(ctx, cmd, cfg, branch, state.ExistingChange, flags.PushOptions.Reviewers)
+	flags.PushOptions.Reviewers, err = ExpandReviewersForPush(ctx, cmd, cfg, branch, flags.PushOptions.sourceRef(), state.ExistingChange, flags.PushOptions.Reviewers)
 	if err != nil {
 		return err
 	}
