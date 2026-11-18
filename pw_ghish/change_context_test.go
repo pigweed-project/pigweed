@@ -1014,28 +1014,252 @@ func TestIsLoopbackHost(t *testing.T) {
 }
 
 func TestResolveChangeContext_PreservesTargetHost(t *testing.T) {
-	server := NewMockGerritServer(t)
-	server.OnDefaultChange(12345, WithProjectName("fuchsia"))
+	SetTestProfile(t, "")
 
-	// Even when cfg.Host is already populated from the local checkout, an explicit
-	// URL or shortlink argument should override it when --host was not passed.
+	// Even when cfg.Host or HostFlag is already populated (without an explicit
+	// --host flag), an explicit URL or shortlink argument should override it
+	// without mutating the caller's Config or cmd's context.
+	tests := []struct {
+		name       string
+		hasConfig  bool
+		cfgHost    string
+		cfgProfile ProjectProfile
+		hostFlag   string
+		wantReuse  bool
+	}{
+		{
+			name:       "populated_config_host",
+			hasConfig:  true,
+			cfgHost:    "pigweed-review.googlesource.com",
+			cfgProfile: profiles["pigweed"],
+		},
+		{
+			name:      "empty_config_host_and_empty_host_flag",
+			hasConfig: true,
+			cfgHost:   "",
+			hostFlag:  "",
+		},
+		{
+			name:      "empty_config_host_with_non_loopback_host_flag",
+			hasConfig: true,
+			cfgHost:   "",
+			hostFlag:  "pigweed-review.googlesource.com",
+		},
+		{
+			name:      "nil_config_with_empty_host_flag",
+			hasConfig: false,
+			hostFlag:  "",
+		},
+		{
+			name:      "nil_config_with_non_loopback_host_flag",
+			hasConfig: false,
+			hostFlag:  "pigweed-review.googlesource.com",
+		},
+		{
+			name:      "matching_config_host_reuses_config",
+			hasConfig: true,
+			cfgHost:   "fuchsia-review.googlesource.com",
+			wantReuse: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			oldHost := HostFlag
+			HostFlag = tc.hostFlag
+			t.Cleanup(func() { HostFlag = oldHost })
+
+			var clientCtxCfg, clientCmdCfg *Config
+			SetMockGerritClient(t, func(ctx context.Context, cmd *cobra.Command) (*GerritClient, error) {
+				clientCtxCfg, _ = ctx.Value(configKey).(*Config)
+				clientCmdCfg = GetConfig(cmd)
+				return NewGerritClientWithHTTP("https://fuchsia-review.googlesource.com", nil, mockGerritAuth), nil
+			})
+
+			cmd := &cobra.Command{}
+			cmd.SetContext(t.Context())
+			var callerCfg *Config
+			if tc.hasConfig {
+				callerCfg = &Config{
+					Host:    tc.cfgHost,
+					Profile: tc.cfgProfile,
+					Git:     DefaultGitRunner,
+				}
+				SetConfig(cmd, callerCfg)
+			}
+
+			chCtx, err := ResolveChangeContext(cmd, []string{"https://fuchsia-review.googlesource.com/c/fuchsia/+/12345/2"})
+			if err != nil {
+				t.Fatalf("ResolveChangeContext failed: %v", err)
+			}
+			if chCtx.Host != "fuchsia-review.googlesource.com" {
+				t.Errorf("chCtx.Host = %q, want fuchsia-review.googlesource.com", chCtx.Host)
+			}
+			if chCtx.Project != "fuchsia" {
+				t.Errorf("chCtx.Project = %q, want fuchsia", chCtx.Project)
+			}
+			if gotHost := chCtx.Config.GerritHost(chCtx.Context); gotHost != "fuchsia-review.googlesource.com" {
+				t.Errorf("chCtx.Config.GerritHost() = %q, want fuchsia-review.googlesource.com", gotHost)
+			}
+			if gotCtxCfg, _ := chCtx.Context.Value(configKey).(*Config); gotCtxCfg != chCtx.Config {
+				t.Errorf("chCtx.Context config = %p, want chCtx.Config %p", gotCtxCfg, chCtx.Config)
+			}
+			if clientCtxCfg != chCtx.Config {
+				t.Errorf("NewGerritClient ctx config = %p, want chCtx.Config %p", clientCtxCfg, chCtx.Config)
+			}
+			if clientCmdCfg != chCtx.Config {
+				t.Errorf("NewGerritClient GetConfig(cmd) = %p, want chCtx.Config %p", clientCmdCfg, chCtx.Config)
+			}
+			if gotCmdCfg := GetConfig(cmd); gotCmdCfg != callerCfg {
+				t.Errorf("GetConfig(cmd) after ResolveChangeContext = %p, want %p", gotCmdCfg, callerCfg)
+			}
+			if prof, err := chCtx.ResolveProfile("fuchsia"); err != nil || prof.Name() != "fuchsia" {
+				t.Errorf("chCtx.ResolveProfile(\"fuchsia\") = (%v, %v), want fuchsia profile", prof, err)
+			}
+			if callerCfg != nil {
+				if callerCfg.Host != tc.cfgHost {
+					t.Errorf("callerCfg.Host = %q, want %q", callerCfg.Host, tc.cfgHost)
+				}
+				if !tc.wantReuse && callerCfg.Profile != tc.cfgProfile {
+					t.Errorf("callerCfg.Profile = %v, want %v", callerCfg.Profile, tc.cfgProfile)
+				}
+				if gotReuse := (chCtx.Config == callerCfg); gotReuse != tc.wantReuse {
+					t.Errorf("chCtx.Config == callerCfg is %v, want %v", gotReuse, tc.wantReuse)
+				}
+			}
+		})
+	}
+}
+
+func TestResolveChangeContext_ExplicitHostFlagPrecedence(t *testing.T) {
+	SetTestProfile(t, "")
+	oldHost := HostFlag
+	t.Cleanup(func() { HostFlag = oldHost })
+
+	var clientCtxCfg, clientCmdCfg *Config
+	SetMockGerritClient(t, func(ctx context.Context, cmd *cobra.Command) (*GerritClient, error) {
+		clientCtxCfg, _ = ctx.Value(configKey).(*Config)
+		clientCmdCfg = GetConfig(cmd)
+		return NewGerritClientWithHTTP("https://chromium-review.googlesource.com", nil, mockGerritAuth), nil
+	})
+
+	callerCfg := &Config{
+		Host:    "pigweed-review.googlesource.com",
+		Profile: profiles["pigweed"],
+		Git:     DefaultGitRunner,
+	}
 	cmd := &cobra.Command{}
-	cmd.SetContext(context.Background())
-	SetConfig(cmd, &Config{Host: "pigweed-review.googlesource.com"})
+	cmd.SetContext(t.Context())
+	SetConfig(cmd, callerCfg)
+	cmd.Flags().StringVar(&HostFlag, "host", "", "")
+	if err := cmd.Flags().Set("host", "chromium-review.googlesource.com"); err != nil {
+		t.Fatalf("Flags().Set(host) failed: %v", err)
+	}
 
 	chCtx, err := ResolveChangeContext(cmd, []string{"https://fuchsia-review.googlesource.com/c/fuchsia/+/12345/2"})
 	if err != nil {
 		t.Fatalf("ResolveChangeContext failed: %v", err)
 	}
-	if chCtx.Host != "fuchsia-review.googlesource.com" {
-		t.Errorf("chCtx.Host = %q, want fuchsia-review.googlesource.com", chCtx.Host)
+	if chCtx.Config.Host != "chromium-review.googlesource.com" {
+		t.Errorf("chCtx.Config.Host = %q, want chromium-review.googlesource.com", chCtx.Config.Host)
 	}
-	if chCtx.Project != "fuchsia" {
-		t.Errorf("chCtx.Project = %q, want fuchsia", chCtx.Project)
+	if chCtx.Host != "chromium-review.googlesource.com" {
+		t.Errorf("chCtx.Host = %q, want chromium-review.googlesource.com", chCtx.Host)
 	}
-	if gotHost := chCtx.Config.GerritHost(cmd.Context()); gotHost != "fuchsia-review.googlesource.com" {
-		t.Errorf("chCtx.Config.GerritHost() = %q, want fuchsia-review.googlesource.com", gotHost)
+	if clientCtxCfg != chCtx.Config || clientCmdCfg != chCtx.Config {
+		t.Errorf("NewGerritClient configs = (%p, %p), want chCtx.Config %p", clientCtxCfg, clientCmdCfg, chCtx.Config)
 	}
+	if callerCfg.Host != "pigweed-review.googlesource.com" {
+		t.Errorf("callerCfg.Host mutated to %q, want pigweed-review.googlesource.com", callerCfg.Host)
+	}
+	if callerCfg.Profile != profiles["pigweed"] {
+		t.Errorf("callerCfg.Profile mutated to %v, want pigweed profile", callerCfg.Profile)
+	}
+	if chCtx.Config.Profile != nil {
+		t.Errorf("chCtx.Config.Profile = %v, want nil before lazy resolution", chCtx.Config.Profile)
+	}
+	if prof, err := chCtx.ResolveProfile(""); err != nil || prof.Name() != "generic" {
+		t.Errorf("chCtx.ResolveProfile(\"\") = (%v, %v), want generic profile", prof, err)
+	}
+	if gotCmdCfg := GetConfig(cmd); gotCmdCfg != callerCfg {
+		t.Errorf("GetConfig(cmd) after ResolveChangeContext = %p, want callerCfg %p", gotCmdCfg, callerCfg)
+	}
+
+	t.Run("explicit_profile_flag_overrides_stale_caller_profile", func(t *testing.T) {
+		SetTestProfile(t, "fuchsia")
+		chCtx2, err := ResolveChangeContext(cmd, []string{"https://chromium-review.googlesource.com/c/chromium/src/+/12345"})
+		if err != nil {
+			t.Fatalf("ResolveChangeContext failed: %v", err)
+		}
+		if chCtx2.Config.Profile != nil {
+			t.Errorf("chCtx2.Config.Profile = %v, want nil before GetProfile", chCtx2.Config.Profile)
+		}
+		if gotProf := chCtx2.Config.GetProfile(chCtx2.Context); gotProf != profiles["fuchsia"] {
+			t.Errorf("chCtx2.Config.GetProfile() = %v, want fuchsia profile from ProfileFlag", gotProf)
+		}
+		if callerCfg.Profile != profiles["pigweed"] {
+			t.Errorf("callerCfg.Profile mutated to %v, want pigweed profile", callerCfg.Profile)
+		}
+	})
+}
+
+func TestResolveChangeContext_PreservesLoopbackHostFlagOnShortlink(t *testing.T) {
+	server := NewMockGerritServer(t)
+
+	t.Run("nil_config", func(t *testing.T) {
+		cmd := &cobra.Command{}
+		cmd.SetContext(t.Context())
+
+		chCtx, err := ResolveChangeContext(cmd, []string{"pwrev/12345"})
+		if err != nil {
+			t.Fatalf("ResolveChangeContext failed: %v", err)
+		}
+		if chCtx.Config.Host != server.URL {
+			t.Errorf("chCtx.Config.Host = %q, want loopback %q", chCtx.Config.Host, server.URL)
+		}
+		if chCtx.Host != "pigweed-review.googlesource.com" {
+			t.Errorf("chCtx.Host = %q, want pigweed-review.googlesource.com", chCtx.Host)
+		}
+		if gotCtxCfg, _ := chCtx.Context.Value(configKey).(*Config); gotCtxCfg != chCtx.Config {
+			t.Errorf("chCtx.Context config = %p, want chCtx.Config %p", gotCtxCfg, chCtx.Config)
+		}
+		if gotCmdCfg := GetConfig(cmd); gotCmdCfg != nil {
+			t.Errorf("GetConfig(cmd) after ResolveChangeContext = %p, want nil", gotCmdCfg)
+		}
+	})
+
+	t.Run("config_with_empty_host_preserves_profile", func(t *testing.T) {
+		callerCfg := &Config{
+			Profile: profiles["fuchsia"],
+			Git:     DefaultGitRunner,
+		}
+		cmd := &cobra.Command{}
+		cmd.SetContext(t.Context())
+		SetConfig(cmd, callerCfg)
+
+		chCtx, err := ResolveChangeContext(cmd, []string{"pwrev/12345"})
+		if err != nil {
+			t.Fatalf("ResolveChangeContext failed: %v", err)
+		}
+		if chCtx.Config.Host != server.URL {
+			t.Errorf("chCtx.Config.Host = %q, want loopback %q", chCtx.Config.Host, server.URL)
+		}
+		if chCtx.Config.Profile != profiles["fuchsia"] {
+			t.Errorf("chCtx.Config.Profile = %v, want pre-populated fuchsia profile preserved on loopback host", chCtx.Config.Profile)
+		}
+		if chCtx.Host != "pigweed-review.googlesource.com" {
+			t.Errorf("chCtx.Host = %q, want pigweed-review.googlesource.com", chCtx.Host)
+		}
+		if gotCtxCfg, _ := chCtx.Context.Value(configKey).(*Config); gotCtxCfg != chCtx.Config {
+			t.Errorf("chCtx.Context config = %p, want chCtx.Config %p", gotCtxCfg, chCtx.Config)
+		}
+		if callerCfg.Host != "" {
+			t.Errorf("callerCfg.Host mutated to %q, want empty", callerCfg.Host)
+		}
+		if gotCmdCfg := GetConfig(cmd); gotCmdCfg != callerCfg {
+			t.Errorf("GetConfig(cmd) after ResolveChangeContext = %p, want callerCfg %p", gotCmdCfg, callerCfg)
+		}
+	})
 }
 
 func TestResolveCIContext_CanonicalHostAndEquivalentPatchsets(t *testing.T) {

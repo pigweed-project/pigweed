@@ -61,7 +61,8 @@ func ResolveChangeContext(cmd *cobra.Command, args []string) (*ChangeContext, er
 	if cmd == nil {
 		return nil, fmt.Errorf("internal error: cmd is nil")
 	}
-	ctx := cmd.Context()
+	origCtx := cmd.Context()
+	ctx := origCtx
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -79,17 +80,40 @@ func ResolveChangeContext(cmd *cobra.Command, args []string) (*ChangeContext, er
 		return nil, fmt.Errorf("internal error: parsed change ID is empty from %q", targetID)
 	}
 
-	cfg := GetConfig(cmd)
+	origCfg := GetConfig(cmd)
+	cfg := origCfg
 	if cfg == nil {
 		cfg = &Config{Git: DefaultGitRunner}
 	}
+
 	hostFlagChanged := isHostFlagChanged(cmd)
-	if parsed.Host != "" && !hostFlagChanged && !isLoopbackHost(cfg.Host) {
-		cfg.Host = parsed.Host
-		SetConfig(cmd, cfg)
-		ctx = cmd.Context()
+	host := cmp.Or(cfg.Host, HostFlag)
+	if hostFlagChanged && HostFlag != "" {
+		host = HostFlag
+	} else if parsed.Host != "" && !hostFlagChanged && !isLoopbackHost(host) {
+		host = parsed.Host
 	}
 
+	if origCfg == nil || host != cfg.Host {
+		if origCfg != nil {
+			configMu.Lock()
+			cfgCopy := *cfg
+			configMu.Unlock()
+			if !isLoopbackHost(host) {
+				cfgCopy.Profile = nil
+			}
+			cfg = &cfgCopy
+		}
+		cfg.Host = host
+	}
+	if ctx.Value(configKey) != cfg {
+		ctx = context.WithValue(ctx, configKey, cfg)
+	}
+
+	if cmd.Context() != ctx {
+		cmd.SetContext(ctx)
+		defer cmd.SetContext(origCtx)
+	}
 	client, err := NewGerritClient(ctx, cmd)
 	if err != nil {
 		return nil, fmt.Errorf("error creating Gerrit client: %w", err)
