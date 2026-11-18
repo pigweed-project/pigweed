@@ -204,7 +204,7 @@ def generic_presubmit_check(
         )
 
     if found_words:
-        output_lines = []
+        output_lines: list[str] = []
         for i, (path, matches) in enumerate(found_words.items()):
             if i:
                 output_lines.append('=' * 40)

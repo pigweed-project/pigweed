@@ -33,8 +33,9 @@ try:
     from python.runfiles import runfiles  # type: ignore
 
     r = runfiles.Create()
-    _TARGET_CLIENT_COMMAND = r.Rlocation(
-        'pigweed/pw_target_runner/go/cmd/client_/client'
+    assert r is not None
+    _TARGET_CLIENT_COMMAND = (
+        r.Rlocation('pigweed/pw_target_runner/go/cmd/client_/client') or ''
     )
 except ImportError:
     _TARGET_CLIENT_COMMAND = 'pw_target_runner_client'

@@ -55,6 +55,7 @@ pw_py_binary(
         # TODO: b/434032260 - Fix these warnings.
         "nopylint",
         "nomypy",
+        "nopyrefly",
     ],
     deps = [
         ":config_pb2",
@@ -77,6 +78,7 @@ pw_py_test(
         # TODO: b/434032260 - Fix these warnings.
         "nopylint",
         "nomypy",
+        "nopyrefly",
     ],
     deps = [
         ":config_pb2",
@@ -156,6 +158,7 @@ pw_py_library(
     tags = [
         "nomypy",
         "nopylint",
+        "nopyrefly",
     ],
     deps = [
         ":config_pb2",
@@ -217,6 +220,7 @@ pw_py_test(
         # TODO: b/434032260 - Fix these warnings.
         "nopylint",
         "nomypy",
+        "nopyrefly",
     ],
     deps = [
         ":config_pb2",
@@ -238,6 +242,7 @@ pw_py_test(
         # TODO: b/434032260 - Fix these warnings.
         "nopylint",
         "nomypy",
+        "nopyrefly",
     ],
     deps = [
         ":config_pb2",
@@ -259,6 +264,7 @@ pw_py_test(
         # TODO: b/434032260 - Fix these warnings.
         "nopylint",
         "nomypy",
+        "nopyrefly",
     ],
     deps = [
         ":config_pb2",
@@ -279,6 +285,7 @@ pw_py_test(
         # TODO: b/434032260 - Fix these warnings.
         "nopylint",
         "nomypy",
+        "nopyrefly",
     ],
     deps = [
         ":config_pb2",
@@ -297,6 +304,7 @@ pw_py_test(
         # TODO: b/434032260 - Fix these warnings.
         "nopylint",
         "nomypy",
+        "nopyrefly",
     ],
     deps = [
         ":config_pb2",
@@ -320,6 +328,7 @@ pw_py_test(
         # TODO: b/434032260 - Fix these warnings.
         "nopylint",
         "nomypy",
+        "nopyrefly",
     ],
     # Legacy binaries were only built for linux-x86_64.
     target_compatible_with = ["@platforms//os:linux"],
@@ -355,6 +364,7 @@ pw_py_binary(
     tags = [
         # TODO: b/434032260 - Fix these warnings.
         "nomypy",
+        "nopyrefly",
         "nopylint",
     ],
     deps = [

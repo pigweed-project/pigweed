@@ -30,7 +30,10 @@ pw_py_library(
     # TODO: b/437916275 - This target requires a dependency on
     # "@pigweed_python_packages//black", but we can't add it yet because it
     # breaks downstream.
-    tags = ["nomypy"],
+    tags = [
+        "nomypy",
+        "nopyrefly",
+    ],
     deps = [
         "//pw_cli/py:pw_cli",
     ],

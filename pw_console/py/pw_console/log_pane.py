@@ -857,7 +857,7 @@ class LogPane(WindowPane):
     ) -> list[tuple[str, Callable | None]]:
         """Return all menu options for the log pane."""
 
-        options = [
+        options: list[tuple[str, Callable | None]] = [
             # Menu separator
             ('-', None),
             (

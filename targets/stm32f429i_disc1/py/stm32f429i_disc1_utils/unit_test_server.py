@@ -35,11 +35,13 @@ try:
     from python.runfiles import runfiles  # type: ignore
 
     r = runfiles.Create()
-    _TEST_RUNNER_COMMAND = r.Rlocation(
-        'pigweed/targets/stm32f429i_disc1/py/unit_test_runner'
+    assert r is not None
+    _TEST_RUNNER_COMMAND = (
+        r.Rlocation('pigweed/targets/stm32f429i_disc1/py/unit_test_runner')
+        or ''
     )
-    _TEST_SERVER_COMMAND = r.Rlocation(
-        'pigweed/pw_target_runner/go/cmd/server_/server'
+    _TEST_SERVER_COMMAND = (
+        r.Rlocation('pigweed/pw_target_runner/go/cmd/server_/server') or ''
     )
 except ImportError:
     _TEST_RUNNER_COMMAND = 'stm32f429i_disc1_unit_test_runner'

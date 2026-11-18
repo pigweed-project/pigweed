@@ -391,7 +391,7 @@ class Event(Generic[_SignalT]):
 
     @overload
     def __init__(
-        self: Event[_SignalT],
+        self,
         timestamp_ns: int,
         endpoint: Signal[_SignalT],
         value: _SignalT,

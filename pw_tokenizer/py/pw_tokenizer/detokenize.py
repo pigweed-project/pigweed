@@ -47,6 +47,7 @@ import sys
 import threading
 import time
 from typing import (
+    Any,
     AnyStr,
     BinaryIO,
     Callable,
@@ -368,7 +369,10 @@ class Detokenizer:
 
         def detokenize(message: AnyStr) -> AnyStr:
             result = self._detokenize_nested(message, recursion)
-            return result.decode() if isinstance(message, str) else result
+            decoded: Any = (
+                result.decode() if isinstance(message, str) else result
+            )
+            return decoded
 
         return detokenize
 
@@ -848,7 +852,7 @@ def main() -> int:
     args = _parse_args()
 
     handler = args.handler
-    del args.handler
+    delattr(args, 'handler')
 
     handler(**vars(args))
     return 0

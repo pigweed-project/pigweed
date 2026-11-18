@@ -58,7 +58,7 @@ class BoardInfo(typing.NamedTuple):
         ]
 
 
-def detect_boards(arduino_package_path=False) -> list:
+def detect_boards(arduino_package_path: str | None = None) -> list:
     """Detect attached boards, returning a list of Board objects."""
 
     teensy_core = Path()

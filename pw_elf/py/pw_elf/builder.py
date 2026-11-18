@@ -159,7 +159,7 @@ class _ElfWriter(abc.ABC):
 
         phoff = self.ehdr_size if num_phdr > 0 else 0
 
-        self.write(ident)  # e_ident
+        self.write(bytes(ident))  # e_ident
         self.write_half(elf_type)  # e_type
         self.write_half(machine)  # e_machine
         self.write_word(_EV_CURRENT)  # e_version

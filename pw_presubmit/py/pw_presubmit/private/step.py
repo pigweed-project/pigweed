@@ -195,6 +195,7 @@ def step(
                 def fix(  # pylint: disable=unused-argument
                     self, ctx: Context
                 ) -> None:
+                    assert fix_func is not None
                     fix_func(ctx)
 
         return _DecoratedStep()

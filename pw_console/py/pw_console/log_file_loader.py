@@ -245,7 +245,7 @@ class LogFileLoader:
                 }
             }
 
-        overridden_window_config = {
+        overridden_window_config: dict[str, dict[str, Any]] = {
             "Group 1 tabbed": {
                 str(fls.path): log_window_options
                 for fls in self.file_log_stores.values()
@@ -253,7 +253,5 @@ class LogFileLoader:
         }
 
         # Move Python Repl to the end of the group.
-        overridden_window_config['Group 1 tabbed'].update(
-            {'Python Repl': None}  # type: ignore
-        )
+        overridden_window_config['Group 1 tabbed']['Python Repl'] = None
         return overridden_window_config

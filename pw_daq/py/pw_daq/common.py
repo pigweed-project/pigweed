@@ -268,7 +268,7 @@ class AttributeRef(EndpointRef):
 
     _KIND: ClassVar[str] = "attribute"
 
-    block: BlockRef
+    block: BlockRef  # pyrefly: ignore[bad-override]
     attribute: str
 
     def __post_init__(self) -> None:
@@ -285,7 +285,7 @@ class SignalRef(EndpointRef):
 
     _KIND: ClassVar[str] = "signal"
 
-    block: BlockRef
+    block: BlockRef  # pyrefly: ignore[bad-override]
     signal: str
 
     def __post_init__(self) -> None:
@@ -302,7 +302,7 @@ class ActionRef(EndpointRef):
 
     _KIND: ClassVar[str] = "action"
 
-    block: BlockRef
+    block: BlockRef  # pyrefly: ignore[bad-override]
     action: str
 
     def __post_init__(self) -> None:
@@ -333,7 +333,7 @@ class EventRef(Generic[_SignalT]):
 
     @overload
     def __init__(
-        self: EventRef[_SignalT],
+        self,
         timestamp_ns: int,
         endpoint: SignalRef,
         value: _SignalT,
@@ -389,7 +389,7 @@ class ActionResult(Generic[_OutT]):
 
     @overload
     def __init__(
-        self: ActionResult[_OutT],
+        self,
         success: bool,
         value: _OutT,
         value_type: ValueType | None = None,

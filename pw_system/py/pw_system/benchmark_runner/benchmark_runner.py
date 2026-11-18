@@ -14,6 +14,7 @@
 """This file provides a basic host-side runner class for RPC benchmarking"""
 import argparse
 import logging
+from types import ModuleType
 from typing import Any
 
 from pw_protobuf_protos import common_pb2
@@ -25,7 +26,7 @@ from pw_system.device_connection import (
     create_device_serial_or_socket_connection,
 )
 
-default_protos = [common_pb2, echo_pb2, benchmark_pb2]
+default_protos: list[ModuleType] = [common_pb2, echo_pb2, benchmark_pb2]
 
 
 class Runner:

@@ -160,7 +160,7 @@ def test_affected_targets(ctx: Context) -> None:
 
 @step(suffix=('.py',))
 def python_lint(ctx: Context) -> None:
-    """Runs mypy and pylint on affected targets using bazelisk."""
+    """Runs mypy, pyrefly, and pylint on affected targets using bazelisk."""
     if not ctx.paths:
         return
 
@@ -172,6 +172,18 @@ def python_lint(ctx: Context) -> None:
         'build',
         mypy_rules,
         extra_args=('--config=mypy',),
+    )
+
+    pyrefly_rules, _ = _get_affected_targets(
+        ctx.all_modified_paths,
+        ctx.root,
+        extra_tags=('nopyrefly', 'no-pyrefly'),
+    )
+    _run_bazel_command(
+        ctx,
+        'build',
+        pyrefly_rules,
+        extra_args=('--config=pyrefly',),
     )
 
     pylint_rules, _ = _get_affected_targets(

@@ -77,6 +77,7 @@ def path(env: Mapping[str, str] | None = None) -> Path:
 
 
 def path_from_runfiles() -> Path:
+    assert runfiles is not None
     r = runfiles.Create()
     assert r is not None
     location = r.Rlocation("pigweed.json")

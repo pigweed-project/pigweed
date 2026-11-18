@@ -34,6 +34,7 @@ viewports:
 from dataclasses import dataclass, field
 import os
 from pathlib import Path
+from typing import Any
 
 from docutils import nodes  # type: ignore[import-untyped]
 from jinja2 import Environment
@@ -211,8 +212,9 @@ def render_site_nav(
     """Renders the HTML navigation markup for a specific page."""
     if env is None:
         env = Environment(autoescape=True, trim_blocks=True, lstrip_blocks=True)
-        env.globals["is_matching"] = is_matching_url
-        env.globals["has_active_child"] = lambda item, cur: any(
+        env_globals: Any = env.globals
+        env_globals["is_matching"] = is_matching_url
+        env_globals["has_active_child"] = lambda item, cur: any(
             has_active_descendant(child, cur) for child in item.children
         )
     template = env.from_string(_SITE_NAV_TEMPLATE)
@@ -241,8 +243,9 @@ def inject_site_nav(app: Sphinx) -> None:
         return
 
     env = Environment(autoescape=True, trim_blocks=True, lstrip_blocks=True)
-    env.globals["is_matching"] = is_matching_url
-    env.globals["has_active_child"] = lambda item, cur: any(
+    env_globals: Any = env.globals
+    env_globals["is_matching"] = is_matching_url
+    env_globals["has_active_child"] = lambda item, cur: any(
         has_active_descendant(child, cur) for child in item.children
     )
 

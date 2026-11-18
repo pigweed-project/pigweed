@@ -161,6 +161,24 @@
       ]
     },
     {
+      "name": "python_pyrefly",
+      "build_config": {
+        "name": "python_pyrefly_config",
+        "description": "pyrefly",
+        "build_type": "bazel",
+        "args": [
+          "--config=pyrefly"
+        ],
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "no_test": true
+        }
+      },
+      "targets": [
+        "//..."
+      ]
+    },
+    {
       "name": "build_rp2040_tests",
       "build_config": {
         "name": "pico_rp2040",
@@ -1095,10 +1113,11 @@
     },
     {
       "name": "python_checks",
-      "description": "Python pylint and mypy",
+      "description": "Python pylint, mypy, and pyrefly",
       "builds": [
         "python_pylint",
-        "python_mypy"
+        "python_mypy",
+        "python_pyrefly"
       ]
     },
     {

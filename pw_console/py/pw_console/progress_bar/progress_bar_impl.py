@@ -58,10 +58,9 @@ class TextIfNotHidden(Text):
         progress: ProgressBarCounter[object],
         width: int,
     ) -> AnyFormattedText:
-        formatted_text = super().format(progress_bar, progress, width)
         if hasattr(progress, 'hide_eta') and progress.hide_eta:  # type: ignore
-            formatted_text = [('', ' ' * width)]
-        return formatted_text
+            return [('', ' ' * width)]
+        return super().format(progress_bar, progress, width)
 
 
 class IterationsPerSecondIfNotHidden(IterationsPerSecond):
@@ -71,10 +70,9 @@ class IterationsPerSecondIfNotHidden(IterationsPerSecond):
         progress: ProgressBarCounter[object],
         width: int,
     ) -> AnyFormattedText:
-        formatted_text = super().format(progress_bar, progress, width)
         if hasattr(progress, 'hide_eta') and progress.hide_eta:  # type: ignore
-            formatted_text = [('class:iterations-per-second', ' ' * width)]
-        return formatted_text
+            return [('class:iterations-per-second', ' ' * width)]
+        return super().format(progress_bar, progress, width)
 
 
 class TimeLeftIfNotHidden(TimeLeft):
@@ -84,10 +82,9 @@ class TimeLeftIfNotHidden(TimeLeft):
         progress: ProgressBarCounter[object],
         width: int,
     ) -> AnyFormattedText:
-        formatted_text = super().format(progress_bar, progress, width)
         if hasattr(progress, 'hide_eta') and progress.hide_eta:  # type: ignore
-            formatted_text = [('class:time-left', ' ' * width)]
-        return formatted_text
+            return [('class:time-left', ' ' * width)]
+        return super().format(progress_bar, progress, width)
 
 
 class ProgressBarImpl:

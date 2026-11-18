@@ -27,7 +27,10 @@ pw_py_library(
     name = "pyserial_wrapper",
     srcs = ["pw_console/pyserial_wrapper.py"],
     # TODO: b/434772781 - This target's dependencies are not quite correct.
-    tags = ["nomypy"],
+    tags = [
+        "nomypy",
+        "nopyrefly",
+    ],
     deps = [
         ":event_count_history",
         "@pigweed_python_packages//pyserial",

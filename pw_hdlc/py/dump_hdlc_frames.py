@@ -155,7 +155,10 @@ def _parse_args() -> argparse.Namespace:
 
 def _ignore_sigpipe() -> None:
     try:
-        signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+        signal.signal(
+            signal.SIGPIPE,  # pyrefly: ignore[missing-attribute]
+            signal.SIG_DFL,
+        )
     except (AttributeError, ValueError):
         pass
 

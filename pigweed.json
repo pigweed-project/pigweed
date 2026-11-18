@@ -167,6 +167,11 @@
             "build",
             "--config=mypy",
             "//..."
+          ],
+          [
+            "build",
+            "--config=pyrefly",
+            "//..."
           ]
         ],
         "integration": [

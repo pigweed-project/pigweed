@@ -262,7 +262,7 @@ def main() -> None:
         trim_blocks=True,
         lstrip_blocks=True,
     )
-    environment.globals["kid_from_name"] = kid_from_name
+    environment.globals["kid_from_name"] = kid_from_name  # type: ignore[index]
 
     if args.language == "cpp":
         template = environment.get_template("cpp_constants.jinja")

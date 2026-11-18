@@ -260,7 +260,7 @@ class ConsoleApp:
         self.app_help_text = help_text if help_text else None
         self.app_help_window = HelpWindow(
             self,
-            additional_help_text=help_text,
+            additional_help_text=help_text or '',
             title=(self.app_title + ' Help'),
         )
         self.app_help_window.generate_keybind_help_text()
@@ -391,13 +391,13 @@ class ConsoleApp:
                         ),
                     ),
                 ),
-                # pylint: enable=line-too-long
                 Float(
                     content=self.command_runner,
                     # Callable to get width
                     width=self.command_runner.content_width,
-                    **self.prefs.command_runner_position,
+                    **self.prefs.command_runner_position,  # type: ignore[arg-type]
                 ),
+                # pylint: enable=line-too-long
                 Float(
                     content=self.quit_dialog,
                     top=2,

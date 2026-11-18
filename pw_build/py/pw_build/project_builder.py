@@ -1227,7 +1227,6 @@ class ProjectBuilder:  # pylint: disable=too-many-instance-attributes
             tag = self.color.green('(OK)')
 
         build_finish_msg = [
-            level,
             '%s %s %s %s %s',
             index_message,
             self.color.cyan('Finished ==>'),
@@ -1238,9 +1237,9 @@ class ProjectBuilder:  # pylint: disable=too-many-instance-attributes
 
         # Log finish to the root log if recipe logs are not sent.
         if not self.send_recipe_logs_to_root:
-            logger.log(*build_finish_msg)
+            logger.log(level, *build_finish_msg)
         if cfg.logfile:
-            cfg.log.log(*build_finish_msg)
+            cfg.log.log(level, *build_finish_msg)
 
         if (
             not BUILDER_CONTEXT.build_stopping()

@@ -19,7 +19,7 @@ import logging
 from pathlib import Path
 import time
 from types import ModuleType
-from typing import Any, Callable, Collection
+from typing import Any, Callable, Collection, Sequence
 
 import serial
 
@@ -88,7 +88,7 @@ def create_device_serial_or_socket_connection(
     socket_addr: str | None = None,
     ticks_per_second: int | None = None,
     serial_debug: bool = False,
-    compiled_protos: list[ModuleType] | None = None,
+    compiled_protos: Sequence[ModuleType] | None = None,
     rpc_logging: bool = True,
     channel_id: int = rpc.DEFAULT_CHANNEL_ID,
     hdlc_encoding: bool = True,
@@ -178,15 +178,16 @@ def create_device_serial_or_socket_connection(
 
     protos: list[ModuleType | Path] = []
 
-    if compiled_protos is None:
-        compiled_protos = []
+    compiled_proto_list: list[ModuleType] = (
+        list(compiled_protos) if compiled_protos else []
+    )
 
     # Append compiled log.proto library to avoid include errors when
     # manually provided, and shadowing errors due to ordering when the
     # default global search path is used.
-    compiled_protos.append(log_pb2)
-    compiled_protos.append(unit_test_pb2)
-    protos.extend(compiled_protos)
+    compiled_proto_list.append(log_pb2)
+    compiled_proto_list.append(unit_test_pb2)
+    protos.extend(compiled_proto_list)
     protos.append(metric_service_pb2)
     protos.append(thread_snapshot_service_pb2)
     protos.append(file_pb2)

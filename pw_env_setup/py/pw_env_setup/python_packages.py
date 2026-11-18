@@ -188,7 +188,8 @@ def _get_ignored_requirements(
     ignored_raw_requirements = [
         req
         for line in ignored_lines
-        if not (req := Requirement(line)).marker or req.marker.evaluate()
+        if (marker := (req := Requirement(line)).marker) is None
+        or marker.evaluate()
     ]
     ignored_requirements = frozenset(
         _strip_extras_and_markers(req) for req in ignored_raw_requirements
@@ -287,7 +288,8 @@ def diff(
     expected_requirements = frozenset(
         _strip_extras_and_markers(req)
         for line in expected_lines
-        if not (req := Requirement(line)).marker or req.marker.evaluate()
+        if (marker := (req := Requirement(line)).marker) is None
+        or marker.evaluate()
     )
     ignored_requirements, ignored_transitive_deps = _get_ignored_requirements(
         expected_requirements, ignored_lines

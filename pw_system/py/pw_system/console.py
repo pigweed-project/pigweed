@@ -41,6 +41,7 @@ from typing import (
     Any,
     Callable,
     Collection,
+    Sequence,
     TYPE_CHECKING,
 )
 
@@ -309,7 +310,7 @@ def console(
     verbose: bool = False,
     host_log_level: int = logging.INFO,
     device_log_level: int = logging.DEBUG,
-    compiled_protos: list[ModuleType] | None = None,
+    compiled_protos: Sequence[ModuleType] | None = None,
     merge_device_and_host_logs: bool = False,
     rpc_logging: bool = True,
     channel_id: int = rpc.DEFAULT_CHANNEL_ID,
@@ -433,7 +434,7 @@ def console(
 
 def main(
     args: argparse.Namespace | None = None,
-    compiled_protos: list[ModuleType] | None = None,
+    compiled_protos: Sequence[ModuleType] | None = None,
     timestamp_decoder: Callable[[int], str] | None = None,
     device_connection: DeviceConnection | None = None,
     extra_frame_handlers: dict[int, Callable[[bytes, Any], Any]] | None = None,
@@ -473,7 +474,7 @@ def main(
 
 # TODO(b/353327855): Deprecated function, remove when no longer used.
 def main_with_compiled_protos(
-    compiled_protos: list[ModuleType] | None = None,
+    compiled_protos: Sequence[ModuleType] | None = None,
     args: argparse.Namespace | None = None,
     device_connection: DeviceConnection | None = None,
 ) -> int:

@@ -1304,11 +1304,16 @@ class WindowManager:
 
             # Add windows to the this column (window_list)
             for window_title, window_dict in windows.items():
-                window_options = window_dict if window_dict else {}
+                window_options: dict[str, Any] = (
+                    window_dict if window_dict else {}
+                )
                 new_pane = None
                 desired_window_title = window_title
                 # Check for duplicate_of: Title value
-                window_title = window_options.get('duplicate_of', window_title)
+                window_title = (
+                    window_options.get('duplicate_of', window_title)
+                    or window_title
+                )
 
                 # Check if this pane is brand new, ready to be added, or should
                 # be duplicated.

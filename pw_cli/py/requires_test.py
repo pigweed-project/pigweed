@@ -322,7 +322,7 @@ class JsonTest(unittest.TestCase):
     def test_dump_json_patches(self) -> None:
         outs = io.StringIO()
         requires.dump_json_patches(
-            [
+            [  # type: ignore[arg-type]
                 {'gerrit_name': 'existing', 'number': 1},  # type: ignore
                 Change('pigweed', 123),
             ],

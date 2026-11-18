@@ -311,11 +311,6 @@ class OwnersFormatter(FileFormatter):
             formatted_version = '\n'.join(
                 file_to_format.formatted_lines
             ).encode()
-            return FormattedFileContents(
-                ok=True,
-                formatted_file_contents=formatted_version,
-                error_message=None,
-            )
         except OwnersError as err:
             return FormattedFileContents(
                 ok=False,
@@ -330,6 +325,11 @@ class OwnersFormatter(FileFormatter):
                 formatted_file_contents=formatted_version,
                 error_message=str(err),
             )
+        return FormattedFileContents(
+            ok=True,
+            formatted_file_contents=formatted_version,
+            error_message=None,
+        )
 
     def format_file(self, file_path: Path) -> FormatFixStatus:
         """Formats the provided file in-place using ``gn format``.

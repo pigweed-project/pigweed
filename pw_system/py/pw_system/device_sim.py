@@ -14,6 +14,7 @@
 """Launch a simulated device subprocess under pw_console."""
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
 import subprocess
 import sys
@@ -36,7 +37,7 @@ def _parse_args() -> tuple[argparse.Namespace, list[str]]:
 def launch_sim(
     sim_binary: Path,
     remaining_args: list[str],
-    compiled_protos: list[ModuleType] | None = None,
+    compiled_protos: Sequence[ModuleType] | None = None,
     device_connection: DeviceConnection | None = None,
 ) -> int:
     """Launches a host-device-sim binary, and attaches a console to it."""
@@ -66,7 +67,7 @@ def launch_sim(
 
 
 def main(
-    compiled_protos: list[ModuleType] | None = None,
+    compiled_protos: Sequence[ModuleType] | None = None,
     device_connection: DeviceConnection | None = None,
 ) -> int:
     sim_args, remaining_args = _parse_args()
@@ -80,7 +81,7 @@ def main(
 
 # TODO(b/353327855): Deprecated function, remove when no longer used.
 def main_with_compiled_protos(
-    compiled_protos: list[ModuleType] | None = None,
+    compiled_protos: Sequence[ModuleType] | None = None,
     device_connection: DeviceConnection | None = None,
 ) -> int:
     return main(

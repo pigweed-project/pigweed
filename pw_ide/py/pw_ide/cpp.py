@@ -110,9 +110,9 @@ class CppIdeFeaturesTarget:
         }
 
     @classmethod
-    def deserialize(cls, **data) -> CppIdeFeaturesTarget:
+    def deserialize(cls, **data: Any) -> CppIdeFeaturesTarget:
         return cls(
-            **{
+            **{  # type: ignore[arg-type]
                 **data,
                 **{
                     'compdb_file_path': Path(data['compdb_file_path']),

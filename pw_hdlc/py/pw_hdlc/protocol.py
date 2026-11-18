@@ -50,7 +50,7 @@ def encode_address(address: int) -> bytes:
             break
 
     result[-1] |= 0x1
-    return result
+    return bytes(result)
 
 
 def decode_address(frame: bytes) -> tuple[int, int]:

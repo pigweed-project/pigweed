@@ -218,7 +218,7 @@ class TestInteractive(TestCli):
 
         # pylint: disable=no-member
         # Avoid pylint false positive on win32.
-        pid, fd = pty.fork()
+        pid, fd = pty.fork()  # pyrefly: ignore[missing-attribute]
         if pid == 0:
             status = self._run(['term', 'tcp'])
             # pylint: disable=protected-access
@@ -228,7 +228,7 @@ class TestInteractive(TestCli):
             expected = '--- Miniterm on tcp ---'
 
             # Read the expected string with a timeout.
-            os.set_blocking(fd, False)
+            os.set_blocking(fd, False)  # pyrefly: ignore[missing-attribute]
             deadline = time.monotonic() + 5
             data = self._read_nonblocking(fd, len(expected))
             while len(data) < len(expected):
@@ -246,7 +246,10 @@ class TestInteractive(TestCli):
 
             # wait for the process to exit, with a timeout
             deadline = time.monotonic() + 5
-            wait_pid, ret = os.waitpid(pid, os.WNOHANG)
+            wait_pid, ret = os.waitpid(
+                pid,
+                os.WNOHANG,  # pyrefly: ignore[missing-attribute]
+            )
             while wait_pid == 0:
                 time.sleep(0.1)
                 # Discard input to avoid writer hang on MacOS,
@@ -257,7 +260,10 @@ class TestInteractive(TestCli):
                     # Avoid read errors when the child pair of the pty
                     # closes when the child terminates.
                     pass
-                wait_pid, ret = os.waitpid(pid, os.WNOHANG)
+                wait_pid, ret = os.waitpid(
+                    pid,
+                    os.WNOHANG,  # pyrefly: ignore[missing-attribute]
+                )
                 if time.monotonic() > deadline:
                     break
             self.assertEqual(wait_pid, pid)

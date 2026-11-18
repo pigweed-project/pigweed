@@ -875,12 +875,16 @@ class DaqAndBlocksTest(unittest.TestCase):
         # Non-writable or unknown attributes on Daq.digital() raise TypeError.
         # pylint: disable=unexpected-keyword-arg
         with self.assertRaises(TypeError):
-            self.daq.digital(  # type: ignore[call-arg]
-                2, direction=DigitalDirection.IN, pin="p2"
+            self.daq.digital(
+                2,
+                direction=DigitalDirection.IN,
+                pin="p2",  # type: ignore[call-arg, unexpected-keyword]
             )
         with self.assertRaises(TypeError):
-            self.daq.digital(  # type: ignore[call-arg]
-                2, direction=DigitalDirection.IN, slew="fast"
+            self.daq.digital(
+                2,
+                direction=DigitalDirection.IN,
+                slew="fast",  # type: ignore[call-arg, unexpected-keyword]
             )
         # pylint: enable=unexpected-keyword-arg
 
@@ -1009,12 +1013,16 @@ class DaqAndBlocksTest(unittest.TestCase):
 
         # pylint: disable=unexpected-keyword-arg
         with self.assertRaises(TypeError):
-            self.daq.uart(  # type: ignore[call-arg]
-                1, baudrate=115200, txpin="p4"
+            self.daq.uart(
+                1,
+                baudrate=115200,
+                txpin="p4",  # type: ignore[call-arg, unexpected-keyword]
             )
         with self.assertRaises(TypeError):
-            self.daq.uart(  # type: ignore[call-arg]
-                1, baudrate=115200, flow_control=True
+            self.daq.uart(
+                1,
+                baudrate=115200,
+                flow_control=True,  # type: ignore[call-arg, unexpected-keyword]
             )
         # pylint: enable=unexpected-keyword-arg
         with self.assertRaises(DaqError):
@@ -1159,7 +1167,7 @@ class DaqAndBlocksTest(unittest.TestCase):
         with self.assertRaises(DaqError):
             EventRef(  # type: ignore[call-overload]
                 timestamp_ns=10,
-                endpoint=u0.rx,
+                endpoint=u0.rx,  # type: ignore[bad-argument-type]
             )
         with self.assertRaises(DaqError):
             EventRef(
@@ -1170,7 +1178,7 @@ class DaqAndBlocksTest(unittest.TestCase):
         with self.assertRaises(DaqError):
             Event(  # type: ignore[call-overload]
                 timestamp_ns=10,
-                endpoint=rx_ref,
+                endpoint=rx_ref,  # type: ignore[bad-argument-type]
             )
         with self.assertRaises(DaqError):
             Event(

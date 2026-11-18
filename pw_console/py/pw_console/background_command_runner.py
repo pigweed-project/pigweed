@@ -162,7 +162,7 @@ class BackgroundTask:
 
         proc_command = self.proc.args
         if isinstance(self.proc.args, list):
-            proc_command = ' '.join(self.proc.args)
+            proc_command = ' '.join(str(a) for a in self.proc.args)
         try:
             self.logger.debug('Stopping %s', proc_command)
             self.proc.terminate()

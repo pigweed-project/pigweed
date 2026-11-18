@@ -30,7 +30,7 @@ class ForwardingSocketTest(unittest.TestCase):
         first, second = socket_pair()
         with first, second:
             buf = bytearray(b'hello')
-            first.write(buf)
+            first.write(buf)  # pyrefly: ignore[bad-argument-type]
             buf[0] = ord('X')  # Mutating caller buffer must not mutate queue.
             first.write(b'')
             second.write(b'reply')

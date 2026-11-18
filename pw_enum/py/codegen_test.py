@@ -315,14 +315,14 @@ class TestPyModule(unittest.TestCase):
         )
 
     def test_members(self) -> None:
-        my_enum = self.module["MyEnum"]
+        my_enum: Any = self.module["MyEnum"]
         self.assertTrue(issubclass(my_enum, enum.IntEnum))
         self.assertEqual(
             [(m.name, m.value) for m in my_enum],
             [("ALPHA", 0), ("BETA", 1), ("CUSTOM", 7), ("NEGATIVE", -5)],
         )
-        self.assertIs(my_enum.ALIAS_BETA, my_enum.BETA)
-        self.assertEqual(my_enum.CUSTOM, 7)
+        self.assertIs(getattr(my_enum, "ALIAS_BETA"), getattr(my_enum, "BETA"))
+        self.assertEqual(getattr(my_enum, "CUSTOM"), 7)
         self.assertEqual(
             inspect.getdoc(my_enum), "My enum.\n\nWith multiple lines."
         )
@@ -332,7 +332,7 @@ class TestPyModule(unittest.TestCase):
         self.assertIn("    CUSTOM = 7\n    'Has \"quotes\"'\n", self.source)
 
     def test_display_names(self) -> None:
-        my_enum = self.module["MyEnum"]
+        my_enum: Any = self.module["MyEnum"]
         self.assertEqual(str(my_enum.ALPHA), "ALPHA")
         self.assertEqual(str(my_enum.ALIAS_BETA), "ALIAS_BETA|BETA")
         self.assertEqual(str(my_enum.CUSTOM), 'it\'s "custom"')
@@ -352,14 +352,14 @@ class TestPyModule(unittest.TestCase):
     def test_status(self) -> None:
         # Status enums are named after their status, not their code.
         self.assertNotIn("Code", self.module)
-        my_status = self.module["MyStatus"]
+        my_status: Any = self.module["MyStatus"]
         self.assertTrue(issubclass(my_status, enum.IntEnum))
         self.assertEqual(
             [(m.name, m.value) for m in my_status], [("OK", 0), ("BUSY", 1)]
         )
-        self.assertTrue(my_status.OK.ok())
-        self.assertFalse(my_status.BUSY.ok())
-        self.assertEqual(str(my_status.BUSY), "BUSY")
+        self.assertTrue(getattr(my_status, "OK").ok())
+        self.assertFalse(getattr(my_status, "BUSY").ok())
+        self.assertEqual(str(getattr(my_status, "BUSY")), "BUSY")
 
     def test_only_status_enums_have_ok(self) -> None:
         self.assertFalse(hasattr(self.module["MyEnum"], "ok"))

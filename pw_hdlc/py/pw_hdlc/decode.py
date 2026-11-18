@@ -105,7 +105,7 @@ class _State(enum.Enum):
     FRAME_ESCAPE = 2
 
 
-def _check_frame(frame_data: bytes) -> FrameStatus:
+def _check_frame(frame_data: bytes | bytearray) -> FrameStatus:
     if len(frame_data) < _MIN_FRAME_SIZE:
         return FrameStatus.FRAMING_ERROR
 

@@ -726,7 +726,7 @@ def _parse_args() -> tuple[Callable[..., None], argparse.Namespace]:
     args = parser.parse_args()
 
     handler = args.handler
-    del args.handler
+    delattr(args, 'handler')
 
     return handler, args
 

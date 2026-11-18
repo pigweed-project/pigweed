@@ -408,14 +408,14 @@ def run(  # pylint: disable=too-many-arguments,too-many-locals
     if only_list_steps:
         steps: list[dict] = []
         for filtered_check in program.filter(root, modified_files):
-            step = {
+            step_data: dict[str, Any] = {
                 'name': filtered_check.name,
                 'paths': [str(x) for x in filtered_check.paths],
             }
             substeps = filtered_check.check.substeps()
             if len(substeps) > 1:
-                step['substeps'] = [x.name for x in substeps]
-            steps.append(step)
+                step_data['substeps'] = [x.name for x in substeps]
+            steps.append(step_data)
 
         list_steps_data = {
             'steps': steps,
@@ -553,8 +553,13 @@ def call(
                 tee.write(line)
 
     stdout, _ = process.communicate()
+    stdout_str = (
+        stdout.decode(errors='backslashreplace')
+        if isinstance(stdout, bytes)
+        else stdout
+    )
     if tee:
-        tee.write(stdout.decode(errors='backslashreplace'))
+        tee.write(stdout_str)
 
     logfunc = _LOG.warning if process.returncode else _LOG.debug
     logfunc('[FINISHED]\n%s', command)
@@ -563,8 +568,8 @@ def call(
         'Failed' if process.returncode else 'Passed',
         process.returncode,
     )
-    if stdout:
-        logfunc('[OUTPUT]\n%s', stdout.decode(errors='backslashreplace'))
+    if stdout_str:
+        logfunc('[OUTPUT]\n%s', stdout_str)
 
     if propagate_sigterm:
         signal.signal(signal.SIGTERM, previous_signal_handler)

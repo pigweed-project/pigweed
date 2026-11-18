@@ -405,7 +405,7 @@ class Config:
         """
 
         keys_str = ': '.join(keys)
-        entry: dict[str, Any] | None = self._config
+        entry: Any = self._config
 
         for key in keys:
             if not isinstance(entry, dict):
@@ -778,7 +778,7 @@ class Launcher(ABC):
 
         # pylint: disable=no-member
         # avoid pylint false positive on win32
-        pid = os.fork()
+        pid = os.fork()  # pyrefly: ignore[missing-attribute]
         if pid < 0:
             raise RunError(name, f'fork failed: {pid}')
         if pid > 0:
@@ -795,9 +795,9 @@ class Launcher(ABC):
         os.dup2(fd, sys.stderr.fileno())
         os.close(fd)
 
-        os.setsid()
+        os.setsid()  # pyrefly: ignore[missing-attribute]
 
-        if os.fork() > 0:
+        if os.fork() > 0:  # pyrefly: ignore[missing-attribute]
             os._exit(0)
 
         try:

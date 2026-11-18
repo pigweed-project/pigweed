@@ -116,8 +116,12 @@ def make_writable(path: Path):
         raise RuntimeError("Cannot change permissions on this platform")
 
     # pylint: disable=no-member
-    username = pwd.getpwuid(os.getuid()).pw_name
-    groupname = grp.getgrgid(os.getgid()).gr_name
+    username = pwd.getpwuid(  # pyrefly: ignore[missing-attribute]
+        os.getuid()  # pyrefly: ignore[missing-attribute]
+    ).pw_name
+    groupname = grp.getgrgid(  # pyrefly: ignore[missing-attribute]
+        os.getgid()  # pyrefly: ignore[missing-attribute]
+    ).gr_name
     # pylint: enable=no-member
 
     cmds = [

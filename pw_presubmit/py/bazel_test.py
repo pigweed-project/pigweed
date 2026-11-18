@@ -60,6 +60,9 @@ class BazelPresubmitTest(unittest.TestCase):
                         "py_binary rule //foo:mypy_binary\n"
                         "py_library rule //foo:pylint_ok\n"
                     )
+                elif 'attr("tags", "nopyrefly|no-pyrefly"' in query_expr:
+                    # nopyrefly query
+                    stdout = "//foo:pylint_ok\n"
                 elif 'attr("tags", "nomypy"' in query_expr:
                     # nomypy query
                     stdout = "//foo:pylint_ok\n"
@@ -79,13 +82,15 @@ class BazelPresubmitTest(unittest.TestCase):
 
         bazel.python_lint.run(self.ctx)
 
-        # We expect run_subprocess to be called 5 times:
+        # We expect run_subprocess to be called 7 times:
         # 1. Base query for mypy (which runs because cache is empty)
         # 2. Targeted query for nomypy
         # 3. Build mypy rules
-        # 4. Targeted query for nopylint (base query is cached, so not run)
-        # 5. Build pylint rules
-        self.assertEqual(mock_run.call_count, 5)
+        # 4. Targeted query for nopyrefly|no-pyrefly (base query cached)
+        # 5. Build pyrefly rules
+        # 6. Targeted query for nopylint (base query is cached, so not run)
+        # 7. Build pylint rules
+        self.assertEqual(mock_run.call_count, 7)
 
         calls = [c[0][0] for c in mock_run.call_args_list]
 
@@ -106,17 +111,33 @@ class BazelPresubmitTest(unittest.TestCase):
         self.assertIn('//foo:mypy_ok', calls[2])
         self.assertIn('//foo:mypy_binary', calls[2])
 
-        # Verify third query checks nopylint tag on all rules set
+        # Verify third query checks nopyrefly|no-pyrefly tag
         self.assertIn('query', calls[3])
         self.assertTrue(
             any(arg.startswith('--query_file=') for arg in calls[3])
         )
-        self.assertIn('attr("tags", "nopylint", set(', recorded_queries[1])
+        self.assertIn(
+            'attr("tags", "nopyrefly|no-pyrefly", set(',
+            recorded_queries[1],
+        )
 
-        # Verify second build built pylint targets (excluding mypy targets)
+        # Verify second build built pyrefly targets (excluding //foo:pylint_ok)
         self.assertEqual(calls[4][1], 'build')
-        self.assertIn('--config=pylint', calls[4])
-        self.assertIn('//foo:pylint_ok', calls[4])
+        self.assertIn('--config=pyrefly', calls[4])
+        self.assertIn('//foo:mypy_ok', calls[4])
+        self.assertIn('//foo:mypy_binary', calls[4])
+
+        # Verify fourth query checks nopylint tag on all rules set
+        self.assertIn('query', calls[5])
+        self.assertTrue(
+            any(arg.startswith('--query_file=') for arg in calls[5])
+        )
+        self.assertIn('attr("tags", "nopylint", set(', recorded_queries[2])
+
+        # Verify third build built pylint targets (excluding mypy targets)
+        self.assertEqual(calls[6][1], 'build')
+        self.assertIn('--config=pylint', calls[6])
+        self.assertIn('//foo:pylint_ok', calls[6])
 
     @mock.patch('pw_presubmit.private.tools.run_subprocess')
     def test_clang_tidy(self, mock_run):

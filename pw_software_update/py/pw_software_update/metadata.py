@@ -63,7 +63,9 @@ def gen_target_file(
 
 def gen_targets_metadata(
     target_payloads: dict[str, bytes],
-    hash_funcs: Iterable['HashFunction.V'] = DEFAULT_HASHES,
+    hash_funcs: Iterable[
+        'HashFunction.V'  # type: ignore[name-defined]
+    ] = DEFAULT_HASHES,
     version: int = DEFAULT_METADATA_VERSION,
 ) -> TargetsMetadata:
     """Generates TargetsMetadata the given target payloads."""
@@ -84,7 +86,8 @@ def gen_targets_metadata(
 
 
 def gen_hashes(
-    data: bytes, hash_funcs: Iterable['HashFunction.V']
+    data: bytes,
+    hash_funcs: Iterable['HashFunction.V'],  # type: ignore[name-defined]
 ) -> Iterable[Hash]:
     """Computes all the specified hashes over the data."""
     result = []

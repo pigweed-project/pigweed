@@ -28,6 +28,12 @@ default_args = {
   # Enable Python deprecation errors in upstream package tests and mypy.
   pw_build_PYTHON_TEST_DEPRECATION_WARNINGS = true
 
+  pw_build_PYTHON_STATIC_ANALYSIS_TOOLS = [
+    "pylint",
+    "mypy",
+    "pyrefly",
+  ]
+
   pw_build_PIP_CONSTRAINTS =
       [ "//pw_env_setup/py/pw_env_setup/virtualenv_setup/constraint.list" ]
 

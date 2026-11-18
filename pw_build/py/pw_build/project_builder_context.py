@@ -64,7 +64,7 @@ def _wait_for_terminate_then_kill(
     except subprocess.TimeoutExpired:
         proc_command = proc.args
         if isinstance(proc.args, list):
-            proc_command = ' '.join(proc.args)
+            proc_command = ' '.join(str(a) for a in proc.args)
         _LOG.debug('Killing %s', proc_command)
         proc.kill()
     return returncode
@@ -388,7 +388,7 @@ class ProjectBuilderContext:  # pylint: disable=too-many-instance-attributes,too
 
                 proc_command = proc.args
                 if isinstance(proc.args, list):
-                    proc_command = ' '.join(proc.args)
+                    proc_command = ' '.join(str(a) for a in proc.args)
                 _LOG.debug('Stopping: %s', proc_command)
 
                 futures.append(

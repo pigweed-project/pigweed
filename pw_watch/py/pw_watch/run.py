@@ -330,7 +330,7 @@ def _parse_args() -> argparse.Namespace:
 
     # Account for the arguments that were manually parsed.
     parsed.commands = tuple(_parse_commands(prefix, raw_commands))
-    del parsed.prefix
+    delattr(parsed, 'prefix')
     return parsed
 
 

@@ -233,7 +233,7 @@ def fill_character_width(
         # No additional spaces required
         return input_fragments
 
-    line_fragments = copy.copy(input_fragments)
+    line_fragments: StyleAndTextTuples = copy.copy(input_fragments)
 
     single_space = ('', ' ')
     line_ends_in_a_break = False

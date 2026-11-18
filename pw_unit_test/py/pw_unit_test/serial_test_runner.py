@@ -131,7 +131,7 @@ def trigger_test_run(
 
     # Try to trim captured results to only contain most recent test run.
     test_start_index = serial_data.rfind(_TESTS_STARTING_STRING)
-    return (
+    return bytes(
         serial_data
         if test_start_index == -1
         else serial_data[test_start_index:]

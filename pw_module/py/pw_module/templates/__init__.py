@@ -29,6 +29,7 @@ import logging
 from jinja2 import Environment, DictLoader, make_logging_undefined
 from jinja2.environment import Template
 
+assert __package__ is not None
 TEMPLATE_PATH = files(__package__)
 
 # Dict containing file names and their contents.
@@ -36,8 +37,8 @@ JINJA_TEMPLATES = {
     t.relative_to(TEMPLATE_PATH).as_posix(): t.read_text()  # type: ignore
     for t in chain(
         files(__package__).iterdir(),
-        files(__package__ + '.helpers').iterdir(),
-        files(__package__ + '.python').iterdir(),
+        files(f'{__package__}.helpers').iterdir(),
+        files(f'{__package__}.python').iterdir(),
     )
     if t.suffix == '.jinja'  # type: ignore
 }

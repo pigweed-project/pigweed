@@ -43,7 +43,7 @@ def _build_month_header(year: str, month: str) -> list[str]:
     date_str = f"{_get_month_name(month)} {year}"
     title = f"What's new in Pigweed: {date_str}"
 
-    rst = []
+    rst: list[str] = []
     rst.append("=" * len(title))
     rst.append(title)
     rst.append("=" * len(title))
@@ -194,7 +194,7 @@ def _build_category_section(
     if not renderable_stories:
         return []
 
-    rst = []
+    rst: list[str] = []
     h2_title = categories_map.get(category) or category
     rst.append("-" * len(h2_title))
     rst.append(h2_title)

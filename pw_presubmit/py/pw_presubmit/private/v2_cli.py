@@ -188,8 +188,8 @@ def _parse_args(
         args.program = default_program
         args.steps = programs[default_program]
 
-    del args.loglevel  # Clean up attributes not needed by _main
-    del args.list_steps
+    delattr(args, 'loglevel')  # Clean up attributes not needed by _main
+    delattr(args, 'list_steps')
     return args
 
 

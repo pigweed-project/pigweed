@@ -338,7 +338,7 @@ class WorkflowsManager:
                     )
                     targets = (
                         [fragment.target]
-                        if hasattr(fragment, 'target')
+                        if isinstance(fragment, workflows_pb2.Tool)
                         else list(fragment.targets)
                     )
                     steps.append(

@@ -264,8 +264,9 @@ def postprocess(app: Sphinx, exception: Exception | None) -> None:
     header_html = compiler.compile(skip_target="#main-content")
 
     env = Environment(autoescape=True, trim_blocks=True, lstrip_blocks=True)
-    env.globals["is_matching"] = is_matching_url
-    env.globals["has_active_child"] = lambda item, cur: any(
+    env_globals: Any = env.globals
+    env_globals["is_matching"] = is_matching_url
+    env_globals["has_active_child"] = lambda item, cur: any(
         has_active_descendant(child, cur) for child in item.children
     )
 

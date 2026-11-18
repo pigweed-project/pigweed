@@ -174,7 +174,7 @@ def _parse_args() -> dict:
         )
 
     args.sources = dict(zip(*[iter(args.source_and_invocation_file_pairs)] * 2))
-    del args.source_and_invocation_file_pairs
+    delattr(args, 'source_and_invocation_file_pairs')
     return vars(args)
 
 

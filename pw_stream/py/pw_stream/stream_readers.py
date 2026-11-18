@@ -26,6 +26,7 @@ import subprocess
 from typing import (
     Any,
     Callable,
+    Generic,
     Iterable,
     Sequence,
     TypeVar,
@@ -173,7 +174,7 @@ class SerialReader(CancellableReader):
         self._base_obj.close()
 
 
-class DataReaderAndExecutor:
+class DataReaderAndExecutor(Generic[FrameTypeT]):
     """Reads incoming bytes, data processor that delegates frame handling.
 
     Executing callbacks in a ``ThreadPoolExecutor`` decouples reading the input

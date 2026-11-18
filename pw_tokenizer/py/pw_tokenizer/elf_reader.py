@@ -340,7 +340,7 @@ class Elf:
                 self._elf.seek(section.file_offset + section.offset)
                 sections[section.name].extend(self._elf.read(section.size))
 
-        return sections
+        return {k: bytes(v) for k, v in sections.items()}
 
     def dump_section_contents(self, name: str | Pattern[str]) -> bytes | None:
         """Dumps a binary string containing the sections matching the regex.

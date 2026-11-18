@@ -27,14 +27,18 @@ from pw_console.text_formatting import strip_incompatible_ansi
 _LOG = logging.getLogger(__package__)
 
 
-def _get_nested_value(d: dict, *keys: Any, default: Any = None) -> Any:
+def _get_nested_value(
+    d: dict[Any, Any], *keys: Any, default: Any = None
+) -> Any:
     """Get a deeply nested dict value.
 
     Returns default if any key in the chain is missing.
     """
     result = default
     try:
-        result = functools.reduce(dict.__getitem__, keys, d)
+        result = functools.reduce(
+            dict.__getitem__, keys, d  # type: ignore[arg-type]
+        )
     except (KeyError, TypeError):
         pass
     return result

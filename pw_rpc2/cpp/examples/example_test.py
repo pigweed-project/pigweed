@@ -46,7 +46,9 @@ class _Program:
     """
 
     def __init__(self, *command: str) -> None:
-        controller, terminal = pty.openpty()
+        controller, terminal = (
+            pty.openpty()  # pyrefly: ignore[missing-attribute]
+        )
         self.process = subprocess.Popen(
             command,
             stdin=subprocess.DEVNULL,
