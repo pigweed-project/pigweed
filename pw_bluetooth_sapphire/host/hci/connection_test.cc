@@ -1285,6 +1285,8 @@ TEST_F(ConnectionTest,
       pw::bluetooth::emboss::ConnectionRole::CENTRAL, kTestHandle);
 
   connection->set_use_secure_connections(true);
+  connection->set_encryption_status(
+      pw::bluetooth::emboss::EncryptionStatus::ON_WITH_AES_FOR_BREDR);
 
   int callback_count = 0;
   Result<bool> result = fit::error(Error(HostError::kFailed));
@@ -1306,6 +1308,130 @@ TEST_F(ConnectionTest,
 
   EXPECT_EQ(1, callback_count);
   EXPECT_TRUE(result.is_error());
+  EXPECT_EQ(pw::bluetooth::emboss::EncryptionStatus::ON_WITH_AES_FOR_BREDR,
+            connection->encryption_status());
+
+  EXPECT_TRUE(test_device()->AllExpectedDataPacketsSent());
+}
+
+// Observed at UPF (b/568997334): after a successful Secure Connections
+// pairing as peripheral, the Controller reported an Encryption Change with an
+// LMP collision status before the real AES enable arrived. The collision must
+// neither close the link nor be mistaken for an AES-mode violation.
+TEST_F(ConnectionTest,
+       EncryptionSecureConnectionsLmpCollisionAsPeripheralDoesNotDisconnect) {
+  StaticByteBuffer kKeySizeComplete(0x0E,  // event code: Command Complete
+                                    0x07,  // parameters total size
+                                    0xFF,  // num command packets allowed (255)
+                                    0x08,
+                                    0x14,  // original opcode
+
+                                    // return parameters
+                                    0x00,  // status (success)
+                                    0x01,  // connection handle: 0x0001
+                                    0x00,
+                                    0x10  // encryption key size: 16
+  );
+
+  std::unique_ptr<BrEdrConnection> connection = NewACLConnection(
+      pw::bluetooth::emboss::ConnectionRole::PERIPHERAL, kTestHandle);
+  connection->set_use_secure_connections(true);
+  ASSERT_EQ(pw::bluetooth::emboss::EncryptionStatus::OFF,
+            connection->encryption_status());
+
+  std::vector<Result<bool>> results;
+  connection->set_encryption_change_callback(
+      [&](Result<bool> cb_result) { results.push_back(cb_result); });
+
+  // No Disconnect is expected for the collision.
+  test_device()->SendCommandChannelPacket(
+      bt::testing::EncryptionChangeEventPacket(
+          pw::bluetooth::emboss::StatusCode::LMP_ERROR_TRANSACTION_COLLISION,
+          kTestHandle,
+          hci_spec::EncryptionStatus::kOff));
+  RunUntilIdle();
+
+  ASSERT_EQ(1u, results.size());
+  ASSERT_TRUE(results[0].is_error());
+  EXPECT_TRUE(results[0].error_value().is(
+      pw::bluetooth::emboss::StatusCode::LMP_ERROR_TRANSACTION_COLLISION));
+  EXPECT_EQ(pw::bluetooth::emboss::EncryptionStatus::OFF,
+            connection->encryption_status());
+  EXPECT_TRUE(connection->state() == Connection::State::kConnected);
+
+  // The real enable then succeeds with AES and is validated normally.
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kReadEncryptionKeySizeCommand, &kKeySizeComplete);
+  test_device()->SendCommandChannelPacket(
+      bt::testing::EncryptionChangeEventPacket(
+          pw::bluetooth::emboss::StatusCode::SUCCESS,
+          kTestHandle,
+          hci_spec::EncryptionStatus::kBredrSecureConnections));
+  RunUntilIdle();
+
+  ASSERT_EQ(2u, results.size());
+  ASSERT_TRUE(results[1].is_ok());
+  EXPECT_TRUE(results[1].value());
+  EXPECT_EQ(pw::bluetooth::emboss::EncryptionStatus::ON_WITH_AES_FOR_BREDR,
+            connection->encryption_status());
+
+  // The only Disconnect is the one sent when the connection is destroyed.
+  EXPECT_CMD_PACKET_OUT(test_device(), kDisconnectCommand);
+  EXPECT_TRUE(test_device()->AllExpectedDataPacketsSent());
+}
+
+TEST_F(ConnectionTest,
+       EncryptionErrorWithNonZeroEncryptionByteDoesNotMutateStatus) {
+  std::unique_ptr<BrEdrConnection> connection = NewACLConnection(
+      pw::bluetooth::emboss::ConnectionRole::CENTRAL, kTestHandle);
+
+  ASSERT_EQ(pw::bluetooth::emboss::EncryptionStatus::OFF,
+            connection->encryption_status());
+
+  EXPECT_CMD_PACKET_OUT(test_device(), kDisconnectCommandAuthFailure);
+  test_device()->SendCommandChannelPacket(
+      bt::testing::EncryptionChangeEventPacket(
+          pw::bluetooth::emboss::StatusCode::AUTHENTICATION_FAILURE,
+          kTestHandle,
+          hci_spec::EncryptionStatus::kOn));
+  RunUntilIdle();
+
+  EXPECT_EQ(pw::bluetooth::emboss::EncryptionStatus::OFF,
+            connection->encryption_status());
+  EXPECT_TRUE(test_device()->AllExpectedDataPacketsSent());
+}
+
+TEST_F(ConnectionTest,
+       EncryptionSecureConnectionsDisabledReportsEncryptionDisabled) {
+  std::unique_ptr<BrEdrConnection> connection = NewACLConnection(
+      pw::bluetooth::emboss::ConnectionRole::CENTRAL, kTestHandle);
+
+  connection->set_use_secure_connections(true);
+  connection->set_encryption_status(
+      pw::bluetooth::emboss::EncryptionStatus::ON_WITH_AES_FOR_BREDR);
+
+  int callback_count = 0;
+  Result<bool> result = fit::error(Error(HostError::kFailed));
+  connection->set_encryption_change_callback([&](Result<bool> cb_result) {
+    ASSERT_TRUE(cb_result.is_ok());
+    EXPECT_FALSE(cb_result.value());
+    callback_count++;
+    result = cb_result;
+  });
+
+  EXPECT_CMD_PACKET_OUT(test_device(), kDisconnectCommandAuthFailure);
+  test_device()->SendCommandChannelPacket(
+      bt::testing::EncryptionChangeEventPacket(
+          pw::bluetooth::emboss::StatusCode::SUCCESS,
+          kTestHandle,
+          hci_spec::EncryptionStatus::kOff));
+  RunUntilIdle();
+
+  EXPECT_EQ(1, callback_count);
+  EXPECT_EQ(fit::ok(), result);
+  EXPECT_FALSE(result.value_or(true));
+  EXPECT_EQ(pw::bluetooth::emboss::EncryptionStatus::OFF,
+            connection->encryption_status());
 
   EXPECT_TRUE(test_device()->AllExpectedDataPacketsSent());
 }
@@ -1402,6 +1528,47 @@ TEST_F(ConnectionTest,
   EXPECT_TRUE(result.is_error());
 
   EXPECT_TRUE(test_device()->AllExpectedDataPacketsSent());
+}
+
+TEST_F(ConnectionTest, MalformedEncryptionKeyRefreshEventIgnored) {
+  const StaticByteBuffer kMalformedEncryptionKeyRefresh(
+      0x30,  // HCI Encryption Key Refresh Complete event
+      0x01,  // truncated parameter total size (expected 3)
+      0x00   // status
+  );
+
+  std::unique_ptr<BrEdrConnection> connection = NewACLConnection(
+      pw::bluetooth::emboss::ConnectionRole::CENTRAL, kTestHandle);
+
+  int callback_count = 0;
+  connection->set_encryption_change_callback(
+      [&](Result<bool>) { callback_count++; });
+
+  test_device()->SendCommandChannelPacket(kMalformedEncryptionKeyRefresh);
+  RunUntilIdle();
+
+  EXPECT_EQ(0, callback_count);
+  EXPECT_EQ(Connection::State::kConnected, connection->state());
+  EXPECT_CMD_PACKET_OUT(test_device(), kDisconnectCommand);
+  EXPECT_TRUE(test_device()->AllExpectedDataPacketsSent());
+}
+
+TEST(ErrorTest, IsTransactionCollision) {
+  EXPECT_TRUE(IsTransactionCollision(
+      ToResult(
+          pw::bluetooth::emboss::StatusCode::LMP_ERROR_TRANSACTION_COLLISION)
+          .error_value()));
+  EXPECT_TRUE(IsTransactionCollision(
+      ToResult(
+          pw::bluetooth::emboss::StatusCode::DIFFERENT_TRANSACTION_COLLISION)
+          .error_value()));
+  EXPECT_FALSE(IsTransactionCollision(
+      ToResult(pw::bluetooth::emboss::StatusCode::AUTHENTICATION_FAILURE)
+          .error_value()));
+  EXPECT_FALSE(IsTransactionCollision(
+      ToResult(pw::bluetooth::emboss::StatusCode::PIN_OR_KEY_MISSING)
+          .error_value()));
+  EXPECT_FALSE(IsTransactionCollision(Error(HostError::kInsufficientSecurity)));
 }
 
 TEST_F(ConnectionTest, EncryptionKeyRefreshSecureConnectionsWithAesSucceeds) {

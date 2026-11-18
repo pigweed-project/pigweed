@@ -162,10 +162,7 @@ void BrEdrConnection::HandleEncryptionStatusValidated(Result<bool> result) {
   }
 
   const bool is_transaction_collision =
-      result.is_error() &&
-      result.error_value().is_any_of(
-          pw::bluetooth::emboss::StatusCode::LMP_ERROR_TRANSACTION_COLLISION,
-          pw::bluetooth::emboss::StatusCode::DIFFERENT_TRANSACTION_COLLISION);
+      result.is_error() && IsTransactionCollision(result.error_value());
   if (!is_transaction_collision && (result.is_error() || !result.value())) {
     Disconnect(pw::bluetooth::emboss::StatusCode::AUTHENTICATION_FAILURE);
   }

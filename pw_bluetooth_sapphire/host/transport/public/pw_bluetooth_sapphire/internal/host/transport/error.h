@@ -32,6 +32,16 @@ using ResultFunction = fit::function<void(bt::hci::Result<V...> result)>;
 template <typename... V>
 using ResultCallback = fit::callback<void(bt::hci::Result<V...> result)>;
 
+// Returns true if |error| is an LMP or Different Transaction Collision status
+// (Core Spec v5.4, Vol 1, Part F, Sections 2.35 and 2.42), which the
+// Controller reports when a host-initiated LMP procedure races with a
+// peer-initiated procedure.
+inline bool IsTransactionCollision(const Error& error) {
+  return error.is_any_of(
+      pw::bluetooth::emboss::StatusCode::LMP_ERROR_TRANSACTION_COLLISION,
+      pw::bluetooth::emboss::StatusCode::DIFFERENT_TRANSACTION_COLLISION);
+}
+
 }  // namespace hci
 
 // Specializations for pw::bluetooth::emboss::StatusCode.

@@ -103,19 +103,24 @@ CommandChannel::EventCallbackResult AclConnection::OnEncryptionChangeEvent(
   }
 
   Result<> result = event.ToResult();
-  encryption_status_ = params.encryption_enabled().Read();
-  bool encryption_enabled =
-      encryption_status_ != pw::bluetooth::emboss::EncryptionStatus::OFF;
+  const pw::bluetooth::emboss::EncryptionStatus event_encryption_status =
+      params.encryption_enabled().Read();
+  const bool encryption_enabled =
+      event_encryption_status != pw::bluetooth::emboss::EncryptionStatus::OFF;
+  if (result.is_ok()) {
+    encryption_status_ = event_encryption_status;
+  }
 
-  bt_log(DEBUG,
-         "hci",
-         "encryption change (%s) %s",
-         encryption_enabled ? "enabled" : "disabled",
-         bt_str(result));
+  bt_log(
+      DEBUG,
+      "hci",
+      "encryption change (%s) %s",
+      result.is_ok() ? (encryption_enabled ? "enabled" : "disabled") : "failed",
+      bt_str(result));
 
-  // If BR/EDR Secure Connections is used on this link, verify that a successful
-  // Encryption Change event enables AES encryption.
-  if (result.is_ok() && use_secure_connections_ &&
+  // If BR/EDR Secure Connections is used on this link, verify that enabling
+  // encryption uses AES.
+  if (result.is_ok() && encryption_enabled && use_secure_connections_ &&
       encryption_status_ !=
           pw::bluetooth::emboss::EncryptionStatus::ON_WITH_AES_FOR_BREDR) {
     bt_log(DEBUG,
@@ -136,9 +141,16 @@ CommandChannel::EventCallbackResult AclConnection::OnEncryptionChangeEvent(
 
 CommandChannel::EventCallbackResult
 AclConnection::OnEncryptionKeyRefreshCompleteEvent(const EventPacket& event) {
-  const auto params =
-      event
-          .view<pw::bluetooth::emboss::EncryptionKeyRefreshCompleteEventView>();
+  PW_CHECK(event.event_code() ==
+           hci_spec::kEncryptionKeyRefreshCompleteEventCode);
+
+  const auto params = event.unchecked_view<
+      pw::bluetooth::emboss::EncryptionKeyRefreshCompleteEventView>();
+  if (!params.Ok()) {
+    bt_log(WARN, "hci", "malformed encryption key refresh complete event");
+    return CommandChannel::EventCallbackResult::kContinue;
+  }
+
   const hci_spec::ConnectionHandle handle = params.connection_handle().Read();
 
   // Silently ignore this event as it isn't meant for this connection.
@@ -169,8 +181,6 @@ AclConnection::OnEncryptionKeyRefreshCompleteEvent(const EventPacket& event) {
     return CommandChannel::EventCallbackResult::kContinue;
   }
 
-  // Report that encryption got disabled on failure status. The accuracy of this
-  // isn't that important since the link will be disconnected.
   HandleEncryptionStatus(status.is_ok()
                              ? Result<bool>(fit::ok(/*enabled=*/true))
                              : status.take_error(),
