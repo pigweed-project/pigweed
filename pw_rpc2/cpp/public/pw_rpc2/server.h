@@ -30,9 +30,11 @@ namespace pw::rpc2 {
 /// Serves RPC services over one or more transport listeners.
 ///
 /// A `Server` owns three things: the service registry, the set of transport
-/// listeners, and the connections those listeners accept. Inbound request
-/// packets are resolved against the service registry and dispatched to the
-/// matching method.
+/// listeners, and the connections those listeners accept. Each accepted
+/// `transport::ReliableSocket` is a private communication channel between one
+/// client and this server and cannot be shared. Inbound request packets are
+/// resolved against the service registry and dispatched to the matching
+/// method.
 ///
 /// Listeners and services may be registered before the server is started; they
 /// are activated by `Start()`.

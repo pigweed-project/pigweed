@@ -78,9 +78,12 @@ class Connection:  # pylint: disable=too-many-instance-attributes
     """An RPC connection to a server, shared by the client front-ends.
 
     A connection performs the handshake, receives and dispatches packets on a
-    background thread, and tracks active calls. It is internal to the client
-    implementations; applications use :py:class:`Client` or
-    :py:class:`pw_rpc2.aio.Client`.
+    background thread, and tracks active calls. ``socket`` is a private
+    communication channel between this client and one server and cannot be
+    shared.
+
+    It is internal to the client implementations; applications use
+    :py:class:`Client` or :py:class:`pw_rpc2.aio.Client`.
     """
 
     def __init__(

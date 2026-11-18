@@ -66,8 +66,9 @@ systems, some of which will be described in more detail in sections below.
        byte sink. Inbound packets are fed into ``ProcessPacket(ConstByteSpan)``.
        Globally unique, often static channel IDs. Stateless and unreliable.
      - Active, reliable, connection-oriented transports (via
-       :ref:`module-pw_transport`). Connections disappear once the peer hangs
-       up, with an opening handshake to ensure compatibility.
+       :ref:`module-pw_transport`). Each socket is a private channel between one
+       client and one server and cannot be shared. Connections disappear once
+       the peer hangs up, with an opening handshake to ensure compatibility.
 
    * - Packet framing and wire format
      - Enclosed in a protobuf message (``pw_rpc/internal/packet.proto``) with

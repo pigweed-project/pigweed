@@ -25,8 +25,9 @@ connection model, and zero-copy packet handling.
 ----------
 Highlights
 ----------
-* **Stateful connections**: An active ``Socket`` replaces RPC1's static
-  ``Channel``, ensuring that RPCs know when a peer is listening or disconnects.
+* **Stateful connections**: A private ``Socket`` between one client and one
+  server replaces RPC1's static ``Channel``, ensuring that RPCs know when a peer
+  is listening or disconnects.
 * **End-to-end backpressure**: Asynchronous buffer reservations from the
   transport layer pause tasks until space becomes available, naturally
   integrating backpressure into every RPC call.

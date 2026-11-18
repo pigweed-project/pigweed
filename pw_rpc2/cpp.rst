@@ -10,6 +10,27 @@ C++ client and server
 
    This page is incomplete and under active development.
 
+.. _module-pw_rpc2-cpp-connections:
+
+-----------------------
+Connections and sockets
+-----------------------
+:cc:`pw::rpc2::Client` and :cc:`pw::rpc2::Server` communicate over
+:cc:`pw::transport::ReliableSocket` connections. Each socket is a private
+communication channel between one client and one server and **cannot be
+shared**. Once a socket is passed to :cc:`pw::rpc2::Client::Connect()
+<pw::rpc2::Client::Connect>` or accepted by a :cc:`pw::rpc2::Server` listener,
+that endpoint owns all reads and writes on the socket.
+
+* **Sharing one client connection across callers:** Copy the
+  :cc:`pw::rpc2::Client` handle (or generated service clients wrapping it). All
+  copies multiplex their RPC calls over the same client-server connection.
+* **Running multiple RPC clients over one socket:** Add a connection
+  multiplexing layer on top of the underlying socket that exposes an independent
+  :cc:`ReliableSocket <pw::transport::ReliableSocket>` (via a
+  :cc:`ReliableConnector <pw::transport::ReliableConnector>` and
+  :cc:`ReliableListener <pw::transport::ReliableListener>`) for each client.
+
 .. _module-pw_rpc2-cpp-errors:
 
 --------------

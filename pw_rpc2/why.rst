@@ -125,6 +125,10 @@ the interface used by RPC2 is reliable and datagram-oriented (think
 ``SOCK_SEQPACKET``). This interface can be implemented on top of various
 underlying transports, such as BLE or TCP/IP (with simple framing).
 
+Each ``Socket`` used by RPC2 is a private communication channel between one
+client and one server and cannot be shared (see
+:ref:`module-pw_rpc2-protocol-connections`).
+
 This does make the tradeoff of a higher initial setup cost, since not every
 device will already have a transport that can easily adapt to these
 requirements, especially when you're just bootstrapping with a serial UART.

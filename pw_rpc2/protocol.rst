@@ -13,14 +13,23 @@ payloads, the payload is located immediately following the header.
 
 All multi-byte numeric fields are encoded in **little-endian** byte order.
 
+.. _module-pw_rpc2-protocol-connections:
+
 ----------------------------------
 Connection state and establishment
 ----------------------------------
-As RPC2 runs over a generic ``Socket`` interface, a newly established connection
-must first identify that the peer is a compatible RPC endpoint before regular
-data flow can begin.
+Each RPC2 connection runs over a :ref:`pw_transport <module-pw_transport>`
+:cc:`ReliableSocket <pw::transport::ReliableSocket>` that acts as a private
+communication channel between one client and one server. Sockets cannot be
+shared: the two endpoints perform a one-time opening handshake, the client owns
+the connection's ``call_id`` space, and each endpoint consumes all incoming
+packets on the socket. Running multiple RPC clients over a single socket
+requires a connection multiplexing layer on top of that socket to provide a
+separate logical socket for each client.
 
-To achieve this, RPC2 uses two distinct categories of packets:
+Before regular data flow can begin on a newly established socket, each endpoint
+must verify that its peer is a compatible RPC endpoint. To achieve this, RPC2
+uses two distinct categories of packets:
 
 - **Handshake packets** are used during the initial establishment phase. They
   contain magic numbers which identify the sender as an RPC endpoint.

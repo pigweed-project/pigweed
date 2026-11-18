@@ -129,6 +129,11 @@ static_assert(async2::Future<ClientFuture>);
 /// and all copies refer to the same underlying connection. Service clients
 /// wrap a `Client` and bind it to a service ID.
 ///
+/// @note **Exclusive socket.** Each connection's `transport::ReliableSocket`
+/// is a private communication channel between one client and one server and
+/// cannot be shared. Copy `Client` to share a single connection across callers
+/// and service clients.
+///
 /// @note **Threading.** Everything reachable through a client --- its calls,
 /// their handles, and their futures --- is bound to the dispatcher the client
 /// was created on and may only be used from that dispatcher's thread.
@@ -169,6 +174,9 @@ class Client {
 
   /// Returns a future that performs the handshake over an already-connected
   /// `connection` and resolves to the connected `Client`.
+  ///
+  /// `connection` is a private channel to one server and cannot be shared with
+  /// other RPC clients, servers, or readers/writers.
   ///
   /// The client's connection task is allocated from `allocator` and runs on
   /// `dispatcher`.
