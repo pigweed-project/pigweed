@@ -17,12 +17,13 @@ This is the public v2 API, which supports features like automatic fixes and
 running individually on stacked commits.
 """
 
-from pw_presubmit.private.result import PresubmitFailure
+from pw_presubmit.private.result import Failure, PresubmitFailure
 from pw_presubmit.private.step import Context, Step, step
 from pw_presubmit.private.v2_cli import main
 
 __all__ = [
     'Context',
+    'Failure',
     'main',
     'Step',
     'step',

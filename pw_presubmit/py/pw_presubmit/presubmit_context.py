@@ -65,6 +65,8 @@ def _project_root() -> Path:
 
 @dataclasses.dataclass(frozen=True)
 class FormatOptions:
+    """Formatting options, derived from pigweed.json."""
+
     python_formatter: str | None = 'black'
     black_path: str | None = 'black'
     exclude: Sequence[re.Pattern] = dataclasses.field(default_factory=list)

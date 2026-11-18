@@ -77,7 +77,7 @@ individually on stacked commits.
 Defining steps
 ==============
 In v2, presubmit checks are called "steps". They can be defined using the
-``@step`` decorator or by subclassing :class:`pw_presubmit.v2.Step <Step>`.
+``@step`` decorator or by subclassing :py:class:`Step <pw_presubmit.v2.Step>`.
 
 Using the @step decorator
 -------------------------
@@ -89,13 +89,14 @@ The simplest way to define a step is to decorate a function that takes a
    :start-after: [pw_presubmit-v2-decorator]
    :end-before: [pw_presubmit-v2-decorator]
 
-The decorator accepts :class:`pw_cli.file_filter.FileFilter <FileFilter>`
+The decorator accepts :py:class:`FileFilter <pw_cli.file_filter.FileFilter>`
 parameters, like ``endswith``, ``exclude``, etc., that determine when the step
 should run.
 
 Subclassing step
 ----------------
-For more complex steps, you can subclass :class:`pw_presubmit.v2.Step <Step>`.
+For more complex steps, you can subclass
+:py:class:`Step <pw_presubmit.v2.Step>`.
 
 .. literalinclude:: py/examples.py
    :language: py
@@ -450,7 +451,6 @@ lint/format checks where ``--base HEAD~1`` is recommended.
 
 .. autoclass:: pw_presubmit.presubmit_context.PresubmitContext
    :members:
-   :noindex:
 
 Additional members can be added by subclassing ``PresubmitContext`` and
 ``Presubmit``. Then override ``Presubmit._create_presubmit_context()`` to
@@ -459,15 +459,15 @@ return the subclass of ``PresubmitContext``. Finally, add
 
 .. autoclass:: pw_presubmit.presubmit_context.LuciContext
    :members:
-   :noindex:
 
 .. autoclass:: pw_presubmit.presubmit_context.LuciPipeline
    :members:
-   :noindex:
 
 .. autoclass:: pw_presubmit.presubmit_context.LuciTrigger
    :members:
-   :noindex:
+
+.. autoclass:: pw_presubmit.presubmit_context.FormatOptions
+   :members:
 
 Substeps
 --------
@@ -487,8 +487,16 @@ members:
 pw_presubmit module
 ===================
 .. automodule:: pw_presubmit
-   :members: filter_paths, call, PresubmitFailure, Programs
-   :noindex:
+   :members: Programs, call, filter_paths
+
+   .. autoclass:: Check
+      :members: unfiltered, with_filter, with_file_filter
+
+   .. autoclass:: Program
+
+   .. py:exception:: PresubmitFailure
+
+      Alias for :py:exc:`pw_presubmit.v2.PresubmitFailure`.
 
 Git hook
 --------
