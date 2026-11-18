@@ -185,7 +185,14 @@ class TransportFutureListProvider {
   ///
   /// If no future is pending, `result` is left unmodified and `false` is
   /// returned.
-  bool ResolveFirst(ResultType&& result) {
+  bool ResolveFirst(ResultType&& result) { return TryResolveFirst(result); }
+
+  /// Resolves the oldest pending future in the list by moving from `result`, if
+  /// any future is pending.
+  ///
+  /// If no future is pending, `result` is left unmodified and `false` is
+  /// returned.
+  bool TryResolveFirst(ResultType& result) {
     return provider_.ResolveFirstMatching(
         [&result](auto&) { return std::optional(std::move(result)); });
   }

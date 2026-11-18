@@ -276,32 +276,30 @@ TEST_F(ForwardingSocketTest, DefaultOptions_MaxSizes) {
   auto pair = ForwardingSocketPair::Create(allocator_);
 
   constexpr size_t kDefault =
-      ForwardingSocketOptions::kDefaultMaxDatagramSizeBytes;
+      ForwardingSocketOptions::kDefaultMaxMessageSizeBytes;
   EXPECT_EQ(pair.first().max_write_message_size_bytes(), kDefault);
   EXPECT_EQ(pair.first().max_read_message_size_bytes(), kDefault);
   EXPECT_EQ(pair.second().max_write_message_size_bytes(), kDefault);
   EXPECT_EQ(pair.second().max_read_message_size_bytes(), kDefault);
 }
 
-TEST_F(ForwardingSocketTest, Options_MaxSizesPerDirection) {
+TEST_F(ForwardingSocketTest, Options_MaxMessageSize) {
   auto pair =
-      ForwardingSocketPair::Create(allocator_,
-                                   {.max_first_to_second_size_bytes = 64,
-                                    .max_second_to_first_size_bytes = 32});
+      ForwardingSocketPair::Create(allocator_, {.max_message_size_bytes = 64});
 
   EXPECT_EQ(pair.first().max_write_message_size_bytes(), 64u);
+  EXPECT_EQ(pair.first().max_read_message_size_bytes(), 64u);
+  EXPECT_EQ(pair.second().max_write_message_size_bytes(), 64u);
   EXPECT_EQ(pair.second().max_read_message_size_bytes(), 64u);
-  EXPECT_EQ(pair.second().max_write_message_size_bytes(), 32u);
-  EXPECT_EQ(pair.first().max_read_message_size_bytes(), 32u);
 
   EXPECT_TRUE(pair.first().TryReserveWrite(64).has_value());
-  EXPECT_TRUE(pair.second().TryReserveWrite(32).has_value());
+  EXPECT_TRUE(pair.second().TryReserveWrite(64).has_value());
 }
 
 TEST_F(ForwardingSocketTest,
        TryReserveWrite_ReturnsNulloptWhenAllocatorExhausted) {
-  auto pair = ForwardingSocketPair::Create(
-      allocator_, {.max_first_to_second_size_bytes = 8192});
+  auto pair = ForwardingSocketPair::Create(allocator_,
+                                           {.max_message_size_bytes = 8192});
 
   EXPECT_FALSE(pair.first().TryReserveWrite(8192).has_value());
   EXPECT_TRUE(pair.first().TryReserveWrite(0).has_value());
@@ -313,8 +311,7 @@ TEST_F(ForwardingSocketTest,
   // Each buffer is too large for two to fit in `allocator_` at once.
   constexpr size_t kLargeSize = 2500;
   auto pair = ForwardingSocketPair::Create(
-      allocator_,
-      {.queue_depth = 2, .max_first_to_second_size_bytes = kLargeSize});
+      allocator_, {.queue_depth = 2, .max_message_size_bytes = kLargeSize});
 
   std::optional<WriteReservation> blocker =
       pair.first().TryReserveWrite(kLargeSize);
@@ -529,6 +526,204 @@ TEST_F(ForwardingSocketTest,
   EXPECT_TRUE(Receive(second) == nullptr);
   CloseFuture closed = second.WhenClosed();
   RunToCompletion(closed);
+}
+
+TEST_F(ForwardingSocketTest, Transport_AcceptThenConnect) {
+  ForwardingTransport transport(allocator_);
+
+  [[maybe_unused]] Listener& base_listener = transport;
+  [[maybe_unused]] Connector& base_connector = transport;
+
+  ReliableListener::AcceptFuture accept = transport.Accept();
+  EXPECT_TRUE(dispatcher_.RunInTaskUntilStalled(accept).IsPending());
+
+  ReliableConnector::ConnectFuture connect = transport.Connect();
+  PW_TEST_ASSERT_OK_AND_ASSIGN(ReliableSocket client, RunToCompletion(connect));
+  PW_TEST_ASSERT_OK_AND_ASSIGN(ReliableSocket server, RunToCompletion(accept));
+
+  ASSERT_TRUE(TrySend(client, "ping"));
+  ConstBuf request = Receive(server);
+  ASSERT_NE(request, nullptr);
+  EXPECT_EQ(AsString(request), "ping");
+
+  ASSERT_TRUE(TrySend(server, "pong"));
+  ConstBuf response = Receive(client);
+  ASSERT_NE(response, nullptr);
+  EXPECT_EQ(AsString(response), "pong");
+}
+
+TEST_F(ForwardingSocketTest, Transport_ConnectThenAccept) {
+  ForwardingTransport transport(allocator_);
+
+  ReliableConnector::ConnectFuture connect = transport.Connect();
+  EXPECT_TRUE(dispatcher_.RunInTaskUntilStalled(connect).IsPending());
+
+  ReliableListener::AcceptFuture accept = transport.Accept();
+  PW_TEST_ASSERT_OK_AND_ASSIGN(ReliableSocket server, RunToCompletion(accept));
+  PW_TEST_ASSERT_OK_AND_ASSIGN(ReliableSocket client, RunToCompletion(connect));
+
+  ASSERT_TRUE(TrySend(client, "first"));
+  ConstBuf received = Receive(server);
+  ASSERT_NE(received, nullptr);
+  EXPECT_EQ(AsString(received), "first");
+}
+
+TEST_F(ForwardingSocketTest, Transport_MultipleConcurrentConnectionsFifo) {
+  ForwardingTransport transport(allocator_);
+
+  ReliableConnector::ConnectFuture connect1 = transport.Connect();
+  ReliableConnector::ConnectFuture connect2 = transport.Connect();
+  EXPECT_TRUE(dispatcher_.RunInTaskUntilStalled(connect1).IsPending());
+  EXPECT_TRUE(dispatcher_.RunInTaskUntilStalled(connect2).IsPending());
+
+  ReliableListener::AcceptFuture accept1 = transport.Accept();
+  PW_TEST_ASSERT_OK_AND_ASSIGN(ReliableSocket server1,
+                               RunToCompletion(accept1));
+  PW_TEST_ASSERT_OK_AND_ASSIGN(ReliableSocket client1,
+                               RunToCompletion(connect1));
+  EXPECT_TRUE(dispatcher_.RunInTaskUntilStalled(connect2).IsPending());
+
+  ReliableListener::AcceptFuture accept2 = transport.Accept();
+  PW_TEST_ASSERT_OK_AND_ASSIGN(ReliableSocket server2,
+                               RunToCompletion(accept2));
+  PW_TEST_ASSERT_OK_AND_ASSIGN(ReliableSocket client2,
+                               RunToCompletion(connect2));
+
+  ASSERT_TRUE(TrySend(client1, "conn1"));
+  ASSERT_TRUE(TrySend(client2, "conn2"));
+  EXPECT_EQ(AsString(Receive(server1)), "conn1");
+  EXPECT_EQ(AsString(Receive(server2)), "conn2");
+}
+
+TEST_F(ForwardingSocketTest,
+       Transport_OptionsConfigureQueueDepthAndMaxMessageSize) {
+  ForwardingTransport transport(
+      allocator_, {.queue_depth = 2, .max_message_size_bytes = 64});
+
+  ReliableListener::AcceptFuture accept = transport.Accept();
+  ReliableConnector::ConnectFuture connect = transport.Connect();
+  PW_TEST_ASSERT_OK_AND_ASSIGN(ReliableSocket client, RunToCompletion(connect));
+  PW_TEST_ASSERT_OK_AND_ASSIGN(ReliableSocket server, RunToCompletion(accept));
+
+  EXPECT_EQ(client.max_write_message_size_bytes(), 64u);
+  EXPECT_EQ(client.max_read_message_size_bytes(), 64u);
+  EXPECT_EQ(server.max_write_message_size_bytes(), 64u);
+  EXPECT_EQ(server.max_read_message_size_bytes(), 64u);
+
+  EXPECT_TRUE(TrySend(client, "one"));
+  EXPECT_TRUE(TrySend(client, "two"));
+  EXPECT_FALSE(client.TryReserveWrite(4).has_value());
+}
+
+TEST_F(ForwardingSocketTest, Transport_CanceledFuturesDoNotAllocateOrLeak) {
+  ForwardingTransport transport(allocator_);
+
+  {
+    ReliableConnector::ConnectFuture canceled_connect = transport.Connect();
+    EXPECT_TRUE(
+        dispatcher_.RunInTaskUntilStalled(canceled_connect).IsPending());
+    EXPECT_EQ(allocator_.metrics().allocated_bytes.value(), 0u);
+  }
+
+  {
+    ReliableListener::AcceptFuture canceled_accept = transport.Accept();
+    EXPECT_TRUE(dispatcher_.RunInTaskUntilStalled(canceled_accept).IsPending());
+    EXPECT_EQ(allocator_.metrics().allocated_bytes.value(), 0u);
+  }
+
+  // Subsequent pairing still works cleanly.
+  ReliableListener::AcceptFuture accept = transport.Accept();
+  ReliableConnector::ConnectFuture connect = transport.Connect();
+  PW_TEST_ASSERT_OK_AND_ASSIGN(ReliableSocket client, RunToCompletion(connect));
+  PW_TEST_ASSERT_OK_AND_ASSIGN(ReliableSocket server, RunToCompletion(accept));
+  ASSERT_TRUE(TrySend(client, "ok"));
+  EXPECT_EQ(AsString(Receive(server)), "ok");
+}
+
+TEST_F(ForwardingSocketTest,
+       Transport_AllocationFailureFailsConnectLeavingAcceptActive) {
+  ForwardingTransport transport(allocator_, {.queue_depth = 32});
+
+  // Hold enough of `allocator_` so a 32-slot socket pair cannot fit.
+  Buf blocker = Buf::Allocate(allocator_, 3200);
+
+  // Case 1: Accept is already waiting when Connect fails to allocate.
+  ReliableListener::AcceptFuture accept = transport.Accept();
+  EXPECT_TRUE(dispatcher_.RunInTaskUntilStalled(accept).IsPending());
+
+  ReliableConnector::ConnectFuture failed_connect = transport.Connect();
+  EXPECT_EQ(RunToCompletion(failed_connect).status(),
+            Status::ResourceExhausted());
+  EXPECT_TRUE(dispatcher_.RunInTaskUntilStalled(accept).IsPending());
+
+  // Once memory is freed in `allocator_`, the still-pending `accept` succeeds.
+  blocker = Buf();
+  {
+    ReliableConnector::ConnectFuture ok_connect = transport.Connect();
+    PW_TEST_ASSERT_OK_AND_ASSIGN(ReliableSocket client,
+                                 RunToCompletion(ok_connect));
+    PW_TEST_ASSERT_OK_AND_ASSIGN(ReliableSocket server,
+                                 RunToCompletion(accept));
+    ASSERT_TRUE(TrySend(client, "recovered"));
+    EXPECT_EQ(AsString(Receive(server)), "recovered");
+  }
+
+  // Case 2: Connect is waiting first when Accept triggers allocation failure.
+  blocker = Buf::Allocate(allocator_, 3200);
+  ReliableConnector::ConnectFuture waiting_connect1 = transport.Connect();
+  ReliableConnector::ConnectFuture waiting_connect2 = transport.Connect();
+  EXPECT_TRUE(dispatcher_.RunInTaskUntilStalled(waiting_connect1).IsPending());
+  EXPECT_TRUE(dispatcher_.RunInTaskUntilStalled(waiting_connect2).IsPending());
+
+  ReliableListener::AcceptFuture accept2 = transport.Accept();
+  EXPECT_TRUE(dispatcher_.RunInTaskUntilStalled(accept2).IsPending());
+  EXPECT_EQ(RunToCompletion(waiting_connect1).status(),
+            Status::ResourceExhausted());
+  EXPECT_EQ(RunToCompletion(waiting_connect2).status(),
+            Status::ResourceExhausted());
+
+  // Freeing memory lets `accept2` pair with the next `Connect()`.
+  blocker = Buf();
+  ReliableConnector::ConnectFuture recovered_connect = transport.Connect();
+  PW_TEST_ASSERT_OK_AND_ASSIGN(ReliableSocket client2,
+                               RunToCompletion(recovered_connect));
+  PW_TEST_ASSERT_OK_AND_ASSIGN(ReliableSocket server2,
+                               RunToCompletion(accept2));
+  ASSERT_TRUE(TrySend(client2, "recovered2"));
+  EXPECT_EQ(AsString(Receive(server2)), "recovered2");
+}
+
+TEST_F(ForwardingSocketTest,
+       Transport_DestructionResolvesPendingWithFailedPrecondition) {
+  ReliableSocket client;
+  ReliableSocket server;
+  ReliableListener::AcceptFuture pending_accept;
+  ReliableConnector::ConnectFuture pending_connect;
+
+  {
+    ForwardingTransport transport(allocator_);
+    ReliableListener::AcceptFuture accept = transport.Accept();
+    ReliableConnector::ConnectFuture connect = transport.Connect();
+    PW_TEST_ASSERT_OK_AND_ASSIGN(client, RunToCompletion(connect));
+    PW_TEST_ASSERT_OK_AND_ASSIGN(server, RunToCompletion(accept));
+
+    pending_accept = transport.Accept();
+    EXPECT_TRUE(dispatcher_.RunInTaskUntilStalled(pending_accept).IsPending());
+  }
+  EXPECT_EQ(RunToCompletion(pending_accept).status(),
+            Status::FailedPrecondition());
+
+  {
+    ForwardingTransport transport(allocator_);
+    pending_connect = transport.Connect();
+    EXPECT_TRUE(dispatcher_.RunInTaskUntilStalled(pending_connect).IsPending());
+  }
+  EXPECT_EQ(RunToCompletion(pending_connect).status(),
+            Status::FailedPrecondition());
+
+  // Already-established sockets outlive `ForwardingTransport`.
+  ASSERT_TRUE(TrySend(client, "still alive"));
+  EXPECT_EQ(AsString(Receive(server)), "still alive");
 }
 
 }  // namespace

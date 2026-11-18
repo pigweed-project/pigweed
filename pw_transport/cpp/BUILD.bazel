@@ -67,14 +67,14 @@ cc_library(
         "//pw_containers:queue",
         "//pw_intrusive_ptr",
         "//pw_status",
-        "//pw_sync:interrupt_spin_lock",
-        "//pw_sync:lock_annotations",
     ],
     strip_include_prefix = "public",
     deps = [
         ":socket",
         "//pw_allocator",
         "//pw_result",
+        "//pw_sync:interrupt_spin_lock",
+        "//pw_sync:lock_annotations",
     ],
 )
 

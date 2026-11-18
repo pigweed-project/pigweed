@@ -68,6 +68,9 @@ cc_library_static {
         "pw_assert",
         "pw_sync",
     ],
+    export_header_lib_headers: [
+        "pw_sync",
+    ],
     static_libs: [
         "pw_allocator",
         "pw_async2",

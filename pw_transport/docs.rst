@@ -186,12 +186,22 @@ passed around into APIs that consume ``pw_transport``.
 
 In-Memory Forwarding Sockets
 ============================
-:cc:`ForwardingSocketPair` creates a connected pair of in-memory
-:cc:`ReliableSocket` endpoints (``first()`` and ``second()``) that forward
-datagrams to each other without copying. It is useful for unit testing and
-in-process communication between tasks. :cc:`ForwardingSocketOptions`
-configures the queue depth, which limits the write reservations and unread
-datagrams in each direction, and the maximum datagram size in each direction.
+:cc:`ForwardingSocketPair <pw::transport::ForwardingSocketPair>` creates a
+connected pair of in-memory :cc:`ReliableSocket <pw::transport::ReliableSocket>`
+endpoints (``first()`` and ``second()``) that forward datagrams to each other
+without copying. It is useful for unit testing and in-process communication
+between tasks. :cc:`ForwardingSocketOptions
+<pw::transport::ForwardingSocketOptions>` configures the queue depth, which
+limits the write reservations and unread datagrams in each direction, and the
+maximum message size.
+
+When an interface requires a :cc:`ReliableListener
+<pw::transport::ReliableListener>` or :cc:`ReliableConnector
+<pw::transport::ReliableConnector>` (such as ``pw::rpc2::Server`` or
+``pw::rpc2::Client::Connect``), :cc:`ForwardingTransport
+<pw::transport::ForwardingTransport>` pairs outbound ``Connect()`` calls with
+inbound ``Accept()`` calls automatically, configured via
+:cc:`ForwardingSocketOptions <pw::transport::ForwardingSocketOptions>`.
 
 ------------
 Implementing

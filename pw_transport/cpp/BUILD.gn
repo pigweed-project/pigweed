@@ -54,6 +54,8 @@ pw_source_set("forwarding_socket") {
     ":socket",
     "$dir_pw_allocator",
     "$dir_pw_result",
+    "$dir_pw_sync:interrupt_spin_lock",
+    "$dir_pw_sync:lock_annotations",
   ]
   deps = [
     "$dir_pw_assert",
@@ -63,8 +65,6 @@ pw_source_set("forwarding_socket") {
     "$dir_pw_containers:queue",
     "$dir_pw_intrusive_ptr",
     "$dir_pw_status",
-    "$dir_pw_sync:interrupt_spin_lock",
-    "$dir_pw_sync:lock_annotations",
   ]
   sources = [ "forwarding_socket.cc" ]
 }

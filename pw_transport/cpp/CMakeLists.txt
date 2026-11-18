@@ -44,6 +44,8 @@ pw_add_library(pw_transport.cpp.forwarding_socket STATIC
   PUBLIC_DEPS
     pw_allocator
     pw_result
+    pw_sync.interrupt_spin_lock
+    pw_sync.lock_annotations
     pw_transport.cpp.socket
   PRIVATE_DEPS
     pw_assert.assert
@@ -53,8 +55,6 @@ pw_add_library(pw_transport.cpp.forwarding_socket STATIC
     pw_containers.queue
     pw_intrusive_ptr
     pw_status
-    pw_sync.interrupt_spin_lock
-    pw_sync.lock_annotations
   SOURCES
     forwarding_socket.cc
 )

@@ -66,11 +66,8 @@ class ForwardingSocket final : public ReliableSocketImpl {
   ForwardingSocket(Allocator& allocator,
                    IntrusivePtr<SharedLock> lock,
                    FixedQueue<ConstBuf>&& read_queue,
-                   size_t max_write_message_size_bytes,
-                   size_t max_read_message_size_bytes)
-      : ReliableSocketImpl(allocator,
-                           max_write_message_size_bytes,
-                           max_read_message_size_bytes),
+                   size_t max_message_size_bytes)
+      : ReliableSocketImpl(allocator, max_message_size_bytes),
         allocator_(allocator),
         lock_(std::move(lock)),
         read_queue_(std::move(read_queue)) {}
@@ -245,12 +242,8 @@ Result<ForwardingSocketPair> ForwardingSocketPair::TryCreate(
     return Status::ResourceExhausted();
   }
 
-  ForwardingSocket* first =
-      allocator.New<ForwardingSocket>(allocator,
-                                      lock,
-                                      std::move(first_queue),
-                                      options.max_first_to_second_size_bytes,
-                                      options.max_second_to_first_size_bytes);
+  ForwardingSocket* first = allocator.New<ForwardingSocket>(
+      allocator, lock, std::move(first_queue), options.max_message_size_bytes);
   if (first == nullptr) {
     return Status::ResourceExhausted();
   }
@@ -259,8 +252,7 @@ Result<ForwardingSocketPair> ForwardingSocketPair::TryCreate(
       allocator.New<ForwardingSocket>(allocator,
                                       std::move(lock),
                                       std::move(second_queue),
-                                      options.max_second_to_first_size_bytes,
-                                      options.max_first_to_second_size_bytes);
+                                      options.max_message_size_bytes);
   if (second == nullptr) {
     allocator.Delete(first);
     return Status::ResourceExhausted();
@@ -269,6 +261,54 @@ Result<ForwardingSocketPair> ForwardingSocketPair::TryCreate(
   first->SetSibling(second);
   second->SetSibling(first);
   return ForwardingSocketPair(first->WrapSocket(), second->WrapSocket());
+}
+
+ForwardingTransport::ForwardingTransport(Allocator& allocator,
+                                         const ForwardingSocketOptions& options)
+    : allocator_(allocator), options_(options) {
+  PW_CHECK_UINT_GT(options_.queue_depth, 0u);
+}
+
+ForwardingTransport::~ForwardingTransport() {
+  std::lock_guard lock(lock_);
+  accept_provider_.ResolveAll(Status::FailedPrecondition());
+  connect_provider_.ResolveAll(Status::FailedPrecondition());
+}
+
+ReliableListener::AcceptFuture ForwardingTransport::DoAcceptReliable() {
+  std::lock_guard lock(lock_);
+  if (!connect_provider_.empty()) {
+    Result<ForwardingSocketPair> pair =
+        ForwardingSocketPair::TryCreate(allocator_, options_);
+    if (!pair.ok()) {
+      connect_provider_.ResolveAll(pair.status());
+    } else {
+      Result<ReliableSocket> first = pair->first();
+      if (connect_provider_.TryResolveFirst(first)) {
+        return ReliableListener::AcceptFuture::Resolved(pair->second());
+      }
+    }
+  }
+  return accept_provider_.Get();
+}
+
+ReliableConnector::ConnectFuture ForwardingTransport::DoConnectReliable() {
+  std::lock_guard lock(lock_);
+  if (!accept_provider_.empty()) {
+    Result<ForwardingSocketPair> pair =
+        ForwardingSocketPair::TryCreate(allocator_, options_);
+    if (!pair.ok()) {
+      if (!accept_provider_.empty()) {
+        return ReliableConnector::ConnectFuture::Resolved(pair.status());
+      }
+    } else {
+      Result<ReliableSocket> second = pair->second();
+      if (accept_provider_.TryResolveFirst(second)) {
+        return ReliableConnector::ConnectFuture::Resolved(pair->first());
+      }
+    }
+  }
+  return connect_provider_.Get();
 }
 
 }  // namespace pw::transport
