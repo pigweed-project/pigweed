@@ -213,16 +213,17 @@ class LowEnergyConnection final : public sm::Delegate {
       LowEnergyConnectionOptions connection_options);
 
   // Called when the preferred connection parameters have been received for a LE
-  // peripheral. This can happen in the form of:
+  // peripheral via an L2CAP Connection Parameter Update request. Can also
+  // happen via:
   //
   //   1. <<Peripheral Connection Interval Range>> advertising data field
   //   2. "Peripheral Preferred Connection Parameters" GATT characteristic
   //      (under "GAP" service)
-  //   3. HCI LE Remote Connection Parameter Request Event
+  //   3. HCI LE Remote Connection Parameter Request Event (handled by
+  //      OnLERemoteConnectionParameterRequest)
   //   4. L2CAP Connection Parameter Update request
   //
   // TODO(fxbug.dev/42147867): Support #1 above.
-  // TODO(fxbug.dev/42147868): Support #3 above.
   //
   // This method caches |params| for later connection attempts and sends the
   // parameters to the controller if the initializing procedures are complete
@@ -293,6 +294,17 @@ class LowEnergyConnection final : public sm::Delegate {
   // is why it is not simply handled by the command handler. (See Core Spec
   // v5.2, Vol 6, Part B, Sec 5.1.7.1).
   void OnLEConnectionUpdateComplete(const hci::EventPacket& event);
+
+  // Handles the HCI LE Remote Connection Parameter Request event (Core Spec
+  // v6.2, Vol 4, Part E, Sec 7.7.65.6) by validating the requested parameters
+  // and replying with Reply or Negative Reply.
+  void OnLERemoteConnectionParameterRequest(const hci::EventPacket& event);
+
+  // Sends an HCI LE Remote Connection Parameter Request Negative Reply command
+  // with |reason|.
+  void SendLERemoteConnectionParameterRequestNegativeReply(
+      hci_spec::ConnectionHandle handle,
+      pw::bluetooth::emboss::StatusCode reason);
 
   // Updates or requests an update of the connection parameters, for central and
   // peripheral roles respectively, if interrogation has completed.
@@ -386,7 +398,10 @@ class LowEnergyConnection final : public sm::Delegate {
   ErrorCallback error_callback_;
 
   // Event handler ID for the HCI LE Connection Update Complete event.
-  hci::CommandChannel::EventHandlerId conn_update_cmpl_handler_id_;
+  hci::CommandChannel::EventHandlerId conn_update_cmpl_handler_id_ = 0;
+
+  // Event handler ID for the HCI LE Remote Connection Parameter Request event.
+  hci::CommandChannel::EventHandlerId remote_conn_param_req_handler_id_ = 0;
 
   // Called with the status of the next HCI LE Connection Update Complete event.
   // The HCI LE Connection Update command does not have its own complete event

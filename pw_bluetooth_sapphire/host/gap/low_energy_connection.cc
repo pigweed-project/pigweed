@@ -146,6 +146,7 @@ LowEnergyConnection::~LowEnergyConnection() {
   weak_self_.InvalidatePtrs();
 
   cmd_->RemoveEventHandler(conn_update_cmpl_handler_id_);
+  cmd_->RemoveEventHandler(remote_conn_param_req_handler_id_);
 
   // Unregister this link from the GATT profile and the L2CAP plane. This
   // invalidates all L2CAP channels that are associated with this link.
@@ -389,6 +390,16 @@ void LowEnergyConnection::RegisterEventHandlers() {
       [self](const hci::EventPacket& event) {
         if (self.is_alive()) {
           self->OnLEConnectionUpdateComplete(event);
+          return hci::CommandChannel::EventCallbackResult::kContinue;
+        }
+        return hci::CommandChannel::EventCallbackResult::kRemove;
+      });
+  remote_conn_param_req_handler_id_ = cmd_->AddLEMetaEventHandler(
+      pw::bluetooth::emboss::LeSubEventCode::
+          REMOTE_CONNECTION_PARAMETER_REQUEST,
+      [self](const hci::EventPacket& event) {
+        if (self.is_alive()) {
+          self->OnLERemoteConnectionParameterRequest(event);
           return hci::CommandChannel::EventCallbackResult::kContinue;
         }
         return hci::CommandChannel::EventCallbackResult::kRemove;
@@ -692,6 +703,128 @@ void LowEnergyConnection::OnLEConnectionUpdateComplete(
   peer_->MutLe().SetConnectionParameters(params);
 }
 
+void LowEnergyConnection::OnLERemoteConnectionParameterRequest(
+    const hci::EventPacket& event) {
+  PW_CHECK(event.event_code() == hci_spec::kLEMetaEventCode);
+  auto view = event.unchecked_view<pw::bluetooth::emboss::LEMetaEventView>();
+  if (!view.IsComplete()) {
+    bt_log(WARN,
+           "gap-le",
+           "malformed LE meta event while handling remote connection parameter "
+           "request");
+    return;
+  }
+  PW_CHECK(view.subevent_code_enum().Read() ==
+           pw::bluetooth::emboss::LeSubEventCode::
+               REMOTE_CONNECTION_PARAMETER_REQUEST);
+
+  auto payload = event.unchecked_view<
+      pw::bluetooth::emboss::LERemoteConnectionParameterRequestSubeventView>();
+  if (!payload.IsComplete()) {
+    bt_log(WARN,
+           "gap-le",
+           "malformed HCI LE Remote Connection Parameter Request event");
+    return;
+  }
+
+  hci_spec::ConnectionHandle handle =
+      payload.connection_handle().UncheckedRead();
+  if (handle != link_->handle()) {
+    return;
+  }
+
+  hci_spec::LEPreferredConnectionParameters params(
+      payload.interval_min().UncheckedRead(),
+      payload.interval_max().UncheckedRead(),
+      payload.max_latency().UncheckedRead(),
+      payload.timeout().UncheckedRead());
+
+  if (!params.IsValid()) {
+    bt_log(DEBUG,
+           "gap-le",
+           "rejecting invalid remote LE connection parameters (peer: %s, "
+           "handle: %#.4x, min: %#.4x, max: %#.4x, latency: %#.4x, "
+           "timeout: %#.4x)",
+           bt_str(peer_id()),
+           handle,
+           params.min_interval(),
+           params.max_interval(),
+           params.max_latency(),
+           params.supervision_timeout());
+    SendLERemoteConnectionParameterRequestNegativeReply(
+        handle,
+        pw::bluetooth::emboss::StatusCode::UNACCEPTABLE_CONNECTION_PARAMETERS);
+    return;
+  }
+
+  if (link_->role() == pw::bluetooth::emboss::ConnectionRole::CENTRAL) {
+    PW_CHECK(peer_.is_alive());
+    peer_->MutLe().SetPreferredConnectionParameters(params);
+    conn_pause_central_timeout_.reset();
+    connection_parameters_update_requested_ = true;
+  } else {
+    // The Central has explicitly negotiated connection parameters for this
+    // link, so do not overwrite them with default parameters when
+    // kLEConnectionPausePeripheral expires.
+    conn_pause_peripheral_timeout_.reset();
+    connection_parameters_update_requested_ = true;
+  }
+
+  bt_log(DEBUG,
+         "gap-le",
+         "accepting remote LE connection parameter request (peer: %s, handle: "
+         "%#.4x)",
+         bt_str(peer_id()),
+         handle);
+
+  auto command = hci::CommandPacket::New<
+      pw::bluetooth::emboss::
+          LERemoteConnectionParameterRequestReplyCommandWriter>(
+      pw::bluetooth::emboss::OpCode::
+          LE_REMOTE_CONNECTION_PARAMETER_REQUEST_REPLY);
+  auto cmd_view = command.view_t();
+  cmd_view.connection_handle().Write(handle);
+  cmd_view.interval_min().Write(params.min_interval());
+  cmd_view.interval_max().Write(params.max_interval());
+  cmd_view.max_latency().Write(params.max_latency());
+  cmd_view.timeout().Write(params.supervision_timeout());
+  cmd_view.min_connection_event_length().Write(0x0000);
+  cmd_view.max_connection_event_length().Write(0x0000);
+
+  auto status_cb = [handle](auto, const hci::EventPacket& status_event) {
+    HCI_IS_ERROR(status_event,
+                 TRACE,
+                 "gap-le",
+                 "controller rejected LE Remote Connection Parameter Request "
+                 "Reply (handle: %#.4x)",
+                 handle);
+  };
+  cmd_->SendCommand(std::move(command), std::move(status_cb)).IgnoreError();
+}
+
+void LowEnergyConnection::SendLERemoteConnectionParameterRequestNegativeReply(
+    hci_spec::ConnectionHandle handle,
+    pw::bluetooth::emboss::StatusCode reason) {
+  auto command = hci::CommandPacket::New<
+      pw::bluetooth::emboss::
+          LERemoteConnectionParameterRequestNegativeReplyCommandWriter>(
+      pw::bluetooth::emboss::OpCode::
+          LE_REMOTE_CONNECTION_PARAMETER_REQUEST_NEGATIVE_REPLY);
+  auto cmd_view = command.view_t();
+  cmd_view.connection_handle().Write(handle);
+  cmd_view.reason().Write(reason);
+  auto status_cb = [handle](auto, const hci::EventPacket& status_event) {
+    HCI_IS_ERROR(
+        status_event,
+        TRACE,
+        "gap-le",
+        "controller rejected LE Remote Connection Parameter Request Negative "
+        "Reply (handle: %#.4x)",
+        handle);
+  };
+  cmd_->SendCommand(std::move(command), std::move(status_cb)).IgnoreError();
+}
+
 void LowEnergyConnection::MaybeUpdateConnectionParameters() {
   if (connection_parameters_update_requested_ || conn_pause_central_timeout_ ||
       conn_pause_peripheral_timeout_ || !interrogation_completed_) {
@@ -783,7 +916,9 @@ void LowEnergyConnection::OnGattServicesResult(att::Result<> status,
   if (!peer_->le()->preferred_connection_parameters().has_value()) {
     gap_service_client_->ReadPeripheralPreferredConnectionParameters(
         [self](att::Result<hci_spec::LEPreferredConnectionParameters> result) {
-          if (!self.is_alive()) {
+          if (!self.is_alive() || self->peer_->le()
+                                      ->preferred_connection_parameters()
+                                      .has_value()) {
             return;
           }
 

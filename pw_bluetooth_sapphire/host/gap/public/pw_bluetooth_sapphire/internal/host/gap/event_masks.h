@@ -91,6 +91,7 @@ constexpr uint64_t BuildLEEventMask() {
   ENABLE_EVT(kLEPeriodicAdvertisingSyncEstablishedV2);
   ENABLE_EVT(kLEPeriodicAdvertisingSyncLost);
   ENABLE_EVT(kLEReadRemoteFeaturesComplete);
+  ENABLE_EVT(kLERemoteConnectionParameterRequest);
   ENABLE_EVT(kLERequestPeerSCAComplete);
 
 #undef ENABLE_EVT
