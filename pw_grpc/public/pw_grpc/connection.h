@@ -12,8 +12,8 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 #pragma once
-
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <optional>
 
@@ -21,9 +21,11 @@
 #include "pw_allocator/synchronized_allocator.h"
 #include "pw_async/dispatcher.h"
 #include "pw_async/heap_dispatcher.h"
+#include "pw_async/task.h"
 #include "pw_bytes/byte_builder.h"
 #include "pw_bytes/span.h"
 #include "pw_containers/dynamic_queue.h"
+#include "pw_containers/vector.h"
 #include "pw_function/function.h"
 #include "pw_grpc/default_send_queue.h"
 #include "pw_grpc/send_queue.h"
@@ -32,6 +34,8 @@
 #include "pw_stream/stream.h"
 #include "pw_string/string.h"
 #include "pw_sync/inline_borrowable.h"
+#include "pw_sync/lock_annotations.h"
+#include "pw_sync/mutex.h"
 #include "pw_sync/thread_notification.h"
 
 namespace pw::grpc {
@@ -86,6 +90,8 @@ inline constexpr uint32_t kMaxMethodNameSize = 127;
 // blocking the reader thread from processing incoming control frames (like
 // WINDOW_UPDATE or RST_STREAM). If read_dispatcher or read_allocator is null,
 // request callbacks are executed synchronously directly on the reader thread.
+// The read_dispatcher is also required for asynchronous END_STREAM trailer and
+// control-frame backpressure recovery when SendQueue is full.
 //
 // By default, each gRPC message must be entirely contained within a single
 // HTTP2 DATA frame, as supporting fragmented messages requires buffering
@@ -95,6 +101,7 @@ inline constexpr uint32_t kMaxMethodNameSize = 127;
 // allocator is provided, or allocation fails, the stream will be closed.
 class Connection {
  public:
+  ~Connection();
   // Callbacks invoked on requests from the client. Called on same thread as
   // ProcessFrame is being called on.
   class RequestCallbacks {
@@ -157,6 +164,7 @@ class Connection {
   // Reads from stream and processes required connection preface frames. Should
   // be called before ProcessFrame(). Return OK if connection preface was found.
   Status ProcessConnectionPreface() {
+    RegisterSpaceAvailableCallback();
     return HandleReadError(reader_.ProcessConnectionPreface());
   }
 
@@ -170,6 +178,7 @@ class Connection {
   // Safe to call multiple times; transport closing implementations must be
   // idempotent.
   void CloseConnection() {
+    UnregisterSpaceAvailableCallback();
     if (close_connection_callback_) {
       close_connection_callback_();
     }
@@ -256,6 +265,8 @@ class Connection {
     StreamId id = 0;
     bool half_closed = false;
     bool started_response = false;
+    bool end_stream_latched = false;
+    Status latched_response_code;
     int32_t send_window = 0;
     int32_t recv_window = kTargetStreamWindowSize;
 
@@ -292,6 +303,8 @@ class Connection {
       id = 0;
       half_closed = false;
       started_response = false;
+      end_stream_latched = false;
+      latched_response_code = pw::OkStatus();
       send_window = 0;
       recv_window = kTargetStreamWindowSize;
       response_queue.clear();
@@ -308,7 +321,8 @@ class Connection {
 
   class SharedState {
    public:
-    SharedState(Allocator* message_assembly_allocator,
+    SharedState(Connection& connection,
+                Allocator* message_assembly_allocator,
                 Allocator& send_allocator,
                 SendQueue& send_queue);
 
@@ -352,6 +366,20 @@ class Connection {
                              uint32_t connection_increment,
                              uint32_t stream_increment);
     Status SendSettingsAck();
+    Status SendTrailers(Stream& stream, Status response_code);
+    Status SendPingAck(uint64_t opaque_data);
+
+    void DeferSettingsAck() {
+      pending_settings_acks_++;
+      connection_.MarkDrainNeeded();
+    }
+
+    void DeferPingAck(uint64_t opaque_data) {
+      if (!pending_ping_acks_.full()) {
+        pending_ping_acks_.push_back(opaque_data);
+        connection_.MarkDrainNeeded();
+      }
+    }
 
     Allocator* message_assembly_allocator() {
       return message_assembly_allocator_;
@@ -365,15 +393,22 @@ class Connection {
       for (Stream& stream : streams_) {
         stream.Reset();
       }
+      pending_ping_acks_.clear();
+      pending_settings_acks_ = 0;
+      owed_window_update_ = false;
+      connection_.drain_needed_.store(false, std::memory_order_release);
     }
 
     bool connection_closed() const { return connection_closed_; }
 
+    Status DrainResponseQueues();
+
    private:
+    bool HasPendingDrain() const;
+
     // Called whenever there is new data to send or a WINDOW_UPDATE message has
     // increased a send window. Should attempt to drain any queued data across
     // all active streams.
-    Status DrainResponseQueues();
     Status DrainResponseQueue(Stream& stream);
     Status SendQueuedDataFrame(Stream& stream, DataFrame&& data_frame);
 
@@ -385,14 +420,17 @@ class Connection {
     int32_t connection_send_window_ = kDefaultInitialWindowSize;
     int32_t connection_recv_window_ = kTargetConnectionWindowSize;
     bool connection_closed_ = false;
+    bool owed_window_update_ = false;
+    pw::Vector<uint64_t, 4> pending_ping_acks_;
+    uint8_t pending_settings_acks_ = 0;
 
     // Allocator for fragmented grpc message reassembly
     Allocator* message_assembly_allocator_;
 
     // Allocator for creating send buffers to queue.
     Allocator& send_allocator_;
-
     SendQueue& send_queue_;
+    Connection& connection_;
   };
 
   class Writer {
@@ -466,6 +504,31 @@ class Connection {
   }
 
   std::optional<pw::async::HeapDispatcher> read_dispatcher_;
+  SendQueue& send_queue_;
+  pw::async::Task drain_task_;
+  // Lock acquisition order:
+  //   shared_state_ -> send_queue_ internal mutex -> drain_mutex_
+  //   callback_mutex_ -> send_queue_ internal mutex -> drain_mutex_
+  // drain_mutex_ must never be held when locking shared_state_ or calling
+  // into send_queue_. Registration on send_queue_ is deferred until
+  // ProcessConnectionPreface() so Connection instances that are never run do
+  // not touch send_queue_ in ~Connection().
+  pw::sync::Mutex drain_mutex_;
+  bool drain_scheduled_ PW_GUARDED_BY(drain_mutex_) = false;
+  bool drain_rerun_ PW_GUARDED_BY(drain_mutex_) = false;
+  bool drain_stopping_ PW_GUARDED_BY(drain_mutex_) = false;
+  std::atomic<bool> drain_needed_{false};
+  pw::sync::ThreadNotification drain_done_;
+
+  pw::sync::Mutex callback_mutex_ PW_ACQUIRED_BEFORE(drain_mutex_);
+  bool callback_registered_ PW_GUARDED_BY(callback_mutex_) = false;
+  bool callback_closed_ PW_GUARDED_BY(callback_mutex_) = false;
+
+  void RunDrainTask(pw::Status status) PW_LOCKS_EXCLUDED(drain_mutex_);
+  void ScheduleDrainTask() PW_LOCKS_EXCLUDED(drain_mutex_);
+  void MarkDrainNeeded() PW_LOCKS_EXCLUDED(drain_mutex_);
+  void RegisterSpaceAvailableCallback() PW_LOCKS_EXCLUDED(callback_mutex_);
+  void UnregisterSpaceAvailableCallback() PW_LOCKS_EXCLUDED(callback_mutex_);
   allocator::SynchronizedAllocator<pw::sync::Mutex>* read_allocator_ = nullptr;
   // Shared state that is thread-safe.
   sync::InlineBorrowable<SharedState> shared_state_;

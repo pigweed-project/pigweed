@@ -188,8 +188,13 @@ Connection::Connection(
           read_dispatcher
               ? std::make_optional<pw::async::HeapDispatcher>(*read_dispatcher)
               : std::nullopt),
+      send_queue_(send_queue),
+      drain_task_([this](pw::async::Context&, pw::Status status) {
+        RunDrainTask(status);
+      }),
       read_allocator_(read_allocator),
       shared_state_(std::in_place,
+                    *this,
                     message_assembly_allocator,
                     send_allocator,
                     send_queue),
@@ -197,14 +202,155 @@ Connection::Connection(
       writer_(*this),
       close_connection_callback_(std::move(close_connection_callback)) {}
 
-Connection::SharedState::SharedState(Allocator* message_assembly_allocator,
+void Connection::RegisterSpaceAvailableCallback() {
+  if (!read_dispatcher_.has_value()) {
+    return;
+  }
+  std::lock_guard lock(callback_mutex_);
+  if (callback_closed_ || callback_registered_) {
+    return;
+  }
+  callback_registered_ = true;
+  send_queue_.set_on_space_available([this]() {
+    if (!drain_needed_.load(std::memory_order_acquire)) {
+      return;
+    }
+    ScheduleDrainTask();
+  });
+}
+
+void Connection::UnregisterSpaceAvailableCallback() {
+  std::lock_guard lock(callback_mutex_);
+  callback_closed_ = true;
+  if (!callback_registered_) {
+    return;
+  }
+  callback_registered_ = false;
+  send_queue_.set_on_space_available(nullptr);
+}
+
+Connection::~Connection() {
+  UnregisterSpaceAvailableCallback();
+  bool wait_for_task = false;
+  {
+    std::lock_guard lock(drain_mutex_);
+    drain_stopping_ = true;
+    if (drain_scheduled_ && read_dispatcher_.has_value()) {
+      if (read_dispatcher_->Cancel(drain_task_)) {
+        drain_scheduled_ = false;
+      } else {
+        wait_for_task = true;
+      }
+    }
+  }
+  if (wait_for_task) {
+    drain_done_.acquire();
+  }
+}
+
+bool Connection::SharedState::HasPendingDrain() const {
+  if (pending_settings_acks_ > 0 || !pending_ping_acks_.empty() ||
+      owed_window_update_) {
+    return true;
+  }
+  for (const Stream& stream : streams_) {
+    if (stream.id != 0 &&
+        (stream.end_stream_latched || !stream.response_queue.empty())) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void Connection::RunDrainTask(pw::Status status) {
+  if (status.ok()) {
+    while (true) {
+      {
+        std::lock_guard lock(drain_mutex_);
+        if (drain_stopping_) {
+          break;
+        }
+        drain_rerun_ = false;
+      }
+      {
+        auto state = LockState();
+        if (!state->connection_closed()) {
+          state->DrainResponseQueues().IgnoreError();
+        }
+      }
+      std::lock_guard lock(drain_mutex_);
+      if (drain_stopping_ || !drain_rerun_) {
+        break;
+      }
+    }
+  }
+  bool notify = false;
+  {
+    std::lock_guard lock(drain_mutex_);
+    drain_scheduled_ = false;
+    drain_rerun_ = false;
+    notify = drain_stopping_;
+  }
+  if (notify) {
+    drain_done_.release();
+  }
+}
+
+void Connection::ScheduleDrainTask() {
+  std::lock_guard lock(drain_mutex_);
+  if (drain_stopping_ || !read_dispatcher_.has_value()) {
+    return;
+  }
+  if (drain_scheduled_) {
+    drain_rerun_ = true;
+    return;
+  }
+  drain_scheduled_ = true;
+  read_dispatcher_->Post(drain_task_);
+}
+
+void Connection::MarkDrainNeeded() {
+  if (!drain_needed_.exchange(true, std::memory_order_acq_rel)) {
+    ScheduleDrainTask();
+  }
+}
+
+Status Connection::SharedState::SendTrailers(Stream& stream,
+                                             Status response_code) {
+  return SendHeaders(
+      stream.id,
+      stream.started_response ? ConstByteSpan() : ResponseHeadersPayload(),
+      ResponseTrailersPayload(response_code),
+      /*end_stream=*/true);
+}
+
+Status Connection::SharedState::SendPingAck(uint64_t opaque_data) {
+  PW_PACKED(struct) PingFrame {
+    WireFrameHeader header;
+    uint64_t opaque_data;
+  };
+  PingFrame ack_frame = {
+      .header = WireFrameHeader(FrameHeader{
+          .payload_length = 8,
+          .type = FrameType::PING,
+          .flags = FLAGS_ACK,
+          .stream_id = 0,
+      }),
+      .opaque_data = opaque_data,
+  };
+  return SendBytes(ObjectAsBytes(ack_frame));
+}
+
+Connection::SharedState::SharedState(Connection& connection,
+                                     Allocator* message_assembly_allocator,
                                      Allocator& send_allocator,
                                      SendQueue& send_queue)
     : streams_(
           MakeArrayWithValue<Stream, kMaxConcurrentStreams>(send_allocator)),
       message_assembly_allocator_(message_assembly_allocator),
       send_allocator_(send_allocator),
-      send_queue_(send_queue) {}
+      send_queue_(send_queue),
+      connection_(connection) {}
 
 Result<Connection::DataFrame> Connection::DataFrame::Create(
     Allocator& allocator, size_t message_payload_size) {
@@ -300,6 +446,8 @@ pw::Status Connection::SharedState::CreateStream(StreamId id,
     streams_[i].id = id;
     streams_[i].half_closed = false;
     streams_[i].started_response = false;
+    streams_[i].end_stream_latched = false;
+    streams_[i].latched_response_code = pw::OkStatus();
     streams_[i].recv_window = kDefaultInitialWindowSize;
     streams_[i].send_window = initial_send_window;
     return OkStatus();
@@ -348,14 +496,83 @@ Status Connection::SharedState::DrainResponseQueue(Stream& stream) {
     DataFrame front = std::move(stream.response_queue.front());
     stream.response_queue.pop();
 
-    PW_TRY(SendQueuedDataFrame(stream, std::move(front)));
+    if (auto s = SendQueuedDataFrame(stream, std::move(front)); !s.ok()) {
+      return s;
+    }
   }
   return OkStatus();
 }
 
 Status Connection::SharedState::DrainResponseQueues() {
+  struct DrainUpdater {
+    Connection::SharedState* state;
+    ~DrainUpdater() {
+      if (state->HasPendingDrain()) {
+        state->connection_.MarkDrainNeeded();
+      } else {
+        state->connection_.drain_needed_.store(false,
+                                               std::memory_order_release);
+      }
+    }
+  } updater{this};
+
+  owed_window_update_ = false;
+
+  while (pending_settings_acks_ > 0) {
+    if (!SendSettingsAck().ok()) {
+      break;
+    }
+    pending_settings_acks_--;
+  }
+  while (!pending_ping_acks_.empty()) {
+    if (!SendPingAck(pending_ping_acks_.front()).ok()) {
+      break;
+    }
+    pending_ping_acks_.erase(pending_ping_acks_.begin());
+  }
+  uint32_t connection_increment = static_cast<uint32_t>(
+      kTargetConnectionWindowSize - connection_recv_window_);
+  constexpr size_t kConnectionWindowUpdateThreshold =
+      kTargetConnectionWindowSize / 2;
+  if (connection_increment > kConnectionWindowUpdateThreshold) {
+    if (auto status = SendWindowUpdates(nullptr, connection_increment, 0);
+        !status.ok()) {
+      if (status.IsResourceExhausted()) {
+        owed_window_update_ = true;
+      } else {
+        return status;
+      }
+    }
+  }
   for (Stream& stream : streams_) {
-    PW_TRY(DrainResponseQueue(stream));
+    if (stream.id != 0 && !stream.end_stream_latched) {
+      uint32_t stream_increment =
+          static_cast<uint32_t>(kTargetStreamWindowSize - stream.recv_window);
+      constexpr size_t kStreamWindowUpdateThreshold =
+          kTargetStreamWindowSize / 2;
+      if (stream_increment > kStreamWindowUpdateThreshold) {
+        if (auto status = SendWindowUpdates(&stream, 0, stream_increment);
+            !status.ok()) {
+          if (status.IsResourceExhausted()) {
+            owed_window_update_ = true;
+          } else {
+            return status;
+          }
+        }
+      }
+    }
+  }
+  for (Stream& stream : streams_) {
+    if (auto s = DrainResponseQueue(stream); !s.ok()) {
+      return s;
+    }
+  }
+  for (Stream& stream : streams_) {
+    if (stream.end_stream_latched && stream.response_queue.empty()) {
+      if (SendTrailers(stream, stream.latched_response_code).ok()) {
+        stream.Reset();
+      }
+    }
   }
   return OkStatus();
 }
@@ -462,9 +679,9 @@ Status Connection::SharedState::SendRstStream(StreamId stream_id,
 Status Connection::SharedState::SendWindowUpdates(Stream* stream,
                                                   uint32_t connection_increment,
                                                   uint32_t stream_increment) {
-  // It is illegal to send updates with increment=0. We won't include
-  // stream_increment if it is 0 or stream is null.
-  if (connection_increment == 0) {
+  const bool send_conn = connection_increment > 0;
+  const bool send_stream = stream != nullptr && stream_increment > 0;
+  if (!send_conn && !send_stream) {
     return OkStatus();
   }
 
@@ -479,14 +696,6 @@ Status Connection::SharedState::SendWindowUpdates(Stream* stream,
                connection_increment,
                stream_increment);
 
-  connection_recv_window_ += connection_increment;
-  if (stream) {
-    stream->recv_window += stream_increment;
-    if (stream_increment == 0) {
-      return OkStatus();
-    }
-  }
-
   PW_PACKED(struct) WindowUpdateFrame {
     WireFrameHeader header;
     uint32_t increment;
@@ -499,9 +708,9 @@ Status Connection::SharedState::SendWindowUpdates(Stream* stream,
               .flags = 0,
               .stream_id = 0,
           }),
-          .increment = ToNetworkOrder(connection_increment),
+          .increment =
+              bytes::ConvertOrderTo(std::endian::big, connection_increment),
       },
-      // Will not be included if stream is null.
       {
           .header = WireFrameHeader(FrameHeader{
               .payload_length = 4,
@@ -509,10 +718,23 @@ Status Connection::SharedState::SendWindowUpdates(Stream* stream,
               .flags = 0,
               .stream_id = stream ? stream->id : 0,
           }),
-          .increment = ToNetworkOrder(stream_increment),
+          .increment =
+              bytes::ConvertOrderTo(std::endian::big, stream_increment),
       },
   };
-  return SendBytes(as_bytes(span{frames, stream ? 2U : 1U}));
+
+  const size_t offset = send_conn ? 0U : 1U;
+  const size_t count = (send_conn ? 1U : 0U) + (send_stream ? 1U : 0U);
+  auto status = SendBytes(as_bytes(span{frames + offset, count}));
+  if (status.ok()) {
+    if (send_conn) {
+      connection_recv_window_ += connection_increment;
+    }
+    if (send_stream) {
+      stream->recv_window += stream_increment;
+    }
+  }
+  return status;
 }
 
 // RFC 9113 §6.5
@@ -543,7 +765,7 @@ Status Connection::Writer::SendResponseMessage(StreamId stream_id,
   while (true) {
     auto state = connection_.LockState();
     auto stream = state->LookupStream(stream_id);
-    if (!stream) {
+    if (!stream || stream->end_stream_latched) {
       return Status::NotFound();
     }
 
@@ -595,7 +817,7 @@ Status Connection::Writer::SendResponseMessage(StreamId stream_id,
       return Status::Unavailable();
     }
     stream = state->LookupStream(stream_id);
-    if (!stream) {
+    if (!stream || stream->end_stream_latched) {
       return Status::Unavailable();
     }
   }
@@ -604,7 +826,7 @@ Status Connection::Writer::SendResponseMessage(StreamId stream_id,
 Status Connection::SharedState::QueueStreamResponse(StreamId id,
                                                     DataFrame&& data_frame) {
   auto stream = LookupStream(id);
-  if (!stream) {
+  if (!stream || stream->end_stream_latched) {
     return Status::NotFound();
   }
   if (!stream->response_queue.try_emplace(std::move(data_frame))) {
@@ -620,11 +842,13 @@ Status Connection::SharedState::SendQueuedDataFrame(Connection::Stream& stream,
 
   auto status = OkStatus();
   if (!stream.started_response) {
-    stream.started_response = true;
     status = SendHeaders(stream.id,
                          ResponseHeadersPayload(),
                          ConstByteSpan(),
                          /*end_stream=*/false);
+    if (status.ok()) {
+      stream.started_response = true;
+    }
   }
 
   if (status.ok()) {
@@ -651,35 +875,32 @@ Status Connection::Writer::SendResponseComplete(StreamId stream_id,
   }
   auto state = connection_.LockState();
   auto stream = state->LookupStream(stream_id);
-  if (!stream) {
+  if (!stream || stream->end_stream_latched) {
     return Status::NotFound();
   }
 
   Status status;
-  if (!stream->started_response) {
-    // If the response has not started yet, we need to include the initial
-    // headers.
-    PW_LOG_DEBUG("Conn.SendResponseWithTrailers id=%" PRIu32 " code=%d",
-                 stream_id,
-                 response_code.code());
-    status = state->SendHeaders(stream_id,
-                                ResponseHeadersPayload(),
-                                ResponseTrailersPayload(response_code),
-                                /*end_stream=*/true);
+  if (!stream->response_queue.empty()) {
+    status = pw::Status::ResourceExhausted();
   } else {
-    PW_LOG_DEBUG("Conn.SendTrailers id=%" PRIu32 " code=%d",
-                 stream_id,
-                 response_code.code());
-    status = state->SendHeaders(stream_id,
-                                ConstByteSpan(),
-                                ResponseTrailersPayload(response_code),
-                                /*end_stream=*/true);
+    status = state->SendTrailers(*stream, response_code);
   }
 
   if (!status.ok()) {
-    PW_LOG_WARN("Failed sending response complete on id=%" PRIu32 " error=%d",
+    PW_LOG_WARN("Failed sending response complete on id=%" PRIu32
+                " error=%d, latching END_STREAM",
                 stream_id,
                 status.code());
+    if (!connection_.read_dispatcher_.has_value()) {
+      stream->Reset();
+    } else {
+      stream->end_stream_latched = true;
+      stream->latched_response_code = response_code;
+      stream->assembly_buffer = nullptr;
+      stream->assembly = {};
+      stream->SignalWindowAvailable();
+      connection_.MarkDrainNeeded();
+    }
     return Status::Unavailable();
   }
 
@@ -691,9 +912,12 @@ Status Connection::Writer::SendResponseComplete(StreamId stream_id,
 
 void Connection::Reader::CloseStream(Connection::Stream* stream) {
   StreamId id = stream->id;
+  bool was_latched = stream->end_stream_latched;
   PW_LOG_DEBUG("Conn.CloseStream id=%" PRIu32, id);
   stream->Reset();
-  callbacks_.OnCancel(id);
+  if (!was_latched) {
+    callbacks_.OnCancel(id);
+  }
 }
 
 // RFC 9113 §3.4
@@ -794,7 +1018,7 @@ Status Connection::Reader::ProcessDataFrame(const FrameHeader& frame) {
     auto state = connection_.LockState();
     auto stream = state->LookupStream(frame.stream_id);
 
-    if (!stream) {
+    if (!stream || stream->end_stream_latched) {
       PW_LOG_DEBUG("Ignoring DATA on closed stream id=%" PRIu32,
                    frame.stream_id);
       // Unlock since ProcessIgnoredFrame will try and read all the ignored
@@ -907,6 +1131,9 @@ Status Connection::Reader::ProcessDataFramePayload(const FrameHeader& frame,
                                                    ByteSpan payload) {
   auto state = connection_.LockState();
   Stream* stream = state->LookupStream(frame.stream_id);
+  if (stream && stream->end_stream_latched) {
+    stream = nullptr;
+  }
 
   PW_TRY(state->UpdateRecvWindow(stream, frame.payload_length));
 
@@ -1153,8 +1380,12 @@ Status Connection::Reader::ProcessHeadersFrame(const FrameHeader& frame) {
   if (const auto status = callbacks_.OnNew(frame.stream_id, method_name);
       !status.ok()) {
     if (status.IsNotFound()) {
-      return connection_.writer_.SendResponseComplete(
+      auto s = connection_.writer_.SendResponseComplete(
           frame.stream_id, pw::Status::Unimplemented());
+      if (s.IsUnavailable()) {
+        return OkStatus();
+      }
+      return s;
     }
     auto state = connection_.LockState();
     if (Stream* stream = state->LookupStream(frame.stream_id);
@@ -1245,7 +1476,17 @@ Status Connection::SharedState::UpdateRecvWindow(Stream* stream,
   // Suppress window updates till we reach target.
   if (connection_increment > kConnectionWindowUpdateThreshold ||
       stream_increment > kStreamWindowUpdateThreshold) {
-    PW_TRY(SendWindowUpdates(stream, connection_increment, stream_increment));
+    if (auto status =
+            SendWindowUpdates(stream, connection_increment, stream_increment);
+        !status.ok()) {
+      if (status.IsResourceExhausted() &&
+          connection_.read_dispatcher_.has_value()) {
+        owed_window_update_ = true;
+        connection_.MarkDrainNeeded();
+        return OkStatus();
+      }
+      return status;
+    }
   }
 
   return OkStatus();
@@ -1385,7 +1626,14 @@ Status Connection::Reader::ProcessSettingsFrame(const FrameHeader& frame,
 
   if (send_ack) {
     auto state = connection_.LockState();
-    PW_TRY(state->SendSettingsAck());
+    if (auto status = state->SendSettingsAck(); !status.ok()) {
+      if (status.IsResourceExhausted() &&
+          connection_.read_dispatcher_.has_value()) {
+        state->DeferSettingsAck();
+      } else {
+        return status;
+      }
+    }
   }
 
   return OkStatus();
@@ -1417,26 +1665,18 @@ Status Connection::Reader::ProcessPingFrame(const FrameHeader& frame) {
   }
 
   // Send an ACK.
-  PW_PACKED(struct) PingFrame {
-    WireFrameHeader header;
-    uint64_t opaque_data;
-  };
-  ByteBuilder builder(payload);
-  PingFrame ack_frame = {
-      .header = WireFrameHeader(FrameHeader{
-          .payload_length = 8,
-          .type = FrameType::PING,
-          .flags = FLAGS_ACK,
-          .stream_id = 0,
-      }),
-      // Since we're going to echo this, read as native endian so it gets echoed
-      // exactly as-is.
-      .opaque_data = builder.begin().ReadUint64(endian::native),
-  };
-
+  uint64_t opaque_data =
+      ByteBuilder(payload).begin().ReadUint64(endian::native);
   {
     auto state = connection_.LockState();
-    PW_TRY(state->SendBytes(ObjectAsBytes(ack_frame)));
+    if (auto status = state->SendPingAck(opaque_data); !status.ok()) {
+      if (status.IsResourceExhausted() &&
+          connection_.read_dispatcher_.has_value()) {
+        state->DeferPingAck(opaque_data);
+      } else {
+        return status;
+      }
+    }
   }
 
   return OkStatus();

@@ -41,7 +41,9 @@
 #include "pw_status/try.h"
 #include "pw_stream/socket_stream.h"
 #include "pw_stream/stream.h"
+#include "pw_sync/lock_annotations.h"
 #include "pw_sync/mutex.h"
+#include "pw_sync/thread_notification.h"
 #include "pw_thread/test_thread_context.h"
 #include "pw_thread/thread.h"
 #include "pw_thread/thread_core.h"
@@ -52,42 +54,99 @@ namespace {
 static constexpr size_t kBufferSize = 512;
 
 std::atomic<bool> g_fail_queue_send = false;
+std::atomic<bool> g_fail_response_complete = false;
 
 class TestSendQueue : public pw::grpc::SendQueue {
  public:
-  TestSendQueue(pw::grpc::SendQueue& inner) : inner_(inner) {}
+  explicit TestSendQueue(pw::grpc::SendQueue& inner)
+      : inner_(inner),
+        notify_thread_(notify_thread_context_.options(),
+                       [this]() { RunNotifyThread(); }) {
+    inner_.set_on_space_available([this]() {
+      std::lock_guard cb_lock(mutex_);
+      if (on_space_available_) {
+        on_space_available_();
+      }
+    });
+  }
+  ~TestSendQueue() override {
+    inner_.set_on_space_available(nullptr);
+    set_on_space_available(nullptr);
+    stop_.store(true);
+    notify_.release();
+    notify_thread_.join();
+  }
 
   bool QueueSend(pw::UniquePtr<std::byte[]>&& buffer) override {
+    if (g_fail_response_complete.load()) {
+      if (GetType(buffer.get()) == 1 && (GetFlags(buffer.get()) & 0x01) != 0 &&
+          GetStreamId(buffer.get()) != 0) {
+        g_fail_response_complete.store(false);
+        TriggerSpaceAvailableAsync();
+        return false;
+      }
+    }
     if (g_fail_queue_send.load()) {
       // Only fail DATA frames on an active RPC stream (type == 0, stream_id !=
-      // 0). WireFrameHeader is 9 bytes: byte 3 is type, bytes 5..8 are
-      // stream_id.
-      auto type = static_cast<uint8_t>(buffer[3]);
-      uint32_t stream_id = (static_cast<uint32_t>(buffer[5]) << 24) |
-                           (static_cast<uint32_t>(buffer[6]) << 16) |
-                           (static_cast<uint32_t>(buffer[7]) << 8) |
-                           static_cast<uint32_t>(buffer[8]);
-      if (type == 0 && stream_id != 0) {
+      // 0).
+      if (GetType(buffer.get()) == 0 && GetStreamId(buffer.get()) != 0) {
         g_fail_queue_send.store(false);
+        TriggerSpaceAvailableAsync();
         return false;
       }
     }
     return inner_.QueueSend(std::move(buffer));
   }
 
+ private:
+  void RunNotifyThread() PW_LOCKS_EXCLUDED(mutex_) {
+    while (true) {
+      notify_.acquire();
+      if (stop_.load()) {
+        return;
+      }
+      std::lock_guard lock(mutex_);
+      if (on_space_available_) {
+        on_space_available_();
+      }
+    }
+  }
+
+  uint8_t GetType(const std::byte* buffer) {
+    return static_cast<uint8_t>(buffer[3]);
+  }
+  uint8_t GetFlags(const std::byte* buffer) {
+    return static_cast<uint8_t>(buffer[4]);
+  }
+  uint32_t GetStreamId(const std::byte* buffer) {
+    return (static_cast<uint32_t>(buffer[5]) << 24) |
+           (static_cast<uint32_t>(buffer[6]) << 16) |
+           (static_cast<uint32_t>(buffer[7]) << 8) |
+           static_cast<uint32_t>(buffer[8]);
+  }
+
+  void TriggerSpaceAvailableAsync() { notify_.release(); }
+
   void set_on_error(ErrorHandler&& error_handler) override {
     inner_.set_on_error(std::move(error_handler));
   }
 
-  void set_on_space_available(SpaceAvailableCallback&& callback) override {
-    inner_.set_on_space_available(std::move(callback));
+  void set_on_space_available(SpaceAvailableCallback&& callback) override
+      PW_LOCKS_EXCLUDED(mutex_) {
+    std::lock_guard lock(mutex_);
+    on_space_available_ = std::move(callback);
   }
 
   void Run() override { inner_.Run(); }
   void RequestStop() override { inner_.RequestStop(); }
 
- private:
   pw::grpc::SendQueue& inner_;
+  pw::sync::Mutex mutex_;
+  SpaceAvailableCallback on_space_available_ PW_GUARDED_BY(mutex_);
+  pw::sync::ThreadNotification notify_;
+  std::atomic<bool> stop_{false};
+  pw::thread::test::TestThreadContext notify_thread_context_;
+  pw::Thread notify_thread_;
 };
 
 class EchoService
@@ -112,6 +171,12 @@ class EchoService
     last_unary_responder_ = std::move(responder);
     if (quiet_) {
       return;
+    }
+    if (message->compare("unary_exhaust") == 0) {
+      g_fail_queue_send = true;
+    }
+    if (message->compare("unary_complete_exhaust") == 0) {
+      g_fail_response_complete = true;
     }
 
     std::array<std::byte, kBufferSize> mem_writer_buffer_;
@@ -146,6 +211,17 @@ class EchoService
       PW_LOG_INFO("not writing server streaming echo");
       return;
     }
+    bool response_exhaust = request.message.compare("response_exhaust") == 0;
+    if (response_exhaust) {
+      auto status = last_writer_.Write({.message = "message0"});
+      if (!status.ok()) {
+        last_writer_.Finish(status).IgnoreError();
+        return;
+      }
+      g_fail_response_complete = true;
+      last_writer_.Finish(pw::Status::ResourceExhausted()).IgnoreError();
+      return;
+    }
     bool queue_exhaust = request.message.compare("queue_exhaust") == 0;
     if (queue_exhaust) {
       auto status = last_writer_.Write({.message = "message0"});
@@ -168,6 +244,7 @@ class EchoService
     if (block) {
       num_responses = 10;
     }
+
     std::string big_msg(200, 'a');
     for (size_t i = 0; i < num_responses; ++i) {
       if (block) {
@@ -230,6 +307,13 @@ class EchoService
           if (quiet_) {
             return;
           }
+          if (request.message == "latch_then_data") {
+            (void)last_reader_writer_.Write({.message = "latched"});
+            g_fail_response_complete = true;
+            last_reader_writer_.Finish(pw::Status::ResourceExhausted())
+                .IgnoreError();
+            return;
+          }
           last_reader_writer_.Write({.message = request.message}).IgnoreError();
         });
   }
@@ -248,7 +332,20 @@ class EchoService
   bool empty_response_ = false;
 };
 
-class ConnectionThread : public pw::grpc::Connection,
+class ConnectionThreadBase {
+ protected:
+  pw::async::BasicDispatcher test_read_dispatcher_;
+  pw::grpc::DefaultSendQueue default_send_queue_;
+  TestSendQueue test_send_queue_;
+  ConnectionThreadBase(
+      pw::stream::NonSeekableReaderWriter& stream,
+      pw::allocator::SynchronizedAllocator<pw::sync::Mutex>& send_allocator)
+      : default_send_queue_(stream, send_allocator),
+        test_send_queue_(default_send_queue_) {}
+};
+
+class ConnectionThread : private ConnectionThreadBase,
+                         public pw::grpc::Connection,
                          public pw::thread::ThreadCore {
  public:
   // The ConnectionCloseCallback will be called when this thread is shutting
@@ -264,44 +361,41 @@ class ConnectionThread : public pw::grpc::Connection,
       pw::Allocator* message_assembly_allocator,
       pw::allocator::SynchronizedAllocator<pw::sync::Mutex>& send_allocator,
       pw::allocator::SynchronizedAllocator<pw::sync::Mutex>* read_allocator)
-      : pw::grpc::Connection(stream.as_reader(),
+      : ConnectionThreadBase(stream, send_allocator),
+        pw::grpc::Connection(stream.as_reader(),
                              test_send_queue_,
                              callbacks,
                              message_assembly_allocator,
                              send_allocator,
                              std::move(connection_close_callback),
                              /*read_allocator=*/read_allocator,
-                             &read_dispatcher_),
-        send_queue_thread_options_(send_thread_options),
-        send_queue_(stream, send_allocator),
-        test_send_queue_(send_queue_) {
-    test_send_queue_.set_on_space_available(
-        []() { PW_LOG_DEBUG("Send queue space available"); });
-  }
+                             &test_read_dispatcher_),
+        send_queue_thread_options_(send_thread_options) {}
 
   // Process the connection. Does not return until the connection is closed.
   void Run() override {
     pw::Thread read_thread(send_queue_thread_options_,
-                           [this]() { read_dispatcher_.Run(); });
+                           [this]() { test_read_dispatcher_.Run(); });
     pw::Thread send_thread(send_queue_thread_options_,
-                           [this]() { send_queue_.Run(); });
+                           [this]() { default_send_queue_.Run(); });
     pw::Status status = ProcessConnectionPreface();
+    if (!status.ok())
+      PW_LOG_ERROR("Preface failed: %d", status.code());
     while (status.ok()) {
       status = ProcessFrame();
+      if (!status.ok())
+        PW_LOG_ERROR("ProcessFrame failed: %d", status.code());
     }
 
-    read_dispatcher_.RequestStop();
+    test_read_dispatcher_.RequestStop();
     read_thread.join();
-    send_queue_.RequestStop();
+    default_send_queue_.RequestStop();
     send_thread.join();
     CloseConnection();
   }
 
  private:
-  pw::async::BasicDispatcher read_dispatcher_;
   const pw::thread::Options& send_queue_thread_options_;
-  pw::grpc::DefaultSendQueue send_queue_;
-  TestSendQueue test_send_queue_;
 };
 
 constexpr uint32_t kTestChannelId = 1;

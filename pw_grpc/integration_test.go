@@ -470,6 +470,40 @@ func TestFullWindowBlockedSend(t *testing.T) {
 	}
 }
 
+func TestSendResponseCompleteExhaustion(t *testing.T) {
+	setupTest(t, 1)
+
+	conn, echo_client, err := connectServer()
+	if err != nil {
+		t.Fatalf("Failed to connect %v", err)
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	client, err := echo_client.ServerStreamingEcho(ctx, &pb.EchoRequest{Message: "response_exhaust"})
+	if err != nil {
+		t.Fatalf("Failed to call ServerStreamingEcho %v", err)
+	}
+
+	resp, err := client.Recv()
+	if err != nil {
+		t.Fatalf("Failed to receive first message: %v", err)
+	}
+	if resp.Message != "message0" {
+		t.Fatalf("Unexpected message: got %q, want %q", resp.Message, "message0")
+	}
+
+	_, err = client.Recv()
+	if err == nil {
+		t.Fatalf("Expected error on second message, got nil")
+	}
+	if status.Convert(err).Code() != codes.ResourceExhausted {
+		t.Fatalf("Expected ResourceExhausted, got %v", err)
+	}
+}
+
 func TestSendQueueExhaustion(t *testing.T) {
 	setupTest(t, 1)
 
@@ -504,5 +538,125 @@ func TestSendQueueExhaustion(t *testing.T) {
 	}
 	if gotCode := status.Convert(err).Code(); gotCode != codes.ResourceExhausted {
 		t.Fatalf("Expected ResourceExhausted error, got %v", gotCode)
+	}
+}
+
+func TestEndStreamRecoveryNoLeaks(t *testing.T) {
+	setupTest(t, 1)
+
+	conn, echo_client, err := connectServer()
+	if err != nil {
+		t.Fatalf("Failed to connect %v", err)
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	for i := 0; i < 20; i++ {
+		client, err := echo_client.ServerStreamingEcho(ctx, &pb.EchoRequest{Message: "response_exhaust"})
+		if err != nil {
+			t.Fatalf("Failed to call ServerStreamingEcho on iter %d: %v", i, err)
+		}
+		resp, err := client.Recv()
+		if err != nil {
+			t.Fatalf("Failed to receive first message on iter %d: %v", i, err)
+		}
+		if resp.Message != "message0" {
+			t.Fatalf("Unexpected message: got %q, want %q", resp.Message, "message0")
+		}
+		_, err = client.Recv()
+		if err == nil {
+			t.Fatalf("Expected error on second message, got nil")
+		}
+		if status.Convert(err).Code() != codes.ResourceExhausted {
+			t.Fatalf("Expected ResourceExhausted, got %v", err)
+		}
+	}
+}
+
+func TestUnaryExhaustion(t *testing.T) {
+	setupTest(t, 1)
+
+	conn, echo_client, err := connectServer()
+	if err != nil {
+		t.Fatalf("Failed to connect %v", err)
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Warmup to settle initial SETTINGS/WINDOW_UPDATE frames
+	_, err = echo_client.UnaryEcho(ctx, &pb.EchoRequest{Message: "warmup"})
+	if err != nil {
+		t.Fatalf("Failed to send warmup message: %v", err)
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	for i := 0; i < 20; i++ {
+		_, err = echo_client.UnaryEcho(ctx, &pb.EchoRequest{Message: "unary_exhaust"})
+		if err == nil {
+			t.Fatalf("Expected error on UnaryEcho iter %d, got nil", i)
+		}
+		if status.Convert(err).Code() != codes.ResourceExhausted {
+			t.Fatalf("Expected ResourceExhausted iter %d, got %v", i, err)
+		}
+	}
+
+	for i := 0; i < 20; i++ {
+		resp, err := echo_client.UnaryEcho(ctx, &pb.EchoRequest{Message: "unary_complete_exhaust"})
+		if err != nil {
+			t.Fatalf("Expected success on UnaryEcho iter %d, got %v", i, err)
+		}
+		if resp.Message != "unary_complete_exhaust" {
+			t.Fatalf("Expected unary_complete_exhaust iter %d, got %q", i, resp.Message)
+		}
+	}
+}
+
+func TestDataAfterLatchNoGoaway(t *testing.T) {
+	setupTest(t, 1)
+
+	conn, echo_client, err := connectServer()
+	if err != nil {
+		t.Fatalf("Failed to connect %v", err)
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	client, err := echo_client.BidirectionalStreamingEcho(ctx)
+	if err != nil {
+		t.Fatalf("Failed to call BidirectionalStreamingEcho %v", err)
+	}
+
+	err = client.Send(&pb.EchoRequest{Message: "latch_then_data"})
+	if err != nil {
+		t.Fatalf("Failed to send first message: %v", err)
+	}
+
+	// Wait for the server to send its response and latch
+	resp, err := client.Recv()
+	if err != nil {
+		t.Fatalf("Failed to receive response: %v", err)
+	}
+	if resp.Message != "latched" {
+		t.Fatalf("Unexpected message: got %q, want %q", resp.Message, "latched")
+	}
+
+	// Send data which arrives while server is latched
+	err = client.Send(&pb.EchoRequest{Message: "data_after_latch"})
+	if err != nil {
+		t.Logf("Failed to send data after latch: %v (this is OK if stream already closed)", err)
+	}
+
+	_, err = client.Recv()
+	if err == nil {
+		t.Fatalf("Expected error on second receive, got nil")
+	}
+	if status.Convert(err).Code() != codes.ResourceExhausted {
+		t.Fatalf("Expected ResourceExhausted, got %v", err)
 	}
 }

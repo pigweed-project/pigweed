@@ -72,11 +72,19 @@ class GrpcChannelOutput : public rpc::ChannelOutput {
         // message, which must be sent even when it encodes to zero bytes.
         if (packet.payload().size() || method_type == rpc::MethodType::kUnary ||
             method_type == rpc::MethodType::kClientStreaming) {
-          PW_TRY(connection_->get().SendResponseMessage(packet.call_id(),
-                                                        packet.payload()));
+          if (Status status = connection_->get().SendResponseMessage(
+                  packet.call_id(), packet.payload());
+              !status.ok()) {
+            connection_->get()
+                .SendResponseComplete(packet.call_id(), status)
+                .IgnoreError();
+            callbacks_->get().OnClose(packet.call_id());
+            return status;
+          }
         }
-        PW_TRY(connection_->get().SendResponseComplete(packet.call_id(),
-                                                       packet.status()));
+        connection_->get()
+            .SendResponseComplete(packet.call_id(), packet.status())
+            .IgnoreError();
         callbacks_->get().OnClose(packet.call_id());
         break;
       }
@@ -86,8 +94,9 @@ class GrpcChannelOutput : public rpc::ChannelOutput {
         break;
       }
       case PacketType::kServerError: {
-        PW_TRY(connection_->get().SendResponseComplete(packet.call_id(),
-                                                       packet.status()));
+        connection_->get()
+            .SendResponseComplete(packet.call_id(), packet.status())
+            .IgnoreError();
         callbacks_->get().OnClose(packet.call_id());
         break;
       }
