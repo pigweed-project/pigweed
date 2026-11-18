@@ -185,6 +185,7 @@ cc_library(
         "//pw_bluetooth_sapphire/host/l2cap:definitions",
         "//pw_bluetooth_sapphire/host/l2cap:testing",
         "//pw_bluetooth_sapphire/host/sdp",
+        "//pw_function",
         "//third_party/fuchsia:fit",
     ],
 )

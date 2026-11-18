@@ -31,6 +31,7 @@
 #include "pw_bluetooth_sapphire/internal/host/l2cap/l2cap_defs.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/controller_test_double_base.h"
 #include "pw_bluetooth_sapphire/internal/host/testing/fake_peer.h"
+#include "pw_function/function.h"
 
 namespace bt::testing {
 
@@ -438,6 +439,21 @@ class FakeController final : public ControllerTestDoubleBase,
     le_cis_reject_cb_ = std::move(callback);
   }
 
+  using LERemoteConnectionParameterRequestReplyCallback = pw::Function<void(
+      hci_spec::ConnectionHandle, hci_spec::LEPreferredConnectionParameters)>;
+  void set_le_remote_connection_parameter_request_reply_callback(
+      LERemoteConnectionParameterRequestReplyCallback&& callback) {
+    le_remote_conn_param_req_reply_cb_ = std::move(callback);
+  }
+
+  using LERemoteConnectionParameterRequestNegativeReplyCallback =
+      pw::Function<void(hci_spec::ConnectionHandle,
+                        pw::bluetooth::emboss::StatusCode)>;
+  void set_le_remote_connection_parameter_request_negative_reply_callback(
+      LERemoteConnectionParameterRequestNegativeReplyCallback&& callback) {
+    le_remote_conn_param_req_neg_reply_cb_ = std::move(callback);
+  }
+
   // Sends an HCI event, filling in the parameters in a provided event packet.
   void SendEvent(hci_spec::EventCode event_code, hci::EventPacket* packet);
 
@@ -486,6 +502,11 @@ class FakeController final : public ControllerTestDoubleBase,
       const hci_spec::LEConnectionParameters& params,
       pw::bluetooth::emboss::StatusCode status =
           pw::bluetooth::emboss::StatusCode::SUCCESS);
+
+  // Sends an LE Meta Event Remote Connection Parameter Request Subevent.
+  void SendLERemoteConnectionParameterRequestSubevent(
+      hci_spec::ConnectionHandle handle,
+      const hci_spec::LEPreferredConnectionParameters& params);
 
   // Marks the FakePeer with address |address| as disconnected and sends a HCI
   // Disconnection Complete event for all of its links.
@@ -847,6 +868,14 @@ class FakeController final : public ControllerTestDoubleBase,
   // Called when a HCI_LE_Connection_Update command is received.
   void OnLEConnectionUpdateCommandReceived(
       const pw::bluetooth::emboss::LEConnectionUpdateCommandView& params);
+
+  void OnLERemoteConnectionParameterRequestReplyCommandReceived(
+      const pw::bluetooth::emboss::
+          LERemoteConnectionParameterRequestReplyCommandView& params);
+
+  void OnLERemoteConnectionParameterRequestNegativeReplyCommandReceived(
+      const pw::bluetooth::emboss::
+          LERemoteConnectionParameterRequestNegativeReplyCommandView& params);
 
   // Called when a HCI_Disconnect command is received.
   void OnDisconnectCommandReceived(
@@ -1464,6 +1493,10 @@ class FakeController final : public ControllerTestDoubleBase,
   LEConnectionParametersCallback le_conn_params_cb_;
   fit::closure le_read_remote_features_cb_;
   fit::function<void(hci_spec::ConnectionHandle)> le_cis_reject_cb_;
+  LERemoteConnectionParameterRequestReplyCallback
+      le_remote_conn_param_req_reply_cb_;
+  LERemoteConnectionParameterRequestNegativeReplyCallback
+      le_remote_conn_param_req_neg_reply_cb_;
 
   // Associates opcodes with client-supplied pause listeners. Commands with
   // these opcodes will hang with no response until the client invokes the

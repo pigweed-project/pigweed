@@ -148,6 +148,7 @@ pw_source_set("fake_controller") {
     "$dir_pw_bluetooth_sapphire/host/l2cap:testing",
     "$dir_pw_bluetooth_sapphire/host/sdp",
     "$pw_external_fuchsia:fit",
+    dir_pw_function,
   ]
   deps = [
     "$dir_pw_bluetooth:emboss_hci_group",

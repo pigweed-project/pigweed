@@ -548,6 +548,23 @@ void FakeController::SendLEConnectionUpdateCompleteSubevent(
   SendCommandChannelPacket(packet.data());
 }
 
+void FakeController::SendLERemoteConnectionParameterRequestSubevent(
+    hci_spec::ConnectionHandle handle,
+    const hci_spec::LEPreferredConnectionParameters& params) {
+  auto packet = hci::EventPacket::New<
+      pwemb::LERemoteConnectionParameterRequestSubeventWriter>(
+      hci_spec::kLEMetaEventCode);
+  auto view = packet.view_t();
+  view.le_meta_event().subevent_code_enum().Write(
+      pwemb::LeSubEventCode::REMOTE_CONNECTION_PARAMETER_REQUEST);
+  view.connection_handle().UncheckedWrite(handle);
+  view.interval_min().UncheckedWrite(params.min_interval());
+  view.interval_max().UncheckedWrite(params.max_interval());
+  view.max_latency().UncheckedWrite(params.max_latency());
+  view.timeout().UncheckedWrite(params.supervision_timeout());
+  SendCommandChannelPacket(packet.data());
+}
+
 void FakeController::Disconnect(const DeviceAddress& addr,
                                 pwemb::StatusCode reason) {
   (void)heap_dispatcher().Post(
@@ -1769,6 +1786,98 @@ void FakeController::OnLEConnectionUpdateCommandReceived(
   SendCommandChannelPacket(packet.data());
 
   NotifyLEConnectionParameters(peer->address(), conn_params);
+}
+
+void FakeController::OnLERemoteConnectionParameterRequestReplyCommandReceived(
+    const pwemb::LERemoteConnectionParameterRequestReplyCommandView& params) {
+  hci_spec::ConnectionHandle handle =
+      params.connection_handle().UncheckedRead();
+  auto reply_complete = hci::EventPacket::New<
+      pwemb::LERemoteConnectionParameterRequestReplyCommandCompleteEventWriter>(
+      hci_spec::kCommandCompleteEventCode);
+  auto reply_view = reply_complete.view_t();
+  reply_view.connection_handle().UncheckedWrite(handle);
+
+  FakePeer* peer = FindByConnHandle(handle);
+  if (!peer) {
+    reply_view.status().Write(pwemb::StatusCode::UNKNOWN_CONNECTION_ID);
+    RespondWithCommandComplete(
+        pwemb::OpCode::LE_REMOTE_CONNECTION_PARAMETER_REQUEST_REPLY,
+        &reply_complete);
+    return;
+  }
+
+  PW_DCHECK(peer->connected());
+
+  hci_spec::LEPreferredConnectionParameters preferred_params(
+      params.interval_min().UncheckedRead(),
+      params.interval_max().UncheckedRead(),
+      params.max_latency().UncheckedRead(),
+      params.timeout().UncheckedRead());
+  if (!preferred_params.IsValid() ||
+      params.min_connection_event_length().Read() >
+          params.max_connection_event_length().Read()) {
+    reply_view.status().Write(
+        pwemb::StatusCode::INVALID_HCI_COMMAND_PARAMETERS);
+    RespondWithCommandComplete(
+        pwemb::OpCode::LE_REMOTE_CONNECTION_PARAMETER_REQUEST_REPLY,
+        &reply_complete);
+    return;
+  }
+
+  if (le_remote_conn_param_req_reply_cb_) {
+    le_remote_conn_param_req_reply_cb_(handle, preferred_params);
+  }
+
+  reply_view.status().Write(pwemb::StatusCode::SUCCESS);
+  RespondWithCommandComplete(
+      pwemb::OpCode::LE_REMOTE_CONNECTION_PARAMETER_REQUEST_REPLY,
+      &reply_complete);
+
+  hci_spec::LEConnectionParameters conn_params(
+      preferred_params.min_interval() +
+          ((preferred_params.max_interval() - preferred_params.min_interval()) /
+           2),
+      preferred_params.max_latency(),
+      preferred_params.supervision_timeout());
+  peer->set_le_params(conn_params);
+  SendLEConnectionUpdateCompleteSubevent(
+      handle, conn_params, pwemb::StatusCode::SUCCESS);
+  NotifyLEConnectionParameters(peer->address(), conn_params);
+}
+
+void FakeController::
+    OnLERemoteConnectionParameterRequestNegativeReplyCommandReceived(
+        const pwemb::LERemoteConnectionParameterRequestNegativeReplyCommandView&
+            params) {
+  hci_spec::ConnectionHandle handle =
+      params.connection_handle().UncheckedRead();
+  auto reply_complete = hci::EventPacket::New<
+      pwemb::
+          LERemoteConnectionParameterRequestNegativeReplyCommandCompleteEventWriter>(
+      hci_spec::kCommandCompleteEventCode);
+  auto reply_view = reply_complete.view_t();
+  reply_view.connection_handle().UncheckedWrite(handle);
+
+  FakePeer* peer = FindByConnHandle(handle);
+  if (!peer) {
+    reply_view.status().Write(pwemb::StatusCode::UNKNOWN_CONNECTION_ID);
+    RespondWithCommandComplete(
+        pwemb::OpCode::LE_REMOTE_CONNECTION_PARAMETER_REQUEST_NEGATIVE_REPLY,
+        &reply_complete);
+    return;
+  }
+
+  PW_DCHECK(peer->connected());
+
+  if (le_remote_conn_param_req_neg_reply_cb_) {
+    le_remote_conn_param_req_neg_reply_cb_(handle, params.reason().Read());
+  }
+
+  reply_view.status().Write(pwemb::StatusCode::SUCCESS);
+  RespondWithCommandComplete(
+      pwemb::OpCode::LE_REMOTE_CONNECTION_PARAMETER_REQUEST_NEGATIVE_REPLY,
+      &reply_complete);
 }
 
 void FakeController::OnDisconnectCommandReceived(
@@ -6694,6 +6803,10 @@ void FakeController::HandleReceivedCommandPacket(
     case hci_spec::kLEReadMaximumAdvertisingDataLength:
     case hci_spec::kLEReadNumSupportedAdvertisingSets:
     case hci_spec::kLEReadRemoteFeatures:
+    case static_cast<uint16_t>(
+        pwemb::OpCode::LE_REMOTE_CONNECTION_PARAMETER_REQUEST_REPLY):
+    case static_cast<uint16_t>(
+        pwemb::OpCode::LE_REMOTE_CONNECTION_PARAMETER_REQUEST_NEGATIVE_REPLY):
     case hci_spec::kLERemoveAdvertisingSet:
     case hci_spec::kLESetAdvertisingData:
     case hci_spec::kLESetAdvertisingEnable:
@@ -7083,6 +7196,20 @@ void FakeController::HandleReceivedCommandPacket(
       const auto& params =
           command_packet.view<pwemb::LEConnectionUpdateCommandView>();
       OnLEConnectionUpdateCommandReceived(params);
+      break;
+    }
+    case static_cast<uint16_t>(
+        pwemb::OpCode::LE_REMOTE_CONNECTION_PARAMETER_REQUEST_REPLY): {
+      const auto& params = command_packet.view<
+          pwemb::LERemoteConnectionParameterRequestReplyCommandView>();
+      OnLERemoteConnectionParameterRequestReplyCommandReceived(params);
+      break;
+    }
+    case static_cast<uint16_t>(
+        pwemb::OpCode::LE_REMOTE_CONNECTION_PARAMETER_REQUEST_NEGATIVE_REPLY): {
+      const auto& params = command_packet.view<
+          pwemb::LERemoteConnectionParameterRequestNegativeReplyCommandView>();
+      OnLERemoteConnectionParameterRequestNegativeReplyCommandReceived(params);
       break;
     }
     case hci_spec::kLEStartEncryption: {
