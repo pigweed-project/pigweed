@@ -427,6 +427,9 @@ class LowEnergyConnection final : public sm::Delegate {
   // CloseRefs() can still be dropped from |refs_| after |weak_self_| has been
   // invalidated. Explicitly invalidated at the end of the destructor body.
   WeakSelf<LowEnergyConnection> weak_self_for_refs_;
+  // Explicitly invalidated in the destructor after removing the L2CAP
+  // connection so SecurityManager can still report OnPairingComplete() when
+  // the SMP channel closes.
   WeakSelf<sm::Delegate> weak_delegate_;
 
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(LowEnergyConnection);

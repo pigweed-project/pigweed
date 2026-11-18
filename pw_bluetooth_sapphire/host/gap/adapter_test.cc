@@ -17,6 +17,7 @@
 #include <memory>
 
 #include "pw_bluetooth_sapphire/internal/host/gap/bredr_discovery_manager.h"
+#include "pw_bluetooth_sapphire/internal/host/gap/fake_pairing_delegate.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/low_energy_advertising_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/low_energy_discovery_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/gatt/fake_layer.h"
@@ -2481,6 +2482,82 @@ TEST_F(AdapterTest, CreateCigNotSupported) {
 
   RunUntilIdle();
   EXPECT_TRUE(callback_called);
+}
+
+class AdapterLePairingTest : public AdapterTest {
+ public:
+  void SetUp() override {
+    AdapterTest::SetUp();
+
+    FakeController::Settings settings;
+    settings.ApplyDualModeDefaults();
+    test_device()->set_settings(settings);
+    ASSERT_TRUE(EnsureInitialized());
+
+    adapter()->SetPairingDelegate(pairing_delegate_.GetWeakPtr());
+
+    peer_ = adapter()->peer_cache()->NewPeer(kTestAddr, /*connectable=*/true);
+    test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr, dispatcher()));
+
+    adapter()->le()->Connect(
+        peer_->identifier(),
+        [this](auto result) {
+          ASSERT_EQ(fit::ok(), result);
+          conn_ref_ = std::move(result).value();
+        },
+        LowEnergyConnectionOptions());
+    RunUntilIdle();
+    ASSERT_TRUE(conn_ref_);
+
+    adapter()->le()->Pair(
+        peer_->identifier(),
+        sm::SecurityLevel::kEncrypted,
+        sm::BondableMode::Bondable,
+        [this](sm::Result<> status) { pair_result_ = status; });
+    RunUntilIdle();
+    ASSERT_FALSE(pair_result_.has_value());
+  }
+
+  void TearDown() override {
+    AdapterTest::TearDown();
+    conn_ref_.reset();
+  }
+
+ protected:
+  FakePairingDelegate& pairing_delegate() { return pairing_delegate_; }
+  Peer* peer() const { return peer_; }
+  LowEnergyConnectionHandle* conn_ref() const { return conn_ref_.get(); }
+  const std::optional<sm::Result<>>& pair_result() const {
+    return pair_result_;
+  }
+
+ private:
+  FakePairingDelegate pairing_delegate_{sm::IOCapability::kNoInputNoOutput};
+  Peer* peer_ = nullptr;
+  std::unique_ptr<LowEnergyConnectionHandle> conn_ref_;
+  std::optional<sm::Result<>> pair_result_;
+};
+
+TEST_F(AdapterLePairingTest, DisconnectNotifiesPairingDelegate) {
+  std::optional<PeerId> completed_peer_id;
+  std::optional<sm::Result<>> completed_status;
+  pairing_delegate().SetCompletePairingCallback(
+      [&](PeerId id, sm::Result<> status) {
+        completed_peer_id = id;
+        completed_status = status;
+      });
+
+  test_device()->SendDisconnectionCompleteEvent(conn_ref()->handle());
+  RunUntilIdle();
+
+  EXPECT_EQ(completed_peer_id, peer()->identifier());
+  EXPECT_EQ(completed_status, ToResult(HostError::kLinkDisconnected));
+  EXPECT_EQ(pair_result(), ToResult(HostError::kLinkDisconnected));
+}
+
+TEST_F(AdapterLePairingTest, ShutDownDoesNotCrash) {
+  adapter()->ShutDown();
+  EXPECT_EQ(pair_result(), ToResult(HostError::kLinkDisconnected));
 }
 
 }  // namespace

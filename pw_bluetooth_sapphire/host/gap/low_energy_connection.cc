@@ -143,7 +143,6 @@ LowEnergyConnection::LowEnergyConnection(
 }
 
 LowEnergyConnection::~LowEnergyConnection() {
-  weak_delegate_.InvalidatePtrs();
   weak_self_.InvalidatePtrs();
 
   cmd_->RemoveEventHandler(conn_update_cmpl_handler_id_);
@@ -152,6 +151,11 @@ LowEnergyConnection::~LowEnergyConnection() {
   // invalidates all L2CAP channels that are associated with this link.
   gatt_->RemoveConnection(peer_id());
   l2cap_->RemoveConnection(link_->handle());
+
+  // Invalidate |weak_delegate_| after removing the L2CAP connection so that
+  // closing the SMP fixed channel can still notify the pairing delegate of
+  // pairing failure via OnPairingComplete().
+  weak_delegate_.InvalidatePtrs();
 
   // Notify all active references that the link is gone. This will
   // synchronously notify all refs.
@@ -862,6 +866,10 @@ void LowEnergyConnection::OnPairingComplete(sm::Result<> status) {
          "pairing complete (status: %s, peer: %s)",
          bt_str(status),
          bt_str(peer_id()));
+
+  if (!conn_mgr_.is_alive()) {
+    return;
+  }
 
   auto delegate = conn_mgr_->pairing_delegate();
   if (delegate.is_alive()) {

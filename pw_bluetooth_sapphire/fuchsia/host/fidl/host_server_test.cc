@@ -437,13 +437,18 @@ class HostServerPairingTest : public HostServerTest {
   // Host server notifying the client upon pairing delegate destruction, which
   // is not important behavior for many tests.
   void TearDown() override {
-    fake_chan_->SetSendCallback(/*callback=*/nullptr);
+    if (fake_chan_.is_alive()) {
+      fake_chan_->SetSendCallback(/*callback=*/nullptr);
+    }
     host_client_ptr().Unbind();
     HostServerTest::TearDown();
   }
 
   bt::gap::Peer* peer() { return fake_peer_; }
   FakeChannel::WeakPtr fake_chan() { return fake_chan_; }
+  MockFidlPairingDelegate* pairing_delegate() {
+    return pairing_delegate_.get();
+  }
 
  private:
   std::unique_ptr<MockFidlPairingDelegate> pairing_delegate_;
@@ -1027,6 +1032,46 @@ TEST_F(HostServerPairingTest, InitiatePairingNonBondableLe) {
   // now we assert that pairing has started and remains pending.
   ASSERT_FALSE(pair_result);  // Pairing request is pending
   ASSERT_TRUE(pairing_request_sent);
+}
+
+TEST_F(HostServerPairingTest,
+       DisconnectDuringLePairingNotifiesPairingDelegate) {
+  bool pairing_request_sent = false;
+  fake_chan()->SetSendCallback(
+      [&pairing_request_sent](bt::ByteBufferPtr sent) {
+        ASSERT_TRUE(sent);
+        pairing_request_sent = true;
+      },
+      pw_dispatcher());
+
+  std::optional<fhost::Host_Pair_Result> pair_result;
+  fsys::PairingOptions opts;
+  opts.set_le_security_level(fsys::PairingSecurityLevel::ENCRYPTED);
+  host_client()->Pair(fbt::PeerId{peer()->identifier().value()},
+                      std::move(opts),
+                      [&](auto result) { pair_result = std::move(result); });
+  RunLoopUntilIdle();
+  ASSERT_FALSE(pair_result);
+  ASSERT_TRUE(pairing_request_sent);
+
+  std::optional<fbt::PeerId> completed_peer_id;
+  std::optional<bool> completed_success;
+  pairing_delegate()->set_pairing_complete_cb(
+      [&](fbt::PeerId id, bool success) {
+        completed_peer_id = id;
+        completed_success = success;
+      });
+
+  test_device()->SendDisconnectionCompleteEvent(fake_chan()->link_handle());
+  RunLoopUntilIdle();
+
+  ASSERT_TRUE(completed_peer_id.has_value());
+  EXPECT_EQ(*completed_peer_id, fbt::PeerId{peer()->identifier().value()});
+  ASSERT_TRUE(completed_success.has_value());
+  EXPECT_FALSE(*completed_success);
+  ASSERT_TRUE(pair_result.has_value());
+  ASSERT_TRUE(pair_result->is_err());
+  EXPECT_EQ(pair_result->err(), fsys::Error::FAILED);
 }
 
 TEST_F(HostServerTest, InitiateBrEdrPairingLePeerFails) {
