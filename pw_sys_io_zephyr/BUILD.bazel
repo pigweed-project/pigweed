@@ -22,6 +22,7 @@ cc_library(
     name = "config",
     hdrs = ["public/pw_sys_io_zephyr/config.h"],
     strip_include_prefix = "public",
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     deps = [
         ":config_override",
         "@zephyr",
@@ -36,6 +37,7 @@ label_flag(
 cc_library(
     name = "pw_sys_io_zephyr",
     srcs = ["//pw_sys_io_zephyr:sys_io.cc"],
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     deps = [
         ":config",
         "//pw_sys_io:default_putget_bytes",
@@ -49,6 +51,7 @@ cc_library(
 cc_library(
     name = "backend",
     srcs = ["sys_io.cc"],
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     deps = [
         ":config",
         "//pw_sys_io:default_putget_bytes",

@@ -33,6 +33,7 @@ cc_library(
     name = "config",
     hdrs = ["public/pw_thread_zephyr/config.h"],
     strip_include_prefix = "public",
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     deps = [
         ":config_override",
         "@zephyr",
@@ -51,6 +52,7 @@ cc_library(
         "public_overrides/id/pw_thread_backend/id_native.h",
     ],
     strip_include_prefix = "public_overrides/id",
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     deps = [":id_private"],
 )
 
@@ -61,6 +63,7 @@ cc_library(
         "public/pw_thread_zephyr/id_native.h",
     ],
     strip_include_prefix = "public",
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     visibility = ["//visibility:private"],
     deps = [
         "//pw_assert:assert",
@@ -78,6 +81,7 @@ cc_library(
     ],
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public_overrides/sleep",
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     deps = [
         ":sleep_private",
         "@zephyr",
@@ -90,6 +94,7 @@ cc_library(
         "public/pw_thread_zephyr/sleep_inline.h",
     ],
     strip_include_prefix = "public",
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     visibility = ["//visibility:private"],
     deps = [
         "//pw_chrono:system_clock",
@@ -107,6 +112,7 @@ cc_library(
         "public_overrides/thread/pw_thread_backend/thread_native.h",
     ],
     strip_include_prefix = "public_overrides/thread",
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     deps = [
         ":thread_private",
         "@zephyr",
@@ -124,6 +130,7 @@ cc_library(
         "public/pw_thread_zephyr/thread_native.h",
     ],
     strip_include_prefix = "public",
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     visibility = ["//visibility:private"],
     deps = [
         ":config",
@@ -150,6 +157,7 @@ cc_library(
         "public_overrides/thread_creation/pw_thread_backend/stack.h",
     ],
     strip_include_prefix = "public_overrides/thread_creation",
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     deps = [":config"],
 )
 
@@ -159,6 +167,7 @@ cc_library(
         "pw_thread_zephyr_private/thread_iteration.h",
         "thread_iteration.cc",
     ],
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     deps = [
         "//pw_bytes",
         "//pw_span",
@@ -175,6 +184,7 @@ cc_library(
         "public_overrides/yield/pw_thread_backend/yield_inline.h",
     ],
     strip_include_prefix = "public_overrides/yield",
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     deps = [":yield_private"],
 )
 
@@ -184,6 +194,7 @@ cc_library(
         "public/pw_thread_zephyr/yield_inline.h",
     ],
     strip_include_prefix = "public",
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     visibility = ["//visibility:private"],
     deps = [
         "//pw_assert:assert",

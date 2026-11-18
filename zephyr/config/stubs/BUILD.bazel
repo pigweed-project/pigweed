@@ -19,4 +19,5 @@ exports_files([
     "stub_REPO",
     "stub_cc.bzl",
     "stub_cc_test.bzl",
+    "stub_constraints_BUILD",
 ])

@@ -37,6 +37,7 @@ cc_library(
     hdrs = ["public/pw_digital_io_zephyr/digital_io.h"],
     implementation_deps = ["//pw_assert:check"],
     strip_include_prefix = "public",
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     deps = [
         "//pw_digital_io",
         "@zephyr",

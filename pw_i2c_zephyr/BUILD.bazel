@@ -25,6 +25,7 @@ cc_library(
     srcs = ["initiator.cc"],
     hdrs = ["public/pw_i2c_zephyr/initiator.h"],
     strip_include_prefix = "public",
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     deps = [
         "//pw_assert:check",
         "//pw_chrono:system_clock",

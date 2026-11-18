@@ -26,7 +26,7 @@ cc_library(
     srcs = ["responder.cc"],
     hdrs = ["public/pw_spi_zephyr/responder.h"],
     strip_include_prefix = "public",
-    # TODO(yichengli): Make this only compatible with rtos:zephyr
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     deps = [
         "//pw_assert:check",
         "//pw_bytes",

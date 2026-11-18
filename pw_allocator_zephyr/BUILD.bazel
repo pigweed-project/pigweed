@@ -36,6 +36,7 @@ cc_library(
     srcs = ["synchronized_heap_allocator.cc"],
     hdrs = ["public/pw_allocator_zephyr/synchronized_heap_allocator.h"],
     strip_include_prefix = "public",
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     deps = [
         "@pigweed//pw_allocator:abstract_allocator",
         "@zephyr",
@@ -47,6 +48,7 @@ cc_library(
     srcs = ["system_heap_allocator.cc"],
     hdrs = ["public/pw_allocator_zephyr/system_heap_allocator.h"],
     strip_include_prefix = "public",
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     deps = [
         "@pigweed//pw_allocator:abstract_allocator",
         "@zephyr",

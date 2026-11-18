@@ -35,6 +35,7 @@ cc_library(
         "public_overrides/pw_interrupt_backend/context_inline.h",
     ],
     strip_include_prefix = "public_overrides",
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     deps = [
         ":context_private",
         "//pw_interrupt:context.facade",
@@ -47,6 +48,7 @@ cc_library(
         "public/pw_interrupt_zephyr/context_inline.h",
     ],
     strip_include_prefix = "public",
+    target_compatible_with = ["@zephyr//constraints:zephyr_autoconf_force_included"],
     visibility = ["//visibility:private"],
     deps = [
         "//pw_interrupt:context.facade",
