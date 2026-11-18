@@ -281,10 +281,19 @@ func listChangeFiles(chCtx *ChangeContext) []string {
 	return listHeadChangedFiles(chCtx.Context, chCtx.Config)
 }
 
+func isGerritMagicFile(path string) bool {
+	switch path {
+	case "/COMMIT_MSG", "/MERGE_LIST", "/PATCHSET_LEVEL":
+		return true
+	default:
+		return false
+	}
+}
+
 func extractModifiedFilePaths(fMap map[string]FileInfo) []string {
 	var paths []string
 	for p := range fMap {
-		if p == "/COMMIT_MSG" || p == "COMMIT_MSG" || p == "/MERGE_LIST" || p == "MERGE_LIST" || p == "/PATCHSET_LEVEL" || p == "PATCHSET_LEVEL" {
+		if isGerritMagicFile(p) {
 			continue
 		}
 		paths = append(paths, strings.TrimPrefix(p, "/"))

@@ -41,7 +41,7 @@ func formatDiffStat(files map[string]FileInfo) string {
 	totalDeletions := 0
 
 	for p := range files {
-		if p == "/COMMIT_MSG" {
+		if isGerritMagicFile(p) {
 			continue
 		}
 		paths = append(paths, p)
@@ -104,7 +104,7 @@ var diffCmd = &cobra.Command{
 			if diffNameOnly {
 				var paths []string
 				for p := range files {
-					if p == "/COMMIT_MSG" {
+					if isGerritMagicFile(p) {
 						continue
 					}
 					paths = append(paths, p)

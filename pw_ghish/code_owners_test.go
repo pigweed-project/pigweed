@@ -36,6 +36,29 @@ func TestIsOwnersToken(t *testing.T) {
 	}
 }
 
+func TestIsGerritMagicFile(t *testing.T) {
+	for _, tc := range []struct {
+		path string
+		want bool
+	}{
+		{"/COMMIT_MSG", true},
+		{"/MERGE_LIST", true},
+		{"/PATCHSET_LEVEL", true},
+		{"", false},
+		{"COMMIT_MSG", false},
+		{"MERGE_LIST", false},
+		{"PATCHSET_LEVEL", false},
+		{"pw_ghish/diff.go", false},
+		{"/pw_ghish/COMMIT_MSG", false},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			if got := isGerritMagicFile(tc.path); got != tc.want {
+				t.Errorf("isGerritMagicFile(%q) = %v, want %v", tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestReady_WithReviewerOwners_GerritAPI(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnJSON("GET", "/changes/12345", http.StatusOK, map[string]any{
@@ -232,8 +255,8 @@ func TestReady_WithReviewerOwners_NoEligibleOwnersErrors(t *testing.T) {
 		"owner":   map[string]any{"email": "author@google.com"},
 	})
 	server.OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{
-		"COMMIT_MSG": map[string]any{},
-		"foo/bar.cc": map[string]any{"lines_inserted": 1},
+		"/COMMIT_MSG": map[string]any{},
+		"foo/bar.cc":  map[string]any{"lines_inserted": 1},
 	})
 
 	_ = NewMockGit(t).OnCommand("rev-parse --show-toplevel", tmpDir+"\n")

@@ -159,6 +159,9 @@ func TestDiff_NameOnly(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{
 		"/COMMIT_MSG":      map[string]any{},
+		"/MERGE_LIST":      map[string]any{},
+		"/PATCHSET_LEVEL":  map[string]any{},
+		"COMMIT_MSG":       map[string]any{"lines_inserted": 1},
 		"pw_ghish/diff.go": map[string]any{"lines_inserted": 10, "lines_deleted": 2},
 		"pw_ghish/view.go": map[string]any{"lines_inserted": 5, "lines_deleted": 1},
 	})
@@ -169,14 +172,11 @@ func TestDiff_NameOnly(t *testing.T) {
 	}
 
 	lines := strings.Split(strings.TrimSpace(output), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("Expected 2 lines for 2 modified files, got %d:\n%s", len(lines), output)
+	if len(lines) != 3 {
+		t.Fatalf("Expected 3 lines for 3 modified files, got %d:\n%s", len(lines), output)
 	}
-	if lines[0] != "pw_ghish/diff.go" || lines[1] != "pw_ghish/view.go" {
+	if lines[0] != "COMMIT_MSG" || lines[1] != "pw_ghish/diff.go" || lines[2] != "pw_ghish/view.go" {
 		t.Errorf("Expected sorted file paths, got: %v", lines)
-	}
-	if strings.Contains(output, "/COMMIT_MSG") {
-		t.Errorf("Expected /COMMIT_MSG to be excluded from --name-only")
 	}
 }
 
@@ -184,6 +184,7 @@ func TestDiff_Stat(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{
 		"/COMMIT_MSG":      map[string]any{},
+		"/MERGE_LIST":      map[string]any{},
 		"pw_ghish/diff.go": map[string]any{"lines_inserted": 10, "lines_deleted": 5},
 	})
 
