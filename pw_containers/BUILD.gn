@@ -520,8 +520,11 @@ pw_source_set("optional_tuple") {
   public_deps = [
     ":bitset",
     ":maybe",
+    ":pack_indexing",
+    ":special_members",
     ":tag",
     "$dir_pigweed/third_party/fuchsia:stdcompat",
+    "$dir_pw_assert:assert",
     dir_pw_polyfill,
   ]
 }

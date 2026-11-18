@@ -578,7 +578,10 @@ pw_add_library(pw_containers.optional_tuple INTERFACE
   PUBLIC_INCLUDES
     public
   PUBLIC_DEPS
+    pw_assert.assert
     pw_containers._maybe
+    pw_containers._pack_indexing
+    pw_containers._special_members
     pw_containers._tag
     pw_containers.bitset
     pw_polyfill

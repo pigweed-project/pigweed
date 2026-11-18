@@ -1020,6 +1020,8 @@ cc_library(
     deps = [
         ":bitset",
         ":maybe",
+        ":pack_indexing",
+        ":special_members",
         ":tag",
         "//pw_assert:assert",
         "//pw_polyfill",

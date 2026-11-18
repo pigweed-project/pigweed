@@ -14,16 +14,15 @@
 
 #include "pw_containers/optional_tuple.h"
 
-#include <cstdint>
 #include <string_view>
 #include <tuple>
-#include <type_traits>
 #include <utility>
 
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_containers/internal/test_helpers.h"
 #include "pw_polyfill/language_feature_macros.h"
 #include "pw_polyfill/standard.h"
+#include "pw_unit_test/constexpr.h"
 #include "pw_unit_test/framework.h"
 
 namespace {
@@ -71,7 +70,7 @@ TEST(OptionalTuple, Empty_Move) {
 TEST(OptionalTuple, Empty_MoveAssign) {
   pw::OptionalTuple<> tuple;
   pw::OptionalTuple<> move_assigned;
-  move_assigned = pw::OptionalTuple<>();
+  move_assigned = std::move(tuple);
   EXPECT_TRUE(move_assigned.empty());
   EXPECT_EQ(move_assigned.count(), 0u);
   EXPECT_EQ(move_assigned.size(), 0u);
@@ -444,6 +443,62 @@ TEST(OptionalTuple, CopyAssignment) {
   EXPECT_FALSE(dest.has_value<3>());
 }
 
+TEST(OptionalTuple, MoveAssignment_Self) {
+  Counter::Reset();
+
+  {
+    pw::OptionalTuple<Counter, Counter, Counter, Counter> tuple(
+        1, pw::kTupleNull, 2, pw::kTupleNull);
+    EXPECT_EQ(Counter::created, 2);
+    EXPECT_EQ(Counter::destroyed, 0);
+    EXPECT_EQ(Counter::moved, 0);
+
+    pw::OptionalTuple<Counter, Counter, Counter, Counter>& alias = tuple;
+    tuple = std::move(alias);
+
+    EXPECT_EQ(Counter::created, 2);
+    EXPECT_EQ(Counter::destroyed, 0);
+    EXPECT_EQ(Counter::moved, 0);
+
+    ASSERT_TRUE(tuple.has_value<0>());
+    EXPECT_EQ(tuple.value<0>().value, 1);
+    EXPECT_FALSE(tuple.has_value<1>());
+    ASSERT_TRUE(tuple.has_value<2>());
+    EXPECT_EQ(tuple.value<2>().value, 2);
+    EXPECT_FALSE(tuple.has_value<3>());
+  }
+
+  EXPECT_EQ(Counter::destroyed, 2);
+}
+
+TEST(OptionalTuple, CopyAssignment_Self) {
+  Counter::Reset();
+
+  {
+    pw::OptionalTuple<Counter, Counter, Counter, Counter> tuple(
+        1, pw::kTupleNull, 2, pw::kTupleNull);
+    EXPECT_EQ(Counter::created, 2);
+    EXPECT_EQ(Counter::destroyed, 0);
+    EXPECT_EQ(Counter::moved, 0);
+
+    const pw::OptionalTuple<Counter, Counter, Counter, Counter>& alias = tuple;
+    tuple = alias;
+
+    EXPECT_EQ(Counter::created, 2);
+    EXPECT_EQ(Counter::destroyed, 0);
+    EXPECT_EQ(Counter::moved, 0);
+
+    ASSERT_TRUE(tuple.has_value<0>());
+    EXPECT_EQ(tuple.value<0>().value, 1);
+    EXPECT_FALSE(tuple.has_value<1>());
+    ASSERT_TRUE(tuple.has_value<2>());
+    EXPECT_EQ(tuple.value<2>().value, 2);
+    EXPECT_FALSE(tuple.has_value<3>());
+  }
+
+  EXPECT_EQ(Counter::destroyed, 2);
+}
+
 TEST(OptionalTuple, ValueOr_ByIndex) {
   pw::OptionalTuple<int, int> tuple(100, pw::kTupleNull);
 
@@ -502,15 +557,115 @@ TEST(OptionalTuple, ValueOr_ByType_RvalueRefMoved) {
 }
 
 #if PW_CXX_STANDARD_IS_SUPPORTED(20)
+PW_CONSTEXPR_TEST(OptionalTuple, ConstexprOperations, {
+  pw::OptionalTuple<int, bool, std::string_view> tuple(
+      123, pw::kTupleNull, "hi");
+  PW_TEST_EXPECT_FALSE(tuple.empty());
+  PW_TEST_EXPECT_EQ(tuple.count(), 2u);
+  PW_TEST_EXPECT_EQ(tuple.size(), 3u);
+  PW_TEST_EXPECT_TRUE(tuple.has_value<int>());
+  PW_TEST_EXPECT_FALSE(tuple.has_value<bool>());
+  PW_TEST_EXPECT_TRUE(tuple.has_value<std::string_view>());
+  PW_TEST_EXPECT_EQ(tuple.value<int>(), 123);
+  PW_TEST_EXPECT_EQ(tuple.value<std::string_view>(), "hi");
+  PW_TEST_EXPECT_EQ(tuple.value_or<bool>(true), true);
+
+  // Copy construction
+  pw::OptionalTuple<int, bool, std::string_view> copy(tuple);
+  PW_TEST_EXPECT_EQ(copy.count(), 2u);
+  PW_TEST_EXPECT_EQ(copy.value<int>(), 123);
+  PW_TEST_EXPECT_EQ(copy.value<std::string_view>(), "hi");
+
+  // Emplace & reset
+  PW_TEST_EXPECT_TRUE(copy.emplace<bool>(false) == false);
+  PW_TEST_EXPECT_EQ(copy.count(), 3u);
+  copy.reset<int>();
+  PW_TEST_EXPECT_FALSE(copy.has_value<int>());
+  PW_TEST_EXPECT_EQ(copy.count(), 2u);
+
+  // Copy assignment
+  tuple = copy;
+  PW_TEST_EXPECT_FALSE(tuple.has_value<int>());
+  PW_TEST_EXPECT_TRUE(tuple.has_value<bool>());
+  PW_TEST_EXPECT_FALSE(tuple.value<bool>());
+
+  // Move construction & move assignment
+  pw::OptionalTuple<int, bool, std::string_view> moved(std::move(tuple));
+  PW_TEST_EXPECT_TRUE(tuple.empty());  // NOLINT(bugprone-use-after-move)
+  PW_TEST_EXPECT_EQ(moved.count(), 2u);
+
+  tuple = std::move(moved);
+  PW_TEST_EXPECT_TRUE(moved.empty());  // NOLINT(bugprone-use-after-move)
+  PW_TEST_EXPECT_EQ(tuple.count(), 2u);
+});
+#endif  // PW_CXX_STANDARD_IS_SUPPORTED(20)
 
 constexpr pw::OptionalTuple<int, bool> kTuple(123, pw::kTupleNull);
+constexpr pw::OptionalTuple<int, bool> kTupleCopy(kTuple);
 
 static_assert(kTuple.count() == 1);
 static_assert(kTuple.size() == 2);
 static_assert(kTuple.value<int>() == 123);
 static_assert(!kTuple.has_value<1>());
 
-#endif  // PW_CXX_STANDARD_IS_SUPPORTED(20)
+static_assert(kTupleCopy.count() == 1);
+static_assert(kTupleCopy.size() == 2);
+static_assert(kTupleCopy.value<int>() == 123);
+static_assert(!kTupleCopy.has_value<1>());
+
+struct NonMovable {
+  NonMovable() = default;
+  NonMovable(const NonMovable&) = delete;
+  NonMovable(NonMovable&&) = delete;
+  NonMovable& operator=(const NonMovable&) = delete;
+  NonMovable& operator=(NonMovable&&) = delete;
+};
+
+static_assert(std::is_trivially_destructible_v<pw::OptionalTuple<>>);
+static_assert(std::is_trivially_copy_constructible_v<pw::OptionalTuple<>>);
+static_assert(std::is_trivially_move_constructible_v<pw::OptionalTuple<>>);
+
+static_assert(std::is_trivially_destructible_v<pw::OptionalTuple<int, bool>>);
+static_assert(
+    std::is_trivially_copy_constructible_v<pw::OptionalTuple<int, bool>>);
+static_assert(
+    std::is_trivially_copy_assignable_v<pw::OptionalTuple<int, bool>>);
+static_assert(!std::is_trivially_copyable_v<pw::OptionalTuple<int, bool>>);
+static_assert(std::is_copy_assignable_v<pw::OptionalTuple<int, bool>>);
+static_assert(std::is_move_constructible_v<pw::OptionalTuple<int, bool>>);
+static_assert(std::is_move_assignable_v<pw::OptionalTuple<int, bool>>);
+
+static_assert(!std::is_trivially_destructible_v<pw::OptionalTuple<Counter>>);
+static_assert(
+    !std::is_trivially_copy_constructible_v<pw::OptionalTuple<Counter>>);
+static_assert(std::is_copy_constructible_v<pw::OptionalTuple<Counter>>);
+static_assert(std::is_copy_assignable_v<pw::OptionalTuple<Counter>>);
+static_assert(std::is_move_constructible_v<pw::OptionalTuple<Counter>>);
+static_assert(std::is_move_assignable_v<pw::OptionalTuple<Counter>>);
+
+static_assert(
+    std::is_trivially_destructible_v<pw::OptionalTuple<int, TrivialMoveOnly>>);
+static_assert(
+    !std::is_copy_constructible_v<pw::OptionalTuple<int, TrivialMoveOnly>>);
+static_assert(
+    !std::is_copy_assignable_v<pw::OptionalTuple<int, TrivialMoveOnly>>);
+static_assert(
+    std::is_move_constructible_v<pw::OptionalTuple<int, TrivialMoveOnly>>);
+static_assert(
+    std::is_move_assignable_v<pw::OptionalTuple<int, TrivialMoveOnly>>);
+
+static_assert(!std::is_trivially_destructible_v<pw::OptionalTuple<MoveOnly>>);
+static_assert(!std::is_copy_constructible_v<pw::OptionalTuple<MoveOnly>>);
+static_assert(!std::is_copy_assignable_v<pw::OptionalTuple<MoveOnly>>);
+static_assert(std::is_move_constructible_v<pw::OptionalTuple<MoveOnly>>);
+static_assert(std::is_move_assignable_v<pw::OptionalTuple<MoveOnly>>);
+
+static_assert(
+    !std::is_copy_constructible_v<pw::OptionalTuple<int, NonMovable>>);
+static_assert(!std::is_copy_assignable_v<pw::OptionalTuple<int, NonMovable>>);
+static_assert(
+    !std::is_move_constructible_v<pw::OptionalTuple<int, NonMovable>>);
+static_assert(!std::is_move_assignable_v<pw::OptionalTuple<int, NonMovable>>);
 
 static_assert(
     std::is_same_v<std::tuple_element_t<0, pw::OptionalTuple<long>>, long>);

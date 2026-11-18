@@ -14,7 +14,7 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
+#include <memory>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -23,6 +23,8 @@
 #include "pw_assert/assert.h"
 #include "pw_containers/bitset.h"
 #include "pw_containers/internal/maybe.h"
+#include "pw_containers/internal/pack_indexing.h"
+#include "pw_containers/internal/special_members.h"
 #include "pw_containers/internal/tag.h"
 #include "pw_polyfill/language_feature_macros.h"
 
@@ -33,23 +35,143 @@ class OptionalTuple;
 
 namespace containers::internal {
 
-template <typename T, typename First, typename... Other>
-constexpr size_t FindFirstIndexOf() {
-  if constexpr (std::is_same_v<T, First>) {
-    return 0;
-  } else if constexpr (sizeof...(Other) > 0u) {
-    return 1 + FindFirstIndexOf<T, Other...>();
-  } else {
-    static_assert(sizeof...(Other) != 0u,
-                  "The type is not present in the type parameter pack");
-  }
-}
-
 template <typename T>
 struct IsOptionalTuple : std::false_type {};
 
 template <typename... Types>
 struct IsOptionalTuple<OptionalTuple<Types...>> : std::true_type {};
+
+template <size_t kIndex, typename T>
+struct OptionalTupleLeaf {
+  constexpr OptionalTupleLeaf() noexcept
+      : element(NullPlaceholder::InternalUseOnly()) {}
+
+  template <typename Arg>
+  constexpr explicit OptionalTupleLeaf(std::in_place_t, Arg&& arg) noexcept
+      : element(std::forward<Arg>(arg)) {}
+
+  Maybe<T> element;
+};
+
+template <typename Indices, typename... Types>
+class OptionalTupleStorageImpl;
+
+template <size_t... kIndices, typename... Types>
+class OptionalTupleStorageImpl<std::index_sequence<kIndices...>, Types...>
+    : public OptionalTupleLeaf<kIndices, Types>... {
+ public:
+  using Bits = BitSet<sizeof...(Types)>;
+
+  template <size_t kIndex>
+  using ElementType = SafeNthType<kIndex, Types...>;
+
+  constexpr OptionalTupleStorageImpl() noexcept = default;
+
+  PW_CONSTEXPR_CPP20 explicit OptionalTupleStorageImpl(
+      UninitializedTag) noexcept
+      : OptionalTupleLeaf<kIndices, Types>()..., active_{} {}
+
+  template <typename... Args>
+  constexpr explicit OptionalTupleStorageImpl(std::in_place_t,
+                                              Args&&... args) noexcept
+      : OptionalTupleLeaf<kIndices, Types>(std::in_place,
+                                           std::forward<Args>(args))...,
+        active_(Bits::LittleEndian(
+            !std::is_same_v<cpp20::remove_cvref_t<Args>, NullPlaceholder>...)) {
+  }
+
+  constexpr OptionalTupleStorageImpl(const OptionalTupleStorageImpl&) = default;
+  constexpr OptionalTupleStorageImpl(OptionalTupleStorageImpl&&) = default;
+  constexpr OptionalTupleStorageImpl& operator=(
+      const OptionalTupleStorageImpl&) = default;
+  constexpr OptionalTupleStorageImpl& operator=(OptionalTupleStorageImpl&&) =
+      default;
+  ~OptionalTupleStorageImpl() = default;
+
+  template <size_t kIndex>
+  constexpr ElementType<kIndex>& RawValue() noexcept {
+    static_assert(kIndex < sizeof...(Types));
+    using Leaf = OptionalTupleLeaf<kIndex, ElementType<kIndex>>;
+    return static_cast<Leaf&>(*this).element.value;
+  }
+
+  template <size_t kIndex>
+  constexpr const ElementType<kIndex>& RawValue() const noexcept {
+    static_assert(kIndex < sizeof...(Types));
+    using Leaf = OptionalTupleLeaf<kIndex, ElementType<kIndex>>;
+    return static_cast<const Leaf&>(*this).element.value;
+  }
+
+  template <size_t kIndex, typename... Args>
+  PW_CONSTEXPR_CPP20 ElementType<kIndex>& EmplaceElement(
+      Args&&... args) noexcept {
+    ResetElement<kIndex>();
+    using Leaf = OptionalTupleLeaf<kIndex, ElementType<kIndex>>;
+    auto& ref = static_cast<Leaf&>(*this).element.Construct(
+        std::forward<Args>(args)...);
+    active_.template set<kIndex>();
+    return ref;
+  }
+
+  template <size_t kIndex>
+  PW_CONSTEXPR_CPP20 void ResetElement() noexcept {
+    if (active_.template test<kIndex>()) {
+      active_.template reset<kIndex>();
+      if constexpr (!std::is_trivially_destructible_v<ElementType<kIndex>>) {
+        std::destroy_at(std::addressof(RawValue<kIndex>()));
+      }
+    }
+  }
+
+  PW_CONSTEXPR_CPP20 void Destroy() noexcept {
+    (ResetElement<kIndices>(), ...);
+  }
+
+  PW_CONSTEXPR_CPP20 void ConstructFrom(
+      const OptionalTupleStorageImpl& other) noexcept {
+    ((other.active_.template test<kIndices>()
+          ? static_cast<void>(
+                EmplaceElement<kIndices>(other.RawValue<kIndices>()))
+          : static_cast<void>(0)),
+     ...);
+  }
+
+  PW_CONSTEXPR_CPP20 void ConstructFrom(
+      OptionalTupleStorageImpl&& other) noexcept {
+    ((other.active_.template test<kIndices>()
+          ? (static_cast<void>(EmplaceElement<kIndices>(
+                 std::move(other.RawValue<kIndices>()))),
+             other.ResetElement<kIndices>())
+          : static_cast<void>(0)),
+     ...);
+  }
+
+  template <typename Other>
+  PW_CONSTEXPR_CPP20 void AssignFrom(Other&& other) noexcept {
+    Destroy();
+    ConstructFrom(std::forward<Other>(other));
+  }
+
+  Bits active_{};
+};
+
+template <typename... Types>
+using OptionalTupleStorageBase =
+    OptionalTupleStorageImpl<std::make_index_sequence<sizeof...(Types)>,
+                             Types...>;
+
+template <typename... Types>
+using OptionalTupleData = SpecialMembersAdapter<
+    OptionalTupleStorageBase<Types...>,
+    kAllTriviallyDestructible<Types...>,
+    SelectSpecialMemberTrait((std::is_move_constructible_v<Types> && ...),
+                             sizeof...(Types) == 0),
+    kCopyCtorTrait<Types...>,
+    SelectSpecialMemberTrait((std::is_move_constructible_v<Types> && ...),
+                             sizeof...(Types) == 0),
+    SelectSpecialMemberTrait(
+        (std::is_copy_constructible_v<Types> && ...),
+        (kIsTriviallyReassignable<Types, const Types&> && ...))>;
 
 }  // namespace containers::internal
 
@@ -81,20 +203,37 @@ inline constexpr auto kTupleNull =
 /// leaves the element in an active but moved state (`has_value<>()` returns
 /// `true`). Call `reset()` to remove the element.
 template <typename... Types>
-class OptionalTuple {
- private:
+class OptionalTuple
+    : private containers::internal::OptionalTupleData<Types...> {
+  static_assert((std::is_same_v<Types, std::decay_t<Types>> && ...),
+                "Types in OptionalTuple must not be references, arrays, or "
+                "const/volatile qualified");
+
+  using Base = containers::internal::OptionalTupleData<Types...>;
+
   template <typename T>
-  static constexpr size_t TypeToIndex();
+  static constexpr size_t GetTypeIndex() {
+    constexpr size_t kIndex =
+        containers::internal::kUniqueTypeIndex<T, Types...>;
+    if constexpr (kIndex != containers::internal::kInvalidTypeIndex) {
+      return kIndex;
+    } else {
+      static_assert(kIndex != containers::internal::kInvalidTypeIndex,
+                    "The type must appear exactly once in the OptionalTuple "
+                    "type parameter pack to look up elements by type");
+      return 0;
+    }
+  }
 
   template <size_t kIndex>
-  using Element = std::tuple_element_t<kIndex, std::tuple<Types...>>;
+  using ElementType = containers::internal::SafeNthType<kIndex, Types...>;
 
   template <typename T>
-  using ElementByType = Element<TypeToIndex<T>()>;
+  using ElementByType = ElementType<GetTypeIndex<T>()>;
 
  public:
   /// Default constructs an `OptionalTuple` with all elements unset.
-  constexpr OptionalTuple() : tuple_(kToTupleNull<Types>..., Bits{}) {}
+  constexpr OptionalTuple() = default;
 
   /// Constructs an `OptionalTuple`, forwarding each argument to its
   /// corresponding element. Pass `pw::kTupleNull` to skip initializing
@@ -102,163 +241,139 @@ class OptionalTuple {
   template <
       typename... Args,
       typename = std::enable_if_t<
+          (sizeof...(Args) == sizeof...(Types)) && (sizeof...(Types) != 0) &&
           (std::is_constructible_v<containers::internal::Maybe<Types>, Args> &&
            ...) &&
           (sizeof...(Types) != 1 || (!containers::internal::IsOptionalTuple<
                                          cpp20::remove_cvref_t<Args>>::value &&
                                      ...))>>
   constexpr OptionalTuple(Args&&... args)
-      : tuple_(std::forward<Args>(args)...,
-               Bits::LittleEndian(
-                   !std::is_same_v<cpp20::remove_cvref_t<Args>,
-                                   containers::internal::NullPlaceholder>...)) {
-  }
+      : Base(std::in_place, std::forward<Args>(args)...) {}
 
-  /// Copy constructs from another `OptionalTuple`.
-  constexpr OptionalTuple(const OptionalTuple& other)
-      : tuple_(kToTupleNull<Types>..., Bits{}) {
-    UninitializedCopyFrom(other, kAllIdx);
-  }
-
-  /// Copy assigns this from another `OptionalTuple`.
-  constexpr OptionalTuple& operator=(const OptionalTuple& other) {
-    DestroyAll(kAllIdx);  // To simplify the copy, first destroy all elements.
-    UninitializedCopyFrom(std::move(other), kAllIdx);
-    return *this;
-  }
-
-  /// Move constructs from another `OptionalTuple`.
-  constexpr OptionalTuple(OptionalTuple&& other)
-      : tuple_(kToTupleNull<Types>..., Bits{}) {
-    UninitializedMoveFrom(other, kAllIdx);
-  }
-
-  /// Move assigns this from another `OptionalTuple`.
-  constexpr OptionalTuple& operator=(OptionalTuple&& other) {
-    DestroyAll(kAllIdx);  // To simplify the move, first destroy all elements.
-    UninitializedMoveFrom(other, kAllIdx);
-    return *this;
-  }
-
-  // Converting copy/move constructors are not yet implemented.
-
-  /// Destroys the `OptionalTuple` and all its active elements.
-  PW_CONSTEXPR_CPP20 ~OptionalTuple() { DestroyAll(kAllIdx); }
-
-  // swap() is not yet implemented.
-
-  /// Checks if the `OptionalTuple` contains no active elements.
-  [[nodiscard]] constexpr bool empty() const { return active().none(); }
-
-  /// Returns the number of active elements in the `OptionalTuple`.
-  constexpr size_t count() const { return active().count(); }
+  constexpr OptionalTuple(const OptionalTuple&) = default;
+  constexpr OptionalTuple(OptionalTuple&&) = default;
+  constexpr OptionalTuple& operator=(const OptionalTuple&) = default;
+  constexpr OptionalTuple& operator=(OptionalTuple&&) = default;
+  ~OptionalTuple() = default;
 
   /// Returns the total number elements in the `OptionalTuple`. Equivalent to
   /// `std::tuple_size<>`.
-  constexpr size_t size() const { return sizeof...(Types); }
+  [[nodiscard]] constexpr size_t size() const noexcept {
+    return sizeof...(Types);
+  }
+
+  /// Returns the number of active elements in the `OptionalTuple`.
+  [[nodiscard]] constexpr size_t count() const noexcept {
+    return this->active_.count();
+  }
+
+  /// Checks if the `OptionalTuple` contains no active elements.
+  [[nodiscard]] constexpr bool empty() const noexcept {
+    return this->active_.none();
+  }
 
   /// Checks if the element at `kIndex` has a value.
   template <size_t kIndex>
-  constexpr bool has_value() const {
-    return active().template test<kIndex>();
+  [[nodiscard]] constexpr bool has_value() const noexcept {
+    return this->active_.template test<kIndex>();
   }
 
   /// Checks if the element of type `T` has a value.
   template <typename T>
-  constexpr bool has_value() const {
-    return has_value<TypeToIndex<T>()>();
+  [[nodiscard]] constexpr bool has_value() const noexcept {
+    return has_value<GetTypeIndex<T>()>();
   }
 
   /// Returns a reference to the element at `kIndex`.
   /// @pre `has_value<kIndex>` must be true.
   template <size_t kIndex>
-  constexpr Element<kIndex>& value() & {
+  constexpr ElementType<kIndex>& value() & {
     PW_ASSERT(has_value<kIndex>());
-    return RawValue<kIndex>();
+    return this->template RawValue<kIndex>();
   }
 
   /// Returns a const reference to the element at `kIndex`.
   /// @pre `has_value<kIndex>` must be true.
   template <size_t kIndex>
-  constexpr const Element<kIndex>& value() const& {
+  constexpr const ElementType<kIndex>& value() const& {
     PW_ASSERT(has_value<kIndex>());
-    return RawValue<kIndex>();
+    return this->template RawValue<kIndex>();
   }
 
   /// Returns an rvalue reference to the element at `kIndex`.
   /// @pre `has_value<kIndex>` must be true.
   template <size_t kIndex>
-  constexpr Element<kIndex>&& value() && {
+  constexpr ElementType<kIndex>&& value() && {
     PW_ASSERT(has_value<kIndex>());
-    return std::move(RawValue<kIndex>());
+    return std::move(this->template RawValue<kIndex>());
   }
 
   /// Returns a const rvalue reference to the element at `kIndex`.
   /// @pre `has_value<kIndex>` must be true.
   template <size_t kIndex>
-  constexpr const Element<kIndex>&& value() const&& {
+  constexpr const ElementType<kIndex>&& value() const&& {
     PW_ASSERT(has_value<kIndex>());
-    return std::move(RawValue<kIndex>());
+    return std::move(this->template RawValue<kIndex>());
   }
 
   /// Returns a reference to the element of type `T`.
   /// @pre `has_value<T>` must be true.
   template <typename T>
   constexpr ElementByType<T>& value() & {
-    return value<TypeToIndex<T>()>();
+    return value<GetTypeIndex<T>()>();
   }
 
   /// Returns a const reference to the element of type `T`.
   /// @pre `has_value<T>` must be true.
   template <typename T>
   constexpr const ElementByType<T>& value() const& {
-    return value<TypeToIndex<T>()>();
+    return value<GetTypeIndex<T>()>();
   }
 
   /// Returns an rvalue reference to the element of type `T`.
   /// @pre `has_value<T>` must be true.
   template <typename T>
   constexpr ElementByType<T>&& value() && {
-    return std::move(value<TypeToIndex<T>()>());
+    return std::move(*this).template value<GetTypeIndex<T>()>();
   }
 
   /// Returns a const rvalue reference to the element of type `T`.
   /// @pre `has_value<T>` must be true.
   template <typename T>
   constexpr const ElementByType<T>&& value() const&& {
-    return std::move(value<TypeToIndex<T>()>());
+    return std::move(*this).template value<GetTypeIndex<T>()>();
   }
 
   /// Returns the element at the specified index, if present. Otherwise, returns
   /// `default_value`.
   template <size_t kIndex, int&... kExplicitGuard, typename U>
-  constexpr Element<kIndex> value_or(U&& default_value) const& {
-    return has_value<kIndex>()
-               ? RawValue<kIndex>()
-               : static_cast<Element<kIndex>>(std::forward<U>(default_value));
+  constexpr ElementType<kIndex> value_or(U&& default_value) const& {
+    return has_value<kIndex>() ? this->template RawValue<kIndex>()
+                               : static_cast<ElementType<kIndex>>(
+                                     std::forward<U>(default_value));
+  }
+
+  /// Moves and returns the element at the specified index, if present.
+  /// Otherwise, returns `default_value`.
+  template <size_t kIndex, int&... kExplicitGuard, typename U>
+  constexpr ElementType<kIndex> value_or(U&& default_value) && {
+    return has_value<kIndex>() ? std::move(this->template RawValue<kIndex>())
+                               : static_cast<ElementType<kIndex>>(
+                                     std::forward<U>(default_value));
   }
 
   /// Returns the element with the specified type, if present. Otherwise,
   /// returns `default_value`.
   template <typename T, int&... kExplicitGuard, typename U>
   constexpr ElementByType<T> value_or(U&& default_value) const& {
-    return value_or<TypeToIndex<T>()>(std::forward<U>(default_value));
-  }
-
-  /// Moves and returns the element at the specified index, if present.
-  /// Otherwise, returns `default_value`.
-  template <size_t kIndex, int&... kExplicitGuard, typename U>
-  constexpr Element<kIndex> value_or(U&& default_value) && {
-    return has_value<kIndex>()
-               ? std::move(RawValue<kIndex>())
-               : static_cast<Element<kIndex>>(std::forward<U>(default_value));
+    return value_or<GetTypeIndex<T>()>(std::forward<U>(default_value));
   }
 
   /// Moves and returns the element with the specified type, if present.
   /// Otherwise, returns `default_value`.
   template <typename T, int&... kExplicitGuard, typename U>
   constexpr ElementByType<T> value_or(U&& default_value) && {
-    return std::move(*this).template value_or<TypeToIndex<T>()>(
+    return std::move(*this).template value_or<GetTypeIndex<T>()>(
         std::forward<U>(default_value));
   }
 
@@ -267,11 +382,8 @@ class OptionalTuple {
   ///
   /// @returns A reference to the newly initialized item.
   template <size_t kIndex, int&... kExplicitGuard, typename... Args>
-  constexpr Element<kIndex>& emplace(Args&&... args) {
-    DestroyIfActive<kIndex>();
-    active().template set<kIndex>();
-    return *new (&RawValue<kIndex>())
-        Element<kIndex>(std::forward<Args>(args)...);
+  PW_CONSTEXPR_CPP20 ElementType<kIndex>& emplace(Args&&... args) {
+    return this->template EmplaceElement<kIndex>(std::forward<Args>(args)...);
   }
 
   /// Constructs an element of type `T` in place and marks it active. Destroys
@@ -279,126 +391,37 @@ class OptionalTuple {
   ///
   /// @returns A reference to the newly initialized item.
   template <typename T, int&... kExplicitGuard, typename... Args>
-  constexpr ElementByType<T>& emplace(Args&&... args) {
-    return emplace<TypeToIndex<T>()>(std::forward<Args>(args)...);
+  PW_CONSTEXPR_CPP20 ElementByType<T>& emplace(Args&&... args) {
+    return emplace<GetTypeIndex<T>()>(std::forward<Args>(args)...);
   }
 
   /// Resets (clears) the value at the specified index, if any.
   template <size_t kIndex>
-  constexpr void reset() {
-    DestroyIfActive<kIndex>();
-    active().template reset<kIndex>();
+  PW_CONSTEXPR_CPP20 void reset() {
+    this->template ResetElement<kIndex>();
   }
 
   /// Resets (clears) the value of type `T`, if any.
   template <typename T>
-  constexpr void reset() {
-    return reset<TypeToIndex<T>()>();
+  PW_CONSTEXPR_CPP20 void reset() {
+    reset<GetTypeIndex<T>()>();
   }
-
- private:
-  static constexpr auto kAllIdx = std::make_index_sequence<sizeof...(Types)>{};
-
-  // Used to expand N types to N uses of kTupleNull.
-  template <typename>
-  static constexpr auto kToTupleNull = kTupleNull;
-
-  template <size_t... kIndices>
-  constexpr void DestroyAll(std::index_sequence<kIndices...>) {
-    (DestroyIfActive<kIndices>(), ...);
-  }
-
-  template <size_t kIndex>
-  constexpr void DestroyIfActive() {
-    if (has_value<kIndex>()) {
-      std::destroy_at(&RawValue<kIndex>());
-    }
-  }
-
-  template <size_t... kIndices>
-  constexpr void UninitializedCopyFrom(const OptionalTuple& other,
-                                       std::index_sequence<kIndices...>) {
-    (CopyElement<kIndices>(other), ...);
-    active() = other.active();
-  }
-
-  template <size_t kIndex>
-  constexpr void CopyElement(const OptionalTuple& other) {
-    if (other.has_value<kIndex>()) {
-      new (&RawValue<kIndex>()) Element<kIndex>(other.RawValue<kIndex>());
-    }
-  }
-
-  template <size_t... kIndices>
-  constexpr void UninitializedMoveFrom(OptionalTuple& other,
-                                       std::index_sequence<kIndices...>) {
-    (MoveElement<kIndices>(other), ...);
-    active() = other.active();
-    other.active().reset();
-  }
-
-  template <size_t kIndex>
-  constexpr void MoveElement(OptionalTuple& other) {
-    if (other.has_value<kIndex>()) {
-      new (&RawValue<kIndex>())
-          Element<kIndex>(std::move(other.RawValue<kIndex>()));
-      std::destroy_at(&other.RawValue<kIndex>());
-    }
-  }
-
-  template <size_t kIndex>
-  constexpr Element<kIndex>& RawValue() {
-    static_assert(kIndex < sizeof...(Types));
-    return std::get<kIndex>(tuple_).value;
-  }
-
-  template <size_t kIndex>
-  constexpr const Element<kIndex>& RawValue() const {
-    static_assert(kIndex < sizeof...(Types));
-    return std::get<kIndex>(tuple_).value;
-  }
-
- private:
-  using Bits = BitSet<sizeof...(Types)>;
-
-  constexpr Bits& active() { return std::get<sizeof...(Types)>(tuple_); }
-  constexpr const Bits& active() const {
-    return std::get<sizeof...(Types)>(tuple_);
-  }
-
-  // Include the bitset as the final tuple element for more efficient packing.
-  std::tuple<containers::internal::Maybe<Types>..., Bits> tuple_;
 };
 
 /// @}
 
-template <typename... Types>
-template <typename T>
-constexpr size_t OptionalTuple<Types...>::TypeToIndex() {
-  if constexpr ((std::is_same_v<T, Types> + ...) == 1) {
-    return containers::internal::FindFirstIndexOf<T, Types...>();
-  } else {  // Use if constexpr and return 0 to clean up error messages.
-    static_assert(
-        (std::is_same_v<T, Types> + ...) == 1,
-        "To access an item by type, the type must appear exactly once in the "
-        "OptionalTuple. Specify the item's index instead.");
-    return 0;
-  }
-}
-
 }  // namespace pw
 
-// Specialize std::tuple_element for pw::OptionalTuple.
-template <typename First, typename... Other>
-struct std::tuple_element<0, ::pw::OptionalTuple<First, Other...>> {
-  using type = First;
+namespace std {
+
+template <typename... Types>
+struct tuple_size<pw::OptionalTuple<Types...>>
+    : std::integral_constant<size_t, sizeof...(Types)> {};
+
+template <size_t kIndex, typename... Types>
+struct tuple_element<kIndex, pw::OptionalTuple<Types...>> {
+  static_assert(kIndex < sizeof...(Types), "OptionalTuple index out of bounds");
+  using type = pw::containers::internal::SafeNthType<kIndex, Types...>;
 };
 
-template <std::size_t kIndex, typename First, typename... Other>
-struct std::tuple_element<kIndex, ::pw::OptionalTuple<First, Other...>>
-    : public std::tuple_element<kIndex - 1, ::pw::OptionalTuple<Other...>> {};
-
-// Specialize std::tuple_size for pw::OptionalTuple.
-template <typename... Types>
-struct std::tuple_size<::pw::OptionalTuple<Types...>>
-    : std::integral_constant<std::size_t, sizeof...(Types)> {};
+}  // namespace std
