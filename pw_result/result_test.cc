@@ -24,7 +24,6 @@
 
 #include <cstdint>
 #include <initializer_list>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -609,39 +608,16 @@ using ::pw::containers::test::Counter;
 using ::pw::containers::test::MoveOnly;
 using ::pw::containers::test::TrivialMoveOnly;
 
-enum class HasValue : uint8_t {
-  kNo = 0,
-  kYes = 1,
-  kDefinitelyNot = 3,
+enum class TestStatusCode : uint8_t {
+  kError = 0,
+  kOk = 1,
+  kOtherError = 3,
 };
 
-using HasValueStatus = StatusOf<HasValue::kYes>;
+using TestStatus = StatusOf<TestStatusCode::kOk>;
 
 template <typename T>
-using TestResult = Result<T, HasValueStatus>;
-
-template <typename OptT>
-struct OptionalTraits;
-
-template <typename T>
-struct OptionalTraits<std::optional<T>> {
-  static std::optional<T> MakeEmpty() { return std::nullopt; }
-  static std::optional<T> MakeValue(T v) {
-    return std::optional<T>(std::move(v));
-  }
-  static bool HasValue(const std::optional<T>& opt) { return opt.has_value(); }
-};
-
-template <typename T>
-struct OptionalTraits<TestResult<T>> {
-  static constexpr TestResult<T> MakeEmpty() {
-    return TestResult<T>(HasValue::kNo);
-  }
-  static constexpr TestResult<T> MakeValue(T v) {
-    return TestResult<T>(std::move(v));
-  }
-  static constexpr bool HasValue(const TestResult<T>& opt) { return opt.ok(); }
-};
+using TestResult = Result<T, TestStatus>;
 
 using internal_result::test::ConvertibleFromInt;
 using internal_result::test::Copyable;
@@ -650,68 +626,6 @@ using internal_result::test::CopyCtorNotAssign;
 using internal_result::test::ExplicitConstructibleFromInt;
 using internal_result::test::MoveAssignNotCtor;
 using internal_result::test::MoveCtorNotAssign;
-
-template <typename OptT>
-void TestCommonOptional() {
-  using T = typename OptT::value_type;
-  using Traits = OptionalTraits<OptT>;
-
-  OptT empty = Traits::MakeEmpty();
-  EXPECT_FALSE(Traits::HasValue(empty));
-
-  OptT val = Traits::MakeValue(T(42));
-  EXPECT_TRUE(Traits::HasValue(val));
-  EXPECT_EQ(val.value().value, 42);
-  EXPECT_EQ((*val).value, 42);
-  EXPECT_EQ(val->value, 42);
-
-  if constexpr (std::is_copy_constructible_v<T>) {
-    OptT copy = val;
-    EXPECT_TRUE(Traits::HasValue(copy));
-    EXPECT_EQ(copy->value, 42);
-  }
-
-  OptT moved = std::move(val);
-  EXPECT_TRUE(Traits::HasValue(moved));
-  EXPECT_EQ(moved->value, 42);
-
-  OptT emp = Traits::MakeEmpty();
-  emp.emplace(100);
-  EXPECT_TRUE(Traits::HasValue(emp));
-  EXPECT_EQ(emp->value, 100);
-}
-
-TEST(ResultCustomStatus, Common_StdOptional_Copyable) {
-  TestCommonOptional<std::optional<Copyable>>();
-}
-
-TEST(ResultCustomStatus, Common_PwResult_Copyable) {
-  TestCommonOptional<TestResult<Copyable>>();
-}
-
-TEST(ResultCustomStatus, Common_StdOptional_MoveOnly) {
-  TestCommonOptional<std::optional<MoveOnly>>();
-}
-
-TEST(ResultCustomStatus, Common_PwResult_MoveOnly) {
-  TestCommonOptional<TestResult<MoveOnly>>();
-}
-
-TEST(ResultCustomStatus, Common_StdOptional_CopyCtorNotAssign) {
-  TestCommonOptional<std::optional<CopyCtorNotAssign>>();
-}
-
-TEST(ResultCustomStatus, Common_PwResult_CopyCtorNotAssign) {
-  TestCommonOptional<TestResult<CopyCtorNotAssign>>();
-}
-
-TEST(ResultCustomStatus, Common_StdOptional_MoveCtorNotAssign) {
-  TestCommonOptional<std::optional<MoveCtorNotAssign>>();
-}
-
-TEST(ResultCustomStatus, Common_PwResult_MoveCtorNotAssign) {
-  TestCommonOptional<TestResult<MoveCtorNotAssign>>();
-}
 
 TEST(ResultCustomStatus, Traits_CopyCtorNotAssign) {
   using Opt = TestResult<CopyCtorNotAssign>;
@@ -760,26 +674,26 @@ PW_CONSTEXPR_TEST(ResultCustomStatus, ExplicitConstruction, {
 TEST(ResultCustomStatus, Reset) {
   TestResult<Counter> opt(std::in_place, 5);
   EXPECT_TRUE(opt.ok());
-  opt.reset(HasValue::kDefinitelyNot);
+  opt.reset(TestStatusCode::kOtherError);
   EXPECT_FALSE(opt.ok());
-  EXPECT_EQ(opt.status().code(), HasValue::kDefinitelyNot);
+  EXPECT_EQ(opt.status().code(), TestStatusCode::kOtherError);
 }
 
 PW_CONSTEXPR_TEST(ResultCustomStatus, ResetTemplate, {
   TestResult<int> opt(42);
   PW_TEST_EXPECT_TRUE(opt.ok());
-  opt.reset<HasValue::kDefinitelyNot>();
+  opt.reset<TestStatusCode::kOtherError>();
   PW_TEST_EXPECT_FALSE(opt.ok());
-  PW_TEST_EXPECT_EQ(opt.status().code(), HasValue::kDefinitelyNot);
+  PW_TEST_EXPECT_EQ(opt.status().code(), TestStatusCode::kOtherError);
 });
 
 TEST(ResultCustomStatus, StatusAccess) {
-  TestResult<Counter> opt(HasValue::kNo);
-  EXPECT_EQ(opt.status().code(), HasValue::kNo);
-  opt.reset(HasValue::kDefinitelyNot);
-  EXPECT_EQ(opt.status().code(), HasValue::kDefinitelyNot);
+  TestResult<Counter> opt(TestStatusCode::kError);
+  EXPECT_EQ(opt.status().code(), TestStatusCode::kError);
+  opt.reset(TestStatusCode::kOtherError);
+  EXPECT_EQ(opt.status().code(), TestStatusCode::kOtherError);
   opt = Counter(3);
-  EXPECT_EQ(opt.status().code(), HasValue::kYes);
+  EXPECT_EQ(opt.status().code(), TestStatusCode::kOk);
 }
 
 PW_CONSTEXPR_TEST(ResultCustomStatus, CopyAssignment, {
@@ -797,14 +711,14 @@ PW_CONSTEXPR_TEST(ResultCustomStatus, MoveAssignment, {
 });
 
 TEST(ResultCustomStatus, ValueCopyAssignment) {
-  TestResult<Copyable> opt(HasValue::kNo);
+  TestResult<Copyable> opt(TestStatusCode::kError);
   Copyable val(123);
   opt = val;
   EXPECT_EQ(opt->value, 123);
 }
 
 TEST(ResultCustomStatus, ValueMoveAssignment) {
-  TestResult<MoveOnly> mv(HasValue::kNo);
+  TestResult<MoveOnly> mv(TestStatusCode::kError);
   mv = MoveOnly(456);
   EXPECT_EQ(mv->value, 456);
 }
@@ -813,7 +727,7 @@ TEST(ResultCustomStatus, Destructor_CalledOnReset) {
   Counter::Reset();
 
   TestResult<Counter> opt(std::in_place);
-  opt.reset(HasValue::kNo);
+  opt.reset(TestStatusCode::kError);
   EXPECT_EQ(Counter::created, 1);
   EXPECT_EQ(Counter::destroyed, 1);
 }
@@ -831,7 +745,7 @@ TEST(ResultCustomStatus, Destructor_CalledOnAssignState) {
   Counter::Reset();
   {
     TestResult<Counter> opt(std::in_place);
-    opt = TestResult<Counter>(HasValue::kNo);
+    opt = TestResult<Counter>(TestStatusCode::kError);
   }
   EXPECT_EQ(Counter::created, 1);
   EXPECT_EQ(Counter::destroyed, 1);
@@ -916,7 +830,7 @@ TEST(ResultCustomStatus, PlacementNew_EmplaceArgs) {
     MultiArg(int a, int b) : sum(a + b) {}
     int sum;
   };
-  TestResult<MultiArg> opt(HasValue::kNo);
+  TestResult<MultiArg> opt(TestStatusCode::kError);
   opt.emplace(10, 20);
   EXPECT_TRUE(opt.ok());
   EXPECT_EQ(opt->sum, 30);
@@ -1007,15 +921,15 @@ PW_CONSTEXPR_TEST(ResultCustomStatus, Void_DefaultConstruction, {
   PW_TEST_EXPECT_FALSE(default_void.ok());
   PW_TEST_EXPECT_EQ(default_void.status(), Status::Unknown());
 
-  TestResult<void> opt(HasValue::kNo);
+  TestResult<void> opt(TestStatusCode::kError);
   PW_TEST_EXPECT_FALSE(opt.ok());
-  PW_TEST_EXPECT_EQ(opt.status().code(), HasValue::kNo);
+  PW_TEST_EXPECT_EQ(opt.status().code(), TestStatusCode::kError);
 });
 
 PW_CONSTEXPR_TEST(ResultCustomStatus, Void_InPlaceConstruction, {
   TestResult<void> opt(std::in_place);
   PW_TEST_EXPECT_TRUE(opt.ok());
-  PW_TEST_EXPECT_EQ(opt.status().code(), HasValue::kYes);
+  PW_TEST_EXPECT_EQ(opt.status().code(), TestStatusCode::kOk);
 
   Result<void> ok_void = OkStatus();
   PW_TEST_EXPECT_TRUE(ok_void.ok());
@@ -1029,7 +943,7 @@ TEST(ResultCustomStatus, OrElseRValueRefVoidMoveOnly) {
   TestResult<MoveOnly> r(std::in_place, 32);
   bool invoked = false;
   TestResult<MoveOnly> ret =
-      std::move(r).or_else([&invoked](HasValueStatus) { invoked = true; });
+      std::move(r).or_else([&invoked](TestStatus) { invoked = true; });
   EXPECT_FALSE(invoked);
   ASSERT_TRUE(ret.ok());
   EXPECT_EQ(ret->value, 32);
@@ -1045,20 +959,20 @@ TEST(ResultCustomStatus, Void_ExpectEq) {
 }
 
 PW_CONSTEXPR_TEST(ResultCustomStatus, Void_Emplace, {
-  TestResult<void> opt(HasValue::kNo);
+  TestResult<void> opt(TestStatusCode::kError);
   opt.emplace();
   PW_TEST_EXPECT_TRUE(opt.ok());
 });
 
 PW_CONSTEXPR_TEST(ResultCustomStatus, Void_Reset, {
   TestResult<void> opt(std::in_place);
-  opt.reset(HasValue::kNo);
+  opt.reset(TestStatusCode::kError);
   PW_TEST_EXPECT_FALSE(opt.ok());
 
   opt.emplace();
-  opt.reset<HasValue::kDefinitelyNot>();
+  opt.reset<TestStatusCode::kOtherError>();
   PW_TEST_EXPECT_FALSE(opt.ok());
-  PW_TEST_EXPECT_EQ(opt.status().code(), HasValue::kDefinitelyNot);
+  PW_TEST_EXPECT_EQ(opt.status().code(), TestStatusCode::kOtherError);
 });
 
 PW_CONSTEXPR_TEST(ResultCustomStatus, Void_Value, {
@@ -1068,14 +982,14 @@ PW_CONSTEXPR_TEST(ResultCustomStatus, Void_Value, {
 
 PW_CONSTEXPR_TEST(ResultCustomStatus, Void_CopyAssignment, {
   TestResult<void> opt1(std::in_place);
-  TestResult<void> opt2(HasValue::kNo);
+  TestResult<void> opt2(TestStatusCode::kError);
   opt2 = opt1;
   PW_TEST_EXPECT_TRUE(opt2.ok());
 });
 
 PW_CONSTEXPR_TEST(ResultCustomStatus, Void_MoveAssignment, {
   TestResult<void> opt1(std::in_place);
-  TestResult<void> opt2(HasValue::kNo);
+  TestResult<void> opt2(TestStatusCode::kError);
   opt2 = std::move(opt1);
   PW_TEST_EXPECT_TRUE(opt2.ok());
 });
@@ -1139,14 +1053,14 @@ PW_CONSTEXPR_TEST(ResultCustomStatus, Void_OrElseConstRefVoidCallback, {
 });
 
 PW_CONSTEXPR_TEST(ResultCustomStatus, Equality_ResultVoid, {
-  PW_TEST_EXPECT_EQ(TestResult<void>(HasValue::kNo),
-                    TestResult<void>(HasValue::kNo));
-  PW_TEST_EXPECT_NE(TestResult<void>(HasValue::kNo),
-                    TestResult<void>(HasValue::kDefinitelyNot));
+  PW_TEST_EXPECT_EQ(TestResult<void>(TestStatusCode::kError),
+                    TestResult<void>(TestStatusCode::kError));
+  PW_TEST_EXPECT_NE(TestResult<void>(TestStatusCode::kError),
+                    TestResult<void>(TestStatusCode::kOtherError));
   PW_TEST_EXPECT_EQ(TestResult<void>(std::in_place),
                     TestResult<void>(std::in_place));
   PW_TEST_EXPECT_NE(TestResult<void>(std::in_place),
-                    TestResult<void>(HasValue::kNo));
+                    TestResult<void>(TestStatusCode::kError));
 });
 
 PW_CONSTEXPR_TEST(ResultCustomStatus, Equality_ResultVoidStatus, {
@@ -1176,23 +1090,25 @@ PW_CONSTEXPR_TEST(ResultCustomStatus, Equality_ResultVoidStatus, {
 
   // Custom status types.
   const TestResult<void> custom_ok(std::in_place);
-  const TestResult<void> custom_err(HasValue::kNo);
-  PW_TEST_EXPECT_TRUE(custom_ok == HasValueStatus());
-  PW_TEST_EXPECT_TRUE(custom_ok == HasValue::kYes);
-  PW_TEST_EXPECT_TRUE(custom_ok != HasValue::kNo);
-  PW_TEST_EXPECT_TRUE(custom_err == HasValueStatus(HasValue::kNo));
-  PW_TEST_EXPECT_TRUE(custom_err == HasValue::kNo);
-  PW_TEST_EXPECT_TRUE(HasValue::kNo == custom_err);
-  PW_TEST_EXPECT_TRUE(custom_err != HasValue::kDefinitelyNot);
+  const TestResult<void> custom_err(TestStatusCode::kError);
+  PW_TEST_EXPECT_TRUE(custom_ok == TestStatus());
+  PW_TEST_EXPECT_TRUE(custom_ok == TestStatusCode::kOk);
+  PW_TEST_EXPECT_TRUE(custom_ok != TestStatusCode::kError);
+  PW_TEST_EXPECT_TRUE(custom_err == TestStatus(TestStatusCode::kError));
+  PW_TEST_EXPECT_TRUE(custom_err == TestStatusCode::kError);
+  PW_TEST_EXPECT_TRUE(TestStatusCode::kError == custom_err);
+  PW_TEST_EXPECT_TRUE(custom_err != TestStatusCode::kOtherError);
 });
 
 PW_CONSTEXPR_TEST(ResultCustomStatus, Equality_ResultResult, {
-  PW_TEST_EXPECT_EQ(TestResult<int>(HasValue::kNo),
-                    TestResult<int>(HasValue::kNo));
-  PW_TEST_EXPECT_NE(TestResult<int>(HasValue::kNo),
-                    TestResult<int>(HasValue::kDefinitelyNot));
-  PW_TEST_EXPECT_NE(TestResult<int>(0), TestResult<int>(HasValue::kNo));
-  PW_TEST_EXPECT_NE(TestResult<int>(HasValue::kNo), TestResult<int>(0));
+  PW_TEST_EXPECT_EQ(TestResult<int>(TestStatusCode::kError),
+                    TestResult<int>(TestStatusCode::kError));
+  PW_TEST_EXPECT_NE(TestResult<int>(TestStatusCode::kError),
+                    TestResult<int>(TestStatusCode::kOtherError));
+  PW_TEST_EXPECT_NE(TestResult<int>(0),
+                    TestResult<int>(TestStatusCode::kError));
+  PW_TEST_EXPECT_NE(TestResult<int>(TestStatusCode::kError),
+                    TestResult<int>(0));
 
   PW_TEST_EXPECT_EQ(TestResult<int>(1), TestResult<int>(1));
   PW_TEST_EXPECT_NE(TestResult<int>(2), TestResult<int>(1));
@@ -1239,32 +1155,34 @@ PW_CONSTEXPR_TEST(ResultCustomStatus, Equality_ResultStatus, {
 
 PW_CONSTEXPR_TEST(ResultCustomStatus, Equality_CustomResultStatus, {
   const TestResult<int> value(1);
-  const TestResult<int> error(HasValue::kNo);
+  const TestResult<int> error(TestStatusCode::kError);
 
-  PW_TEST_EXPECT_TRUE(value == HasValueStatus());
-  PW_TEST_EXPECT_TRUE(HasValueStatus() == value);
-  PW_TEST_EXPECT_TRUE(value != HasValueStatus(HasValue::kNo));
-  PW_TEST_EXPECT_TRUE(value == HasValue::kYes);
-  PW_TEST_EXPECT_TRUE(HasValue::kYes == value);
-  PW_TEST_EXPECT_TRUE(value != HasValue::kNo);
-  PW_TEST_EXPECT_TRUE(HasValue::kNo != value);
+  PW_TEST_EXPECT_TRUE(value == TestStatus());
+  PW_TEST_EXPECT_TRUE(TestStatus() == value);
+  PW_TEST_EXPECT_TRUE(value != TestStatus(TestStatusCode::kError));
+  PW_TEST_EXPECT_TRUE(value == TestStatusCode::kOk);
+  PW_TEST_EXPECT_TRUE(TestStatusCode::kOk == value);
+  PW_TEST_EXPECT_TRUE(value != TestStatusCode::kError);
+  PW_TEST_EXPECT_TRUE(TestStatusCode::kError != value);
 
-  PW_TEST_EXPECT_TRUE(error == HasValueStatus(HasValue::kNo));
-  PW_TEST_EXPECT_TRUE(HasValueStatus(HasValue::kNo) == error);
-  PW_TEST_EXPECT_TRUE(error != HasValueStatus());
-  PW_TEST_EXPECT_TRUE(error == HasValue::kNo);
-  PW_TEST_EXPECT_TRUE(HasValue::kNo == error);
-  PW_TEST_EXPECT_TRUE(error != HasValue::kDefinitelyNot);
-  PW_TEST_EXPECT_TRUE(HasValue::kDefinitelyNot != error);
+  PW_TEST_EXPECT_TRUE(error == TestStatus(TestStatusCode::kError));
+  PW_TEST_EXPECT_TRUE(TestStatus(TestStatusCode::kError) == error);
+  PW_TEST_EXPECT_TRUE(error != TestStatus());
+  PW_TEST_EXPECT_TRUE(error == TestStatusCode::kError);
+  PW_TEST_EXPECT_TRUE(TestStatusCode::kError == error);
+  PW_TEST_EXPECT_TRUE(error != TestStatusCode::kOtherError);
+  PW_TEST_EXPECT_TRUE(TestStatusCode::kOtherError != error);
 
   // Status codes always compare against the status, never the value.
-  PW_TEST_EXPECT_TRUE(TestResult<int>(1) == HasValue::kYes);
-  PW_TEST_EXPECT_TRUE(TestResult<int>(0) != HasValue::kNo);
+  PW_TEST_EXPECT_TRUE(TestResult<int>(1) == TestStatusCode::kOk);
+  PW_TEST_EXPECT_TRUE(TestResult<int>(0) != TestStatusCode::kError);
 });
 
 PW_CONSTEXPR_TEST(ResultCustomStatus, Equality_ResultValue, {
-  PW_TEST_EXPECT_NE(TestResult<int>(HasValue::kNo), TestResult<int>(1));
-  PW_TEST_EXPECT_NE(TestResult<int>(1), TestResult<int>(HasValue::kNo));
+  PW_TEST_EXPECT_NE(TestResult<int>(TestStatusCode::kError),
+                    TestResult<int>(1));
+  PW_TEST_EXPECT_NE(TestResult<int>(1),
+                    TestResult<int>(TestStatusCode::kError));
 
   PW_TEST_EXPECT_EQ(TestResult<int>(1), 1);
   PW_TEST_EXPECT_NE(TestResult<int>(1), 2);
@@ -1273,10 +1191,10 @@ PW_CONSTEXPR_TEST(ResultCustomStatus, Equality_ResultValue, {
   PW_TEST_EXPECT_NE(2, TestResult<int>(1));
 
   // A Result without a value never equals a value.
-  PW_TEST_EXPECT_FALSE(TestResult<int>(HasValue::kNo) == 0);
-  PW_TEST_EXPECT_TRUE(TestResult<int>(HasValue::kNo) != 0);
-  PW_TEST_EXPECT_FALSE(0 == TestResult<int>(HasValue::kNo));
-  PW_TEST_EXPECT_TRUE(0 != TestResult<int>(HasValue::kNo));
+  PW_TEST_EXPECT_FALSE(TestResult<int>(TestStatusCode::kError) == 0);
+  PW_TEST_EXPECT_TRUE(TestResult<int>(TestStatusCode::kError) != 0);
+  PW_TEST_EXPECT_FALSE(0 == TestResult<int>(TestStatusCode::kError));
+  PW_TEST_EXPECT_TRUE(0 != TestResult<int>(TestStatusCode::kError));
   PW_TEST_EXPECT_FALSE(Result<int>(Status::NotFound()) == 0);
   PW_TEST_EXPECT_TRUE(Result<int>(Status::NotFound()) != 0);
 });
@@ -1370,17 +1288,17 @@ static_assert(kCanCompare<Result<int*>, std::nullptr_t>);
 static_assert(!kCanCompare<Result<int>, std::string_view>);
 static_assert(!kCanCompare<std::string_view, Result<int>>);
 static_assert(!kCanCompare<Result<int>, std::nullptr_t>);
-static_assert(!kCanCompare<Result<int>, HasValueStatus>);
-static_assert(!kCanCompare<Result<int>, HasValue>);
+static_assert(!kCanCompare<Result<int>, TestStatus>);
+static_assert(!kCanCompare<Result<int>, TestStatusCode>);
 static_assert(!kCanCompare<Result<void>, int>);
 static_assert(!kCanCompare<Result<void>, std::nullptr_t>);
 
 static_assert(kCanCompare<TestResult<int>, TestResult<int>>);
 static_assert(kCanCompare<TestResult<int>, int>);
-static_assert(kCanCompare<TestResult<int>, HasValueStatus>);
-static_assert(kCanCompare<HasValueStatus, TestResult<int>>);
-static_assert(kCanCompare<TestResult<int>, HasValue>);
-static_assert(kCanCompare<HasValue, TestResult<int>>);
+static_assert(kCanCompare<TestResult<int>, TestStatus>);
+static_assert(kCanCompare<TestStatus, TestResult<int>>);
+static_assert(kCanCompare<TestResult<int>, TestStatusCode>);
+static_assert(kCanCompare<TestStatusCode, TestResult<int>>);
 static_assert(!kCanCompare<TestResult<int>, Status>);
 static_assert(!kCanCompare<TestResult<int>, Result<int>>);
 static_assert(!kCanCompare<Result<int>, TestResult<int>>);
@@ -1389,8 +1307,8 @@ static_assert(kCanCompare<Result<void>, Result<void>>);
 static_assert(kCanCompare<Result<void>, Status>);
 static_assert(kCanCompare<Status, Result<void>>);
 static_assert(kCanCompare<Result<void>, pw_Status>);
-static_assert(kCanCompare<TestResult<void>, HasValueStatus>);
-static_assert(kCanCompare<TestResult<void>, HasValue>);
+static_assert(kCanCompare<TestResult<void>, TestStatus>);
+static_assert(kCanCompare<TestResult<void>, TestStatusCode>);
 static_assert(!kCanCompare<TestResult<void>, Status>);
 static_assert(!kCanCompare<Result<void>, Result<int>>);
 
@@ -1490,14 +1408,14 @@ PW_CONSTEXPR_TEST(ResultCustomStatus, Void_PwTry, {
 
   constexpr auto TryCustom = [](bool fail) -> TestResult<int> {
     auto void_helper = [](bool f) -> TestResult<void> {
-      return f ? TestResult<void>(HasValue::kNo)
+      return f ? TestResult<void>(TestStatusCode::kError)
                : TestResult<void>(std::in_place);
     };
     PW_TRY(void_helper(fail));
     return 3;
   };
   PW_TEST_EXPECT_EQ(TryCustom(false), 3);
-  PW_TEST_EXPECT_EQ(TryCustom(true), HasValue::kNo);
+  PW_TEST_EXPECT_EQ(TryCustom(true), TestStatusCode::kError);
 });
 
 TEST(ResultCustomStatus, Void_AssertOkAndTestMacros) {
@@ -1523,9 +1441,9 @@ PW_CONSTEXPR_TEST(ResultCustomStatus, ValueOr, {
   PW_TEST_EXPECT_EQ(value.value_or(10), 5);
   PW_TEST_EXPECT_EQ(TestResult<int>(5).value_or(10), 5);
 
-  const TestResult<int> error(HasValue::kNo);
+  const TestResult<int> error(TestStatusCode::kError);
   PW_TEST_EXPECT_EQ(error.value_or(10), 10);
-  PW_TEST_EXPECT_EQ(TestResult<int>(HasValue::kNo).value_or(10), 10);
+  PW_TEST_EXPECT_EQ(TestResult<int>(TestStatusCode::kError).value_or(10), 10);
 });
 
 PW_CONSTEXPR_TEST(ResultCustomStatus, ValueOr_MoveOnly, {
@@ -1533,8 +1451,8 @@ PW_CONSTEXPR_TEST(ResultCustomStatus, ValueOr_MoveOnly, {
                               .value_or(TrivialMoveOnly(10));
   PW_TEST_EXPECT_EQ(moved.value, 5);
 
-  TrivialMoveOnly fallback =
-      TestResult<TrivialMoveOnly>(HasValue::kNo).value_or(TrivialMoveOnly(10));
+  TrivialMoveOnly fallback = TestResult<TrivialMoveOnly>(TestStatusCode::kError)
+                                 .value_or(TrivialMoveOnly(10));
   PW_TEST_EXPECT_EQ(fallback.value, 10);
 });
 
@@ -1561,12 +1479,11 @@ static_assert(kCanCompare<Result<Status>, Status>);
 static_assert(kCanCompare<Status, Result<Status>>);
 static_assert(kCanCompare<Result<Status>, pw_Status>);
 static_assert(kCanCompare<pw_Status, Result<Status>>);
-static_assert(
-    kCanCompare<TestResult<HasValueStatus>, TestResult<HasValueStatus>>);
-static_assert(kCanCompare<TestResult<HasValueStatus>, HasValueStatus>);
-static_assert(kCanCompare<HasValueStatus, TestResult<HasValueStatus>>);
-static_assert(kCanCompare<TestResult<HasValueStatus>, HasValue>);
-static_assert(kCanCompare<HasValue, TestResult<HasValueStatus>>);
+static_assert(kCanCompare<TestResult<TestStatus>, TestResult<TestStatus>>);
+static_assert(kCanCompare<TestResult<TestStatus>, TestStatus>);
+static_assert(kCanCompare<TestStatus, TestResult<TestStatus>>);
+static_assert(kCanCompare<TestResult<TestStatus>, TestStatusCode>);
+static_assert(kCanCompare<TestStatusCode, TestResult<TestStatus>>);
 static_assert(
     kCanCompare<Result<driver_test::DriverStatus>, driver_test::DriverStatus>);
 static_assert(
@@ -1854,50 +1771,50 @@ PW_CONSTEXPR_TEST(ResultStatusValue, MonadicOperations, {
 });
 
 PW_CONSTEXPR_TEST(ResultStatusValue, CustomStatusTypeAsValue, {
-  // Result<HasValueStatus, HasValueStatus> (i.e. TestResult<HasValueStatus>).
-  TestResult<HasValueStatus> val_yes = HasValueStatus(HasValue::kYes);
-  PW_TEST_EXPECT_TRUE(val_yes.ok());
-  PW_TEST_EXPECT_EQ(val_yes.status(), HasValue::kYes);
-  PW_TEST_EXPECT_EQ(*val_yes, HasValue::kYes);
+  // Result<TestStatus, TestStatus> (i.e. TestResult<TestStatus>).
+  TestResult<TestStatus> val_ok = TestStatus(TestStatusCode::kOk);
+  PW_TEST_EXPECT_TRUE(val_ok.ok());
+  PW_TEST_EXPECT_EQ(val_ok.status(), TestStatusCode::kOk);
+  PW_TEST_EXPECT_EQ(*val_ok, TestStatusCode::kOk);
 
-  TestResult<HasValueStatus> val_no = HasValueStatus(HasValue::kNo);
-  PW_TEST_EXPECT_TRUE(val_no.ok());
-  PW_TEST_EXPECT_EQ(val_no.status(), HasValue::kYes);
-  PW_TEST_EXPECT_EQ(*val_no, HasValue::kNo);
-  PW_TEST_EXPECT_FALSE(val_no->ok());
+  TestResult<TestStatus> val_err = TestStatus(TestStatusCode::kError);
+  PW_TEST_EXPECT_TRUE(val_err.ok());
+  PW_TEST_EXPECT_EQ(val_err.status(), TestStatusCode::kOk);
+  PW_TEST_EXPECT_EQ(*val_err, TestStatusCode::kError);
+  PW_TEST_EXPECT_FALSE(val_err->ok());
 
   // Direct initialization from the explicit Code enum constructs the value.
-  TestResult<HasValueStatus> from_code(HasValue::kDefinitelyNot);
+  TestResult<TestStatus> from_code(TestStatusCode::kOtherError);
   PW_TEST_EXPECT_TRUE(from_code.ok());
-  PW_TEST_EXPECT_EQ(*from_code, HasValue::kDefinitelyNot);
+  PW_TEST_EXPECT_EQ(*from_code, TestStatusCode::kOtherError);
 
-  // Assignment from HasValueStatus updates the value.
-  val_yes = HasValueStatus(HasValue::kDefinitelyNot);
-  PW_TEST_EXPECT_TRUE(val_yes.ok());
-  PW_TEST_EXPECT_EQ(*val_yes, HasValue::kDefinitelyNot);
+  // Assignment from TestStatus updates the value.
+  val_ok = TestStatus(TestStatusCode::kOtherError);
+  PW_TEST_EXPECT_TRUE(val_ok.ok());
+  PW_TEST_EXPECT_EQ(*val_ok, TestStatusCode::kOtherError);
 
   // reset() sets the error status.
-  val_yes.reset(HasValue::kNo);
-  PW_TEST_EXPECT_FALSE(val_yes.ok());
-  PW_TEST_EXPECT_EQ(val_yes.status(), HasValue::kNo);
+  val_ok.reset(TestStatusCode::kError);
+  PW_TEST_EXPECT_FALSE(val_ok.ok());
+  PW_TEST_EXPECT_EQ(val_ok.status(), TestStatusCode::kError);
 
-  val_yes.reset<HasValue::kDefinitelyNot>();
-  PW_TEST_EXPECT_FALSE(val_yes.ok());
-  PW_TEST_EXPECT_EQ(val_yes.status(), HasValue::kDefinitelyNot);
+  val_ok.reset<TestStatusCode::kOtherError>();
+  PW_TEST_EXPECT_FALSE(val_ok.ok());
+  PW_TEST_EXPECT_EQ(val_ok.status(), TestStatusCode::kOtherError);
 
   // Equality comparisons.
-  PW_TEST_EXPECT_TRUE(val_no == HasValueStatus(HasValue::kNo));
-  PW_TEST_EXPECT_TRUE(val_no == HasValue::kNo);
-  PW_TEST_EXPECT_TRUE(val_no != HasValue::kYes);
-  PW_TEST_EXPECT_FALSE(val_yes == HasValue::kDefinitelyNot);
-  PW_TEST_EXPECT_TRUE(val_yes != val_no);
+  PW_TEST_EXPECT_TRUE(val_err == TestStatus(TestStatusCode::kError));
+  PW_TEST_EXPECT_TRUE(val_err == TestStatusCode::kError);
+  PW_TEST_EXPECT_TRUE(val_err != TestStatusCode::kOk);
+  PW_TEST_EXPECT_FALSE(val_ok == TestStatusCode::kOtherError);
+  PW_TEST_EXPECT_TRUE(val_ok != val_err);
 
-  // Monadic operations with TestResult<HasValueStatus>.
-  TestResult<int> err_int(HasValue::kNo);
-  TestResult<HasValueStatus> transformed =
-      err_int.transform([](int) { return HasValueStatus(); });
+  // Monadic operations with TestResult<TestStatus>.
+  TestResult<int> err_int(TestStatusCode::kError);
+  TestResult<TestStatus> transformed =
+      err_int.transform([](int) { return TestStatus(); });
   PW_TEST_EXPECT_FALSE(transformed.ok());
-  PW_TEST_EXPECT_EQ(transformed.status(), HasValue::kNo);
+  PW_TEST_EXPECT_EQ(transformed.status(), TestStatusCode::kError);
 });
 
 PW_CONSTEXPR_TEST(ResultStatusValue, DifferentStatusTypeAsValue, {
@@ -1930,25 +1847,26 @@ PW_CONSTEXPR_TEST(ResultStatusValue, DifferentStatusTypeAsValue, {
 });
 
 PW_CONSTEXPR_TEST(ResultStatusValue, StatusCodeAsValue, {
-  // Result<HasValue, HasValueStatus>: value is HasValue (Code), error is
-  // HasValueStatus.
-  Result<HasValue, HasValueStatus> ok_code(HasValue::kNo);
+  // Result<TestStatusCode, TestStatus>: value is TestStatusCode (Code), error
+  // is TestStatus.
+  Result<TestStatusCode, TestStatus> ok_code(TestStatusCode::kError);
   PW_TEST_EXPECT_TRUE(ok_code.ok());
-  PW_TEST_EXPECT_EQ(ok_code.status(), HasValue::kYes);
-  PW_TEST_EXPECT_EQ(*ok_code, HasValue::kNo);
-  PW_TEST_EXPECT_TRUE(ok_code == HasValue::kNo);
-  PW_TEST_EXPECT_TRUE(ok_code != HasValue::kYes);
-  PW_TEST_EXPECT_TRUE(ok_code == HasValueStatus(HasValue::kYes));
+  PW_TEST_EXPECT_EQ(ok_code.status(), TestStatusCode::kOk);
+  PW_TEST_EXPECT_EQ(*ok_code, TestStatusCode::kError);
+  PW_TEST_EXPECT_TRUE(ok_code == TestStatusCode::kError);
+  PW_TEST_EXPECT_TRUE(ok_code != TestStatusCode::kOk);
+  PW_TEST_EXPECT_TRUE(ok_code == TestStatus(TestStatusCode::kOk));
 
-  ok_code = HasValue::kDefinitelyNot;
+  ok_code = TestStatusCode::kOtherError;
   PW_TEST_EXPECT_TRUE(ok_code.ok());
-  PW_TEST_EXPECT_EQ(*ok_code, HasValue::kDefinitelyNot);
+  PW_TEST_EXPECT_EQ(*ok_code, TestStatusCode::kOtherError);
 
-  Result<HasValue, HasValueStatus> err_code = HasValueStatus(HasValue::kNo);
+  Result<TestStatusCode, TestStatus> err_code =
+      TestStatus(TestStatusCode::kError);
   PW_TEST_EXPECT_FALSE(err_code.ok());
-  PW_TEST_EXPECT_EQ(err_code.status(), HasValue::kNo);
-  PW_TEST_EXPECT_TRUE(err_code == HasValueStatus(HasValue::kNo));
-  PW_TEST_EXPECT_FALSE(err_code == HasValue::kNo);
+  PW_TEST_EXPECT_EQ(err_code.status(), TestStatusCode::kError);
+  PW_TEST_EXPECT_TRUE(err_code == TestStatus(TestStatusCode::kError));
+  PW_TEST_EXPECT_FALSE(err_code == TestStatusCode::kError);
 });
 
 PW_CONSTEXPR_TEST(ResultCustomStatus, Void_ConversionOperatorPriority, {
@@ -1969,10 +1887,10 @@ PW_CONSTEXPR_TEST(ResultCustomStatus, Void_ConversionOperatorPriority, {
 });
 
 class [[nodiscard]] StatusWithDetail final
-    : public StatusBase<StatusWithDetail, HasValue::kYes> {
+    : public StatusBase<StatusWithDetail, TestStatusCode::kOk> {
  public:
   constexpr StatusWithDetail() = default;
-  explicit constexpr StatusWithDetail(HasValue code, uint8_t detail = 0)
+  explicit constexpr StatusWithDetail(TestStatusCode code, uint8_t detail = 0)
       : StatusBase(code), detail_(detail) {}
 
   [[nodiscard]] constexpr uint8_t detail() const { return detail_; }
@@ -1982,9 +1900,10 @@ class [[nodiscard]] StatusWithDetail final
 };
 
 PW_CONSTEXPR_TEST(ResultCustomStatus, PreservesDerivedStatusState, {
-  Result<int, StatusWithDetail> res = StatusWithDetail(HasValue::kNo, 42);
+  Result<int, StatusWithDetail> res =
+      StatusWithDetail(TestStatusCode::kError, 42);
   PW_TEST_EXPECT_FALSE(res.ok());
-  PW_TEST_EXPECT_EQ(res.status().code(), HasValue::kNo);
+  PW_TEST_EXPECT_EQ(res.status().code(), TestStatusCode::kError);
   PW_TEST_EXPECT_EQ(res.status().detail(), 42u);
 
   Result<long, StatusWithDetail> converted = res;
@@ -1996,32 +1915,32 @@ PW_CONSTEXPR_TEST(ResultCustomStatus, PreservesDerivedStatusState, {
 
   Result<int, StatusWithDetail> chained =
       res.and_then([](int x) { return Result<int, StatusWithDetail>(x + 1); });
-  PW_TEST_EXPECT_EQ(chained.status().code(), HasValue::kNo);
+  PW_TEST_EXPECT_EQ(chained.status().code(), TestStatusCode::kError);
   PW_TEST_EXPECT_EQ(chained.status().detail(), 42u);
 
-  res.reset(StatusWithDetail(HasValue::kDefinitelyNot, 55));
-  PW_TEST_EXPECT_EQ(res.status().code(), HasValue::kDefinitelyNot);
+  res.reset(StatusWithDetail(TestStatusCode::kOtherError, 55));
+  PW_TEST_EXPECT_EQ(res.status().code(), TestStatusCode::kOtherError);
   PW_TEST_EXPECT_EQ(res.status().detail(), 55u);
 
   converted = res;
-  PW_TEST_EXPECT_EQ(converted.status().code(), HasValue::kDefinitelyNot);
+  PW_TEST_EXPECT_EQ(converted.status().code(), TestStatusCode::kOtherError);
   PW_TEST_EXPECT_EQ(converted.status().detail(), 55u);
 
-  converted =
-      Result<int, StatusWithDetail>(StatusWithDetail(HasValue::kNo, 66));
-  PW_TEST_EXPECT_EQ(converted.status().code(), HasValue::kNo);
+  converted = Result<int, StatusWithDetail>(
+      StatusWithDetail(TestStatusCode::kError, 66));
+  PW_TEST_EXPECT_EQ(converted.status().code(), TestStatusCode::kError);
   PW_TEST_EXPECT_EQ(converted.status().detail(), 66u);
 
-  converted = StatusWithDetail(HasValue::kDefinitelyNot, 77);
-  PW_TEST_EXPECT_EQ(converted.status().code(), HasValue::kDefinitelyNot);
+  converted = StatusWithDetail(TestStatusCode::kOtherError, 77);
+  PW_TEST_EXPECT_EQ(converted.status().code(), TestStatusCode::kOtherError);
   PW_TEST_EXPECT_EQ(converted.status().detail(), 77u);
 });
 
 PW_CONSTEXPR_TEST(ResultCustomStatus, Void_PreservesDerivedStatusState, {
   Result<void, StatusWithDetail> void_res =
-      StatusWithDetail(HasValue::kDefinitelyNot, 99);
+      StatusWithDetail(TestStatusCode::kOtherError, 99);
   PW_TEST_EXPECT_FALSE(void_res.ok());
-  PW_TEST_EXPECT_EQ(void_res.status().code(), HasValue::kDefinitelyNot);
+  PW_TEST_EXPECT_EQ(void_res.status().code(), TestStatusCode::kOtherError);
   PW_TEST_EXPECT_EQ(void_res.status().detail(), 99u);
 
   Result<int, StatusWithDetail> void_transformed =
@@ -2032,12 +1951,12 @@ PW_CONSTEXPR_TEST(ResultCustomStatus, Void_PreservesDerivedStatusState, {
       void_res.and_then([]() { return Result<int, StatusWithDetail>(1); });
   PW_TEST_EXPECT_EQ(void_chained.status().detail(), 99u);
 
-  void_res.reset(StatusWithDetail(HasValue::kNo, 88));
-  PW_TEST_EXPECT_EQ(void_res.status().code(), HasValue::kNo);
+  void_res.reset(StatusWithDetail(TestStatusCode::kError, 88));
+  PW_TEST_EXPECT_EQ(void_res.status().code(), TestStatusCode::kError);
   PW_TEST_EXPECT_EQ(void_res.status().detail(), 88u);
 
-  void_res = StatusWithDetail(HasValue::kDefinitelyNot, 77);
-  PW_TEST_EXPECT_EQ(void_res.status().code(), HasValue::kDefinitelyNot);
+  void_res = StatusWithDetail(TestStatusCode::kOtherError, 77);
+  PW_TEST_EXPECT_EQ(void_res.status().code(), TestStatusCode::kOtherError);
   PW_TEST_EXPECT_EQ(void_res.status().detail(), 77u);
 });
 
@@ -2223,7 +2142,7 @@ static_assert(std::is_trivially_copyable_v<Result<void>>);
 
 // Empty base optimization check: linear inheritance must add zero padding
 // bytes.
-static_assert(sizeof(Result<uint8_t, HasValueStatus>) == 2);
+static_assert(sizeof(Result<uint8_t, TestStatus>) == 2);
 static_assert(sizeof(Result<int>) == 2 * sizeof(int));
 
 PW_CONSTEXPR_TEST(ResultOptionalAlign, TrivialCopyMoveConstexpr, {
@@ -2297,10 +2216,10 @@ TEST(ResultOptionalAlign, NonConstDeletedCopyOperations) {
 // non-trivial special members even when the value type is trivial, so this
 // covers the non-trivial copy/move paths and destructor driven by the status.
 class [[nodiscard]] NonTrivialStatus final
-    : public StatusBase<NonTrivialStatus, HasValue::kYes> {
+    : public StatusBase<NonTrivialStatus, TestStatusCode::kOk> {
  public:
   NonTrivialStatus() noexcept = default;
-  explicit NonTrivialStatus(HasValue code) noexcept : StatusBase(code) {}
+  explicit NonTrivialStatus(TestStatusCode code) noexcept : StatusBase(code) {}
   NonTrivialStatus(const NonTrivialStatus& other) noexcept
       : StatusBase(other) {}
   NonTrivialStatus& operator=(const NonTrivialStatus& other) noexcept {
@@ -2323,25 +2242,26 @@ static_assert(!std::is_trivially_destructible_v<NonTrivialStatusResult>);
 
 TEST(ResultOptionalAlign, NonTrivialStatusType) {
   const NonTrivialStatusResult ok_res(std::in_place, 7);
-  const NonTrivialStatusResult err_res = NonTrivialStatus(HasValue::kNo);
+  const NonTrivialStatusResult err_res =
+      NonTrivialStatus(TestStatusCode::kError);
 
   // Copy construction.
   NonTrivialStatusResult copy_ok = ok_res;
   NonTrivialStatusResult copy_err = err_res;
   PW_TEST_ASSERT_OK(copy_ok);
   EXPECT_EQ(*copy_ok, 7);
-  EXPECT_EQ(copy_err.status().code(), HasValue::kNo);
+  EXPECT_EQ(copy_err.status().code(), TestStatusCode::kError);
 
   // Move construction.
   NonTrivialStatusResult moved_ok = std::move(copy_ok);
   NonTrivialStatusResult moved_err = std::move(copy_err);
   PW_TEST_ASSERT_OK(moved_ok);
   EXPECT_EQ(*moved_ok, 7);
-  EXPECT_EQ(moved_err.status().code(), HasValue::kNo);
+  EXPECT_EQ(moved_err.status().code(), TestStatusCode::kError);
 
   // Copy and move assignment between OK and non-OK states.
   moved_ok = err_res;
-  EXPECT_EQ(moved_ok.status().code(), HasValue::kNo);
+  EXPECT_EQ(moved_ok.status().code(), TestStatusCode::kError);
   moved_err = ok_res;
   PW_TEST_ASSERT_OK(moved_err);
   EXPECT_EQ(*moved_err, 7);
@@ -2356,9 +2276,10 @@ TEST(ResultOptionalAlign, NonTrivialStatusType) {
 
   // Swap between OK and non-OK states.
   NonTrivialStatusResult swap_ok(std::in_place, 1);
-  NonTrivialStatusResult swap_err = NonTrivialStatus(HasValue::kDefinitelyNot);
+  NonTrivialStatusResult swap_err =
+      NonTrivialStatus(TestStatusCode::kOtherError);
   swap_ok.swap(swap_err);
-  EXPECT_EQ(swap_ok.status().code(), HasValue::kDefinitelyNot);
+  EXPECT_EQ(swap_ok.status().code(), TestStatusCode::kOtherError);
   PW_TEST_ASSERT_OK(swap_err);
   EXPECT_EQ(*swap_err, 1);
 
@@ -2625,7 +2546,7 @@ struct ChildClobberOnDestroy {
   }
   PW_CONSTEXPR_CPP20 ~ChildClobberOnDestroy() {
     if (child != nullptr) {
-      *child = StatusWithDetail(HasValue::kDefinitelyNot, 0xEE);
+      *child = StatusWithDetail(TestStatusCode::kOtherError, 0xEE);
     }
   }
 };
@@ -2633,20 +2554,20 @@ struct ChildClobberOnDestroy {
 TEST(ResultOptionalAlign, TransitiveSelfAssignment) {
   {
     Result<ChildClobberOnDestroy, StatusWithDetail> child =
-        StatusWithDetail(HasValue::kNo, 77);
+        StatusWithDetail(TestStatusCode::kError, 77);
     Result<ChildClobberOnDestroy, StatusWithDetail> root(std::in_place, &child);
     root = std::move(child);
     EXPECT_FALSE(root.has_value());
-    EXPECT_EQ(root.status().code(), HasValue::kNo);
+    EXPECT_EQ(root.status().code(), TestStatusCode::kError);
     EXPECT_EQ(root.status().detail(), 77u);
   }
   {
     Result<ChildClobberOnDestroy, StatusWithDetail> child =
-        StatusWithDetail(HasValue::kNo, 88);
+        StatusWithDetail(TestStatusCode::kError, 88);
     Result<ChildClobberOnDestroy, StatusWithDetail> root(std::in_place, &child);
     root = child;
     EXPECT_FALSE(root.has_value());
-    EXPECT_EQ(root.status().code(), HasValue::kNo);
+    EXPECT_EQ(root.status().code(), TestStatusCode::kError);
     EXPECT_EQ(root.status().detail(), 88u);
   }
 }
@@ -2768,10 +2689,10 @@ struct MoveCtorOnlyWithAdlSwap {
 };
 
 class [[nodiscard]] NonMovableSwappableStatus final
-    : public StatusBase<NonMovableSwappableStatus, HasValue::kYes> {
+    : public StatusBase<NonMovableSwappableStatus, TestStatusCode::kOk> {
  public:
   constexpr NonMovableSwappableStatus() noexcept = default;
-  explicit constexpr NonMovableSwappableStatus(HasValue code) noexcept
+  explicit constexpr NonMovableSwappableStatus(TestStatusCode code) noexcept
       : StatusBase(code) {}
   NonMovableSwappableStatus(const NonMovableSwappableStatus&) = delete;
   NonMovableSwappableStatus& operator=(const NonMovableSwappableStatus&) =
@@ -2783,10 +2704,11 @@ class [[nodiscard]] NonMovableSwappableStatus final
 };
 
 class [[nodiscard]] StatefulOkStatus final
-    : public StatusBase<StatefulOkStatus, HasValue::kYes> {
+    : public StatusBase<StatefulOkStatus, TestStatusCode::kOk> {
  public:
-  StatefulOkStatus() noexcept : StatusBase(HasValue::kYes), id_(next_id++) {}
-  explicit constexpr StatefulOkStatus(HasValue code, uint8_t id) noexcept
+  StatefulOkStatus() noexcept
+      : StatusBase(TestStatusCode::kOk), id_(next_id++) {}
+  explicit constexpr StatefulOkStatus(TestStatusCode code, uint8_t id) noexcept
       : StatusBase(code), id_(id) {}
 
   [[nodiscard]] constexpr uint8_t id() const noexcept { return id_; }
@@ -2833,10 +2755,11 @@ TEST(ResultOptionalAlign, SwapAllFourStates) {
 
   // 2. Engaged and disengaged (preserving derived status detail).
   Result<int, StatusWithDetail> ok_res(42);
-  Result<int, StatusWithDetail> err_res(StatusWithDetail(HasValue::kNo, 77));
+  Result<int, StatusWithDetail> err_res(
+      StatusWithDetail(TestStatusCode::kError, 77));
   ok_res.swap(err_res);
   EXPECT_FALSE(ok_res.has_value());
-  EXPECT_EQ(ok_res.status().code(), HasValue::kNo);
+  EXPECT_EQ(ok_res.status().code(), TestStatusCode::kError);
   EXPECT_EQ(ok_res.status().detail(), 77u);
   PW_TEST_ASSERT_OK(err_res);
   EXPECT_EQ(*err_res, 42);
@@ -2846,7 +2769,7 @@ TEST(ResultOptionalAlign, SwapAllFourStates) {
   PW_TEST_ASSERT_OK(ok_res);
   EXPECT_EQ(*ok_res, 42);
   EXPECT_FALSE(err_res.has_value());
-  EXPECT_EQ(err_res.status().code(), HasValue::kNo);
+  EXPECT_EQ(err_res.status().code(), TestStatusCode::kError);
   EXPECT_EQ(err_res.status().detail(), 77u);
 
   swap(ok_res, ok_res);
@@ -2855,15 +2778,15 @@ TEST(ResultOptionalAlign, SwapAllFourStates) {
 
   // 4. Both disengaged.
   Result<int, StatusWithDetail> err2(
-      StatusWithDetail(HasValue::kDefinitelyNot, 99));
+      StatusWithDetail(TestStatusCode::kOtherError, 99));
   swap(err_res, err2);
-  EXPECT_EQ(err_res.status().code(), HasValue::kDefinitelyNot);
+  EXPECT_EQ(err_res.status().code(), TestStatusCode::kOtherError);
   EXPECT_EQ(err_res.status().detail(), 99u);
-  EXPECT_EQ(err2.status().code(), HasValue::kNo);
+  EXPECT_EQ(err2.status().code(), TestStatusCode::kError);
   EXPECT_EQ(err2.status().detail(), 77u);
 
   swap(err_res, err_res);
-  EXPECT_EQ(err_res.status().code(), HasValue::kDefinitelyNot);
+  EXPECT_EQ(err_res.status().code(), TestStatusCode::kOtherError);
   EXPECT_EQ(err_res.status().detail(), 99u);
 
   // Move-constructible (non-move-assignable) type with ADL swap.
@@ -2894,7 +2817,8 @@ TEST(ResultOptionalAlign, SwapAllFourStates) {
 
   // Result<void> swap.
   Result<void, StatusWithDetail> v1(std::in_place);
-  Result<void, StatusWithDetail> v2(StatusWithDetail(HasValue::kNo, 55));
+  Result<void, StatusWithDetail> v2(
+      StatusWithDetail(TestStatusCode::kError, 55));
   swap(v1, v2);
   EXPECT_FALSE(v1.has_value());
   EXPECT_EQ(v1.status().detail(), 55u);
@@ -2916,7 +2840,8 @@ TEST(ResultOptionalAlign, SwapAllFourStates) {
   EXPECT_EQ(ok_a.status().id(), 11u);
   EXPECT_EQ(ok_b.status().id(), 10u);
 
-  Result<int, StatefulOkStatus> err_c(StatefulOkStatus(HasValue::kNo, 99));
+  Result<int, StatefulOkStatus> err_c(
+      StatefulOkStatus(TestStatusCode::kError, 99));
   swap(ok_a, err_c);
   EXPECT_FALSE(ok_a.has_value());
   EXPECT_EQ(ok_a.status().id(), 99u);
@@ -3006,23 +2931,23 @@ static_assert(CanOrElse<Result<MoveOnly>&&, ZeroArgMoveOnlyRecovery>::value);
 static_assert(!CanOrElse<Result<Immovable>&&, ZeroArgImmovableRecovery>::value);
 
 class [[nodiscard]] MoveOnlyStatus final
-    : public StatusBase<MoveOnlyStatus, HasValue::kYes> {
+    : public StatusBase<MoveOnlyStatus, TestStatusCode::kOk> {
  public:
   constexpr MoveOnlyStatus() noexcept = default;
-  explicit constexpr MoveOnlyStatus(HasValue code) noexcept
+  explicit constexpr MoveOnlyStatus(TestStatusCode code) noexcept
       : StatusBase(code) {}
   MoveOnlyStatus(const MoveOnlyStatus&) = delete;
   MoveOnlyStatus& operator=(const MoveOnlyStatus&) = delete;
-  // Moving clears the source status to OK (`HasValue::kYes`), catching any
+  // Moving clears the source status to OK (`TestStatusCode::kOk`), catching any
   // premature move from a `Result`'s status before that `Result` is returned.
   constexpr MoveOnlyStatus(MoveOnlyStatus&& other) noexcept
       : StatusBase(other.code_) {
-    other.code_ = HasValue::kYes;
+    other.code_ = TestStatusCode::kOk;
   }
   constexpr MoveOnlyStatus& operator=(MoveOnlyStatus&& other) noexcept {
     if (this != &other) {
       code_ = other.code_;
-      other.code_ = HasValue::kYes;
+      other.code_ = TestStatusCode::kOk;
     }
     return *this;
   }
@@ -3051,28 +2976,29 @@ PW_CONSTEXPR_TEST(ResultOptionalAlign, MonadicMoveOnlyStatus, {
   PW_TEST_EXPECT_TRUE(ok_tx.has_value());
   PW_TEST_EXPECT_EQ(*ok_tx, 20);
 
-  auto err_tx = Result<int, MoveOnlyStatus>(MoveOnlyStatus(HasValue::kNo))
-                    .transform([](int x) { return x * 2; });
+  auto err_tx =
+      Result<int, MoveOnlyStatus>(MoveOnlyStatus(TestStatusCode::kError))
+          .transform([](int x) { return x * 2; });
   PW_TEST_EXPECT_FALSE(err_tx.has_value());
 
   auto err_and_then =
-      Result<int, MoveOnlyStatus>(MoveOnlyStatus(HasValue::kNo))
+      Result<int, MoveOnlyStatus>(MoveOnlyStatus(TestStatusCode::kError))
           .and_then([](int x) { return Result<int, MoveOnlyStatus>(x + 1); });
   PW_TEST_EXPECT_FALSE(err_and_then.has_value());
 
   auto recovered =
-      Result<int, MoveOnlyStatus>(MoveOnlyStatus(HasValue::kNo))
+      Result<int, MoveOnlyStatus>(MoveOnlyStatus(TestStatusCode::kError))
           .or_else([](MoveOnlyStatus s) -> Result<int, MoveOnlyStatus> {
-            return s.code() == HasValue::kNo ? 99 : 0;
+            return s.code() == TestStatusCode::kError ? 99 : 0;
           });
   PW_TEST_EXPECT_TRUE(recovered.has_value());
   PW_TEST_EXPECT_EQ(*recovered, 99);
 
   bool observed_err = false;
   auto side_effect_res =
-      Result<int, MoveOnlyStatus>(MoveOnlyStatus(HasValue::kDefinitelyNot))
+      Result<int, MoveOnlyStatus>(MoveOnlyStatus(TestStatusCode::kOtherError))
           .or_else([&observed_err](const MoveOnlyStatus& s) {
-            observed_err = (s.code() == HasValue::kDefinitelyNot);
+            observed_err = (s.code() == TestStatusCode::kOtherError);
           });
   PW_TEST_EXPECT_TRUE(observed_err);
   PW_TEST_EXPECT_FALSE(side_effect_res.has_value());
@@ -3080,13 +3006,13 @@ PW_CONSTEXPR_TEST(ResultOptionalAlign, MonadicMoveOnlyStatus, {
   static_cast<void>(std::move(side_effect_res)
                         .or_else([&status_survived](const MoveOnlyStatus& s) {
                           status_survived =
-                              (s.code() == HasValue::kDefinitelyNot);
+                              (s.code() == TestStatusCode::kOtherError);
                         }));
   PW_TEST_EXPECT_TRUE(status_survived);
 
   bool zero_arg_called = false;
   auto zero_arg_res =
-      Result<int, MoveOnlyStatus>(MoveOnlyStatus(HasValue::kDefinitelyNot))
+      Result<int, MoveOnlyStatus>(MoveOnlyStatus(TestStatusCode::kOtherError))
           .or_else([&zero_arg_called]() { zero_arg_called = true; });
   PW_TEST_EXPECT_TRUE(zero_arg_called);
   PW_TEST_EXPECT_FALSE(zero_arg_res.has_value());
@@ -3094,18 +3020,18 @@ PW_CONSTEXPR_TEST(ResultOptionalAlign, MonadicMoveOnlyStatus, {
   static_cast<void>(std::move(zero_arg_res)
                         .or_else([&zero_arg_survived](const MoveOnlyStatus& s) {
                           zero_arg_survived =
-                              (s.code() == HasValue::kDefinitelyNot);
+                              (s.code() == TestStatusCode::kOtherError);
                         }));
   PW_TEST_EXPECT_TRUE(zero_arg_survived);
 
-  auto void_tx = Result<void, MoveOnlyStatus>(MoveOnlyStatus(HasValue::kNo))
-                     .transform([]() { return 5; });
+  auto void_tx =
+      Result<void, MoveOnlyStatus>(MoveOnlyStatus(TestStatusCode::kError))
+          .transform([]() { return 5; });
   PW_TEST_EXPECT_FALSE(void_tx.has_value());
 
   auto void_recovered =
-      Result<void, MoveOnlyStatus>(MoveOnlyStatus(HasValue::kNo)).or_else([]() {
-        return MoveOnlyStatus();
-      });
+      Result<void, MoveOnlyStatus>(MoveOnlyStatus(TestStatusCode::kError))
+          .or_else([]() { return MoveOnlyStatus(); });
   PW_TEST_EXPECT_TRUE(void_recovered.has_value());
 });
 
@@ -3302,14 +3228,14 @@ PW_CONSTEXPR_TEST(ResultOptionalAlign, HeterogeneousResultEquality, {
 struct EmptySentinelTag {};
 
 class [[nodiscard]] StatusWithSentinel final
-    : public StatusBase<StatusWithSentinel, HasValue::kYes> {
+    : public StatusBase<StatusWithSentinel, TestStatusCode::kOk> {
  public:
   constexpr StatusWithSentinel() noexcept = default;
-  explicit constexpr StatusWithSentinel(HasValue code) noexcept
+  explicit constexpr StatusWithSentinel(TestStatusCode code) noexcept
       : StatusBase(code) {}
   // Implicit conversion from EmptySentinelTag (analogous to std::nullopt_t).
   constexpr StatusWithSentinel(EmptySentinelTag) noexcept  // NOLINT
-      : StatusBase(HasValue::kNo) {}
+      : StatusBase(TestStatusCode::kError) {}
 };
 
 struct ComparableWithSentinel {
@@ -3363,9 +3289,9 @@ static_assert(noexcept(std::declval<const Status&>().IgnoreError()));
 static_assert(noexcept(std::declval<Status&>().Update(OkStatus())));
 static_assert(noexcept(OkStatus() == Status::NotFound()));
 static_assert(noexcept(OkStatus() != PW_STATUS_NOT_FOUND));
-static_assert(noexcept(HasValueStatus().ok()));
-static_assert(noexcept(HasValueStatus().code()));
-static_assert(noexcept(HasValueStatus() == HasValue::kYes));
+static_assert(noexcept(TestStatus().ok()));
+static_assert(noexcept(TestStatus().code()));
+static_assert(noexcept(TestStatus() == TestStatusCode::kOk));
 
 static_assert(noexcept(Result<int>()));
 static_assert(noexcept(Result<int>(std::in_place, 5)));
@@ -3426,10 +3352,10 @@ TEST(ResultTest, StdHash) {
             std::hash<Result<int>>{}(err_invalid));
 
   TestResult<int> custom_ok = 7;
-  TestResult<int> custom_err(HasValue::kNo);
+  TestResult<int> custom_err(TestStatusCode::kError);
   EXPECT_EQ(std::hash<TestResult<int>>{}(custom_ok), std::hash<int>{}(7));
   EXPECT_EQ(std::hash<TestResult<int>>{}(custom_err),
-            std::hash<HasValueStatus::Code>{}(HasValue::kNo));
+            std::hash<TestStatus::Code>{}(TestStatusCode::kError));
 
   Result<void> void_ok = OkStatus();
   Result<void> void_err = Status::PermissionDenied();
@@ -3475,7 +3401,7 @@ void VoidResetCannotUseOkCode() {
 PW_NC_EXPECT_CLANG("no matching constructor for initialization");
 PW_NC_EXPECT_GCC("no matching function for call to");
 void CustomStatusNoDefaultConstructor() {
-  [[maybe_unused]] Result<int, HasValueStatus> r;
+  [[maybe_unused]] Result<int, TestStatus> r;
 }
 #elif PW_NC_TEST(TryDisallowedForResultStatus)
 PW_NC_EXPECT("PW_TRY, PW_CHECK_OK, and PW_ASSERT_OK cannot be used directly");
