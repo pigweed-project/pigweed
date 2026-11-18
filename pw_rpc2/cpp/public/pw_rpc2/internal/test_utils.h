@@ -77,7 +77,8 @@ class MockConnection : public transport::ReliableSocketImpl {
   /// Maximum number of queued inbound packets awaiting `DoRead()`.
   static constexpr size_t kMaxReadQueueCapacity = 16;
 
-  explicit MockConnection(pw::Allocator& allocator);
+  explicit MockConnection(pw::Allocator& allocator,
+                          size_t max_write_message_size_bytes = 1500);
   ~MockConnection() override = default;
 
   async2::Poll<pw::ConstBuf> DoRead() override
@@ -150,8 +151,9 @@ class MockConnection : public transport::ReliableSocketImpl {
 // and returns both the transport::ReliableSocket handle and raw pointer
 // for testing.
 inline std::pair<transport::ReliableSocket, MockConnection*> MakeMockConnection(
-    pw::Allocator& allocator) {
-  auto* raw = allocator.New<MockConnection>(allocator);
+    pw::Allocator& allocator, size_t max_write_message_size_bytes = 1500) {
+  auto* raw =
+      allocator.New<MockConnection>(allocator, max_write_message_size_bytes);
   return {WrapSocket(*raw), raw};
 }
 

@@ -319,11 +319,13 @@ void Call::CloseWriteOnRetire() {
   CloseWrite();
 }
 
-size_t Call::max_write_size_bytes() const {
-  if (!is_attached()) {
+size_t Call::max_write_size_bytes(size_t header_size) const {
+  if (!is_attached() || is_write_closed() || has_pending_terminal_write()) {
     return 0;
   }
-  return connection_task_->connection().max_write_message_size_bytes();
+  const size_t max_packet =
+      connection_task_->connection().max_write_message_size_bytes();
+  return max_packet > header_size ? max_packet - header_size : 0;
 }
 
 void Call::CloseOnWriterDestroy() {

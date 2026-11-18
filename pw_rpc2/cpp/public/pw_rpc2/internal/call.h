@@ -337,16 +337,14 @@ class Call : public IntrusiveForwardList<Call>::Item, public Recyclable<Call> {
   RpcResult<transport::ReserveWriteFuture> ReserveWrite(
       size_t header_size, size_t max_payload_size);
 
-  /// The largest packet, header included, that this call can currently
-  /// reserve, or 0 if the call is detached from its connection.
-  size_t max_write_size_bytes() const;
-
-  /// The largest payload that fits in a packet with a `header_size`-byte
-  /// header, or 0 if the call is detached from its connection.
-  size_t max_payload_size(size_t header_size) const {
-    const size_t max_packet = max_write_size_bytes();
-    return max_packet > header_size ? max_packet - header_size : 0;
-  }
+  /// Returns the largest message that fits in a packet with a
+  /// `header_size`-byte header, or 0 if writes are closed or the transport
+  /// cannot fit any message bytes beyond the header.
+  ///
+  /// 0-byte messages are valid if writes are open and the transport fits
+  /// `header_size`. Use `is_write_closed()` / `is_attached()` (or
+  /// `Writer::is_closed()`) to check whether writes are closed.
+  [[nodiscard]] size_t max_write_size_bytes(size_t header_size) const;
 
  protected:
   /// Constructs a call attached to `connection_task` and allocated from

@@ -31,8 +31,10 @@
 
 namespace pw::rpc2::test {
 
-MockConnection::MockConnection(pw::Allocator& allocator)
-    : ReliableSocketImpl(allocator, 1500), alloc_(allocator) {}
+MockConnection::MockConnection(pw::Allocator& allocator,
+                               size_t max_write_message_size_bytes)
+    : ReliableSocketImpl(allocator, max_write_message_size_bytes),
+      alloc_(allocator) {}
 
 async2::Poll<pw::ConstBuf> MockConnection::DoRead() {
   if (!read_queue_.empty()) {

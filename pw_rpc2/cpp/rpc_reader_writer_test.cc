@@ -311,21 +311,24 @@ TEST(RawWriterTest, OversizeReservationFailsWithoutClosingWriter) {
   async2::DispatcherForTest dispatcher;
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
-  const size_t max_size = conn.max_write_message_size_bytes();
+  const size_t max_write =
+      conn.max_write_message_size_bytes() - sizeof(internal::PacketHeader);
   auto connection_task = dispatcher.Post<internal::ClientConnectionTask>(
       allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
   auto call = internal::ClientCall::Create(*connection_task, 89u);
   ASSERT_NE(call, nullptr);
 
   auto writer = internal::CallAccess::Create<RawWriter>(std::move(call));
+  EXPECT_EQ(writer.max_write_size_bytes(), max_write);
 
-  // The packet header pushes this over the transport's limit.
-  async2::FutureTask oversize(writer.ReserveWrite(max_size));
+  // One byte past `max_write_size_bytes()` pushes the packet over the
+  // transport's limit.
+  async2::FutureTask oversize(writer.ReserveWrite(max_write + 1));
   dispatcher.Post(oversize);
   dispatcher.RunUntilStalled();
   EXPECT_EQ(oversize.value().status(), RpcStatus::MessageTooLarge());
   EXPECT_EQ(raw_conn->commit_count(), 0u);
-  EXPECT_FALSE(writer.is_closed());
+  EXPECT_EQ(writer.max_write_size_bytes(), max_write);
 
   // A size that would overflow `sizeof(PacketHeader) + max_payload_size` must
   // also fail with kMessageTooLarge rather than wrapping around.
@@ -337,17 +340,73 @@ TEST(RawWriterTest, OversizeReservationFailsWithoutClosingWriter) {
   EXPECT_EQ(raw_conn->commit_count(), 0u);
   EXPECT_FALSE(writer.is_closed());
 
-  // The writer can still send messages that fit.
-  async2::FutureTask fits(writer.ReserveWrite(3));
+  // Reserving up to `max_write_size_bytes()` succeeds.
+  async2::FutureTask fits(writer.ReserveWrite(max_write));
   dispatcher.Post(fits);
   dispatcher.RunUntilStalled();
   ASSERT_TRUE(fits.value().ok());
-  PW_TEST_EXPECT_OK(fits.value()->Commit(3));
+  EXPECT_EQ(fits.value()->size(), max_write);
+  PW_TEST_EXPECT_OK(fits.value()->Commit(max_write));
   EXPECT_EQ(raw_conn->commit_count(), 1u);
 
   oversize.Deregister();
   overflow.Deregister();
   fits.Deregister();
+}
+
+TEST(RawWriterTest, MaxWriteSizeBytes) {
+  EXPECT_EQ(RawWriter().max_write_size_bytes(), 0u);
+  EXPECT_EQ(Writer<TypedMessage>().max_write_size_bytes(), 0u);
+  EXPECT_EQ(RawUnaryWriter().max_write_size_bytes(), 0u);
+  EXPECT_EQ(UnaryWriter<TypedMessage>().max_write_size_bytes(), 0u);
+
+  allocator::test::AllocatorForTest<8192> allocator;
+  async2::DispatcherForTest dispatcher;
+
+  // Transports that cannot fit any message bytes beyond the packet header
+  // report 0 even while the writer is open.
+  for (size_t tiny_mtu :
+       {sizeof(internal::PacketHeader), sizeof(internal::PacketHeader) - 1}) {
+    auto [tiny_conn, raw_tiny] = test::MakeMockConnection(allocator, tiny_mtu);
+    auto tiny_task = allocator.MakeShared<internal::ClientConnectionTask>(
+        internal::EstablishedConnection{std::move(tiny_conn)}, allocator);
+    auto tiny_call = internal::ClientCall::Create(*tiny_task, 90u);
+    ASSERT_NE(tiny_call, nullptr);
+    auto tiny_writer =
+        internal::CallAccess::Create<RawWriter>(std::move(tiny_call));
+    EXPECT_FALSE(tiny_writer.is_closed());
+    EXPECT_EQ(tiny_writer.max_write_size_bytes(), 0u);
+  }
+
+  constexpr size_t kTransportMtu = 128;
+  constexpr size_t kExpectedMaxWrite =
+      kTransportMtu - sizeof(internal::PacketHeader);
+
+  auto [conn, raw_conn] = test::MakeMockConnection(allocator, kTransportMtu);
+  auto connection_task = dispatcher.Post<internal::ClientConnectionTask>(
+      allocator, internal::EstablishedConnection{std::move(conn)}, allocator);
+  auto call = internal::ClientCall::Create(*connection_task, 91u);
+  ASSERT_NE(call, nullptr);
+
+  auto writer =
+      internal::CallAccess::Create<Writer<TypedMessage>>(std::move(call));
+  EXPECT_EQ(writer.max_write_size_bytes(), kExpectedMaxWrite);
+
+  Writer<TypedMessage> moved = std::move(writer);
+  EXPECT_EQ(writer.max_write_size_bytes(),  // NOLINT(bugprone-use-after-move)
+            0u);
+  EXPECT_EQ(moved.max_write_size_bytes(), kExpectedMaxWrite);
+
+  // A pending terminal write reports 0; dropping it without committing reopens.
+  {
+    WriteFuture<> pending_finish = moved.Finish();
+    EXPECT_EQ(moved.max_write_size_bytes(), 0u);
+  }
+  EXPECT_EQ(moved.max_write_size_bytes(), kExpectedMaxWrite);
+
+  raw_conn->Close();
+  dispatcher.RunUntilStalled();
+  EXPECT_EQ(moved.max_write_size_bytes(), 0u);
 }
 
 TEST(RawWriterTest, WriterErrorTransmitsErrorPacket) {
@@ -369,6 +428,7 @@ TEST(RawWriterTest, WriterErrorTransmitsErrorPacket) {
   dispatcher.RunUntilStalled();
 
   EXPECT_TRUE(writer.is_closed());
+  EXPECT_EQ(writer.max_write_size_bytes(), 0u);
   EXPECT_EQ(raw_conn->commit_count(), 1u);
 
   auto decode_res =
@@ -439,6 +499,7 @@ TEST(RawWriterTest, UnaryWriterDestructorCancels) {
   internal::ServerTask server(allocator, dispatcher);
 
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
+  const size_t max_size = conn.max_write_message_size_bytes();
   auto connection_task = allocator.MakeShared<internal::ServerConnectionTask>(
       internal::EstablishedConnection{std::move(conn)}, allocator, server);
   auto call = test::StartServerCall(*connection_task, 56u);
@@ -446,6 +507,8 @@ TEST(RawWriterTest, UnaryWriterDestructorCancels) {
   {
     auto responder = internal::CallAccess::Create<RawUnaryWriter>(call);
     EXPECT_FALSE(responder.is_closed());
+    EXPECT_EQ(responder.max_write_size_bytes(),
+              max_size - sizeof(internal::PacketHeader));
   }
 
   EXPECT_TRUE(call->is_write_closed());
@@ -480,7 +543,9 @@ TEST(RawWriterTest, DestructorAfterFinishDoesNotResend) {
     dispatcher.Post(task);
     dispatcher.RunUntilStalled();
     ASSERT_TRUE(task.has_value() && task.value().ok());
+    EXPECT_FALSE(call->is_completed());
     EXPECT_TRUE(writer.is_closed());
+    EXPECT_EQ(writer.max_write_size_bytes(), 0u);
     task.Deregister();
   }
 

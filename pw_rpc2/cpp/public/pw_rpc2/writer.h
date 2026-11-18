@@ -204,11 +204,7 @@ static_assert(async2::Future<WriteFuture<ConstBuf>>);
 namespace internal {
 
 /// Non-templated base class for outbound RPC handles (`Writer` and
-/// `UnaryWriter`).
-///
-/// Keeping `WriterBase` non-templated ensures that `is_closed()`, `Cancel()`,
-/// move-assignment, destruction, and packet reservation helpers are compiled
-/// once and shared across all writer types.
+/// `UnaryWriter`), to share code across writer types.
 class WriterBase : public CallHandle {
  public:
   WriterBase(const WriterBase&) = delete;
@@ -223,6 +219,15 @@ class WriterBase : public CallHandle {
   [[nodiscard]] bool is_closed() const {
     return !has_call() || call().is_write_closed() ||
            call().has_pending_terminal_write();
+  }
+
+  /// Returns the maximum size, in bytes, of a message that can be written
+  /// through this writer. Returns `0` if `is_closed()`.
+  ///
+  /// 0-length writes are valid, so do not rely on this function to determine
+  /// whether the writer is closed; call `is_closed()` instead.
+  [[nodiscard]] size_t max_write_size_bytes() const {
+    return has_call() ? call().max_write_size_bytes(sizeof(PacketHeader)) : 0;
   }
 
   /// Aborts the call immediately, closing this writer and sending
@@ -280,12 +285,6 @@ class WriterBase : public CallHandle {
 
   ~WriterBase() { CleanupIfUnfinished(); }
 
-  /// The largest payload a message or response packet on this call can carry,
-  /// or 0 if the call cannot write.
-  [[nodiscard]] size_t payload_limit() const {
-    return has_call() ? call().max_payload_size(sizeof(PacketHeader)) : 0;
-  }
-
   [[nodiscard]] ReserveWriteFuture ReserveMessage(
       size_t max_message_size) const {
     auto reservation = ReserveOutbound(sizeof(PacketHeader), max_message_size);
@@ -335,7 +334,8 @@ class WriterBase : public CallHandle {
 ///
 /// Every `Writer` can copy a `ConstBuf` with `WriteCopy()` or reserve a buffer
 /// with `ReserveWrite()`. Typed writers (such as `Writer<pwpb::Msg>`) also
-/// serialize messages with `Write()`.
+/// serialize messages with `Write()`. `max_write_size_bytes()` returns the
+/// largest message that can be written.
 ///
 /// Messages are sent in the order their writes complete or their reservations
 /// are committed, not the order `Write()`, `WriteCopy()`, `ReserveWrite()`, or
@@ -367,9 +367,9 @@ class Writer : public internal::WriterBase {
   template <typename M = Message,
             typename = internal::EnableIfCopyableMessage<M>>
   [[nodiscard]] WriteFuture<Message> Write(const Message& message) {
-    return WriteFuture<Message>(
-        ReserveWrite(internal::ReservationSize(message, payload_limit())),
-        message);
+    return WriteFuture<Message>(ReserveWrite(internal::ReservationSize(
+                                    message, max_write_size_bytes())),
+                                message);
   }
 
   /// Serializes and sends `message`, moving it into the returned future. Not
@@ -377,9 +377,9 @@ class Writer : public internal::WriterBase {
   template <typename M = Message,
             typename = std::enable_if_t<!std::is_same_v<M, ConstBuf>>>
   [[nodiscard]] WriteFuture<Message> Write(Message&& message) {
-    return WriteFuture<Message>(
-        ReserveWrite(internal::ReservationSize(message, payload_limit())),
-        std::move(message));
+    return WriteFuture<Message>(ReserveWrite(internal::ReservationSize(
+                                    message, max_write_size_bytes())),
+                                std::move(message));
   }
 
   /// Copies `message` into the outbound stream.
@@ -394,6 +394,9 @@ class Writer : public internal::WriterBase {
 
   /// Reserves a buffer of at least `max_message_size` bytes for writing a
   /// message in place.
+  ///
+  /// Fails with `kMessageTooLarge` without closing the writer if
+  /// `max_message_size` exceeds `max_write_size_bytes()`.
   [[nodiscard]] ReserveWriteFuture ReserveWrite(size_t max_message_size) {
     return ReserveMessage(max_message_size);
   }
@@ -429,7 +432,8 @@ class Writer : public internal::WriterBase {
 ///
 /// Sends a single response and completes the RPC with `kOk` via `FinishCopy()`
 /// (raw bytes), `Finish()` (typed writers only), or `ReserveFinish()` (in-place
-/// write).
+/// write). `max_write_size_bytes()` returns the largest response that can be
+/// written.
 ///
 /// Destroying a `UnaryWriter` (or returning from the method's future or
 /// coroutine) before a response is committed ends the call with an error,
@@ -461,9 +465,9 @@ class UnaryWriter : public internal::WriterBase {
   template <typename M = Message,
             typename = internal::EnableIfCopyableMessage<M>>
   [[nodiscard]] WriteFuture<Message> Finish(const Message& response) {
-    return WriteFuture<Message>(
-        ReserveFinish(internal::ReservationSize(response, payload_limit())),
-        response);
+    return WriteFuture<Message>(ReserveFinish(internal::ReservationSize(
+                                    response, max_write_size_bytes())),
+                                response);
   }
 
   /// Serializes `response`, sends it, and completes the RPC with `kOk`, moving
@@ -476,9 +480,9 @@ class UnaryWriter : public internal::WriterBase {
   template <typename M = Message,
             typename = std::enable_if_t<!std::is_same_v<M, ConstBuf>>>
   [[nodiscard]] WriteFuture<Message> Finish(Message&& response) {
-    return WriteFuture<Message>(
-        ReserveFinish(internal::ReservationSize(response, payload_limit())),
-        std::move(response));
+    return WriteFuture<Message>(ReserveFinish(internal::ReservationSize(
+                                    response, max_write_size_bytes())),
+                                std::move(response));
   }
 
   /// Copies `response` as the single response and completes the RPC with `kOk`.
@@ -497,6 +501,9 @@ class UnaryWriter : public internal::WriterBase {
 
   /// Reserves a buffer of at least `max_message_size` bytes for writing the
   /// response in place.
+  ///
+  /// Fails with `kMessageTooLarge` without closing the `UnaryWriter` if
+  /// `max_message_size` exceeds `max_write_size_bytes()`.
   ///
   /// Committing the resulting `WriteReservation` sends the response and
   /// completes the RPC with `kOk`, retiring the call and destroying the

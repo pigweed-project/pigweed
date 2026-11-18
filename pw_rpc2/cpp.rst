@@ -89,8 +89,8 @@ the logs to debug.
    * - ``kMessageTooLarge``
      - An outbound message is larger than the transport or reservation allows.
        Nothing was sent, and the call is still open.
-     - Send a smaller message (for example, split it), or raise the reservation
-       or transport limit.
+     - Send a smaller message (for example, split it to fit within
+       ``max_write_size_bytes()``), or raise the reservation or transport limit.
    * - ``kDataError``
      - A message couldn't be encoded or decoded. After a local write, nothing
        was sent and the call is still open. After a local read, that message is

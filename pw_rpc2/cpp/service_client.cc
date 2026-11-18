@@ -110,7 +110,7 @@ ReserveWriteFuture GeneratedServiceClient::StartCall(
   const size_t payload_size =
       size_request != nullptr
           ? size_request(request,
-                         call->max_payload_size(sizeof(RequestWireFormat)))
+                         call->max_write_size_bytes(sizeof(RequestWireFormat)))
           : max_message_size;
   RpcResult<transport::ReserveWriteFuture> reservation =
       call->ReserveWrite(sizeof(RequestWireFormat), payload_size);
