@@ -71,6 +71,32 @@ func FormatReviewer(acc AccountInfo, inAttention bool, isCC bool) string {
 	}
 }
 
+// isServiceAccountEmail reports whether email (or an account identifier)
+// belongs to an automated *.gserviceaccount.com service account, groupagent
+// bot, or GWSQ alias.
+func isServiceAccountEmail(email string) bool {
+	lower := strings.ToLower(strings.TrimSpace(email))
+	return strings.HasSuffix(lower, "@gserviceaccount.com") ||
+		strings.HasSuffix(lower, ".gserviceaccount.com") ||
+		strings.HasPrefix(lower, "gwsq-") ||
+		strings.HasPrefix(lower, "groupagent-") ||
+		strings.Contains(lower, "-review@") ||
+		strings.Contains(lower, "-reviews@") ||
+		strings.Contains(lower, "-reviewers@")
+}
+
+// IsServiceAccount reports whether a represents an automated Gerrit service
+// account or GWSQ alias rather than a human user.
+func (a AccountInfo) IsServiceAccount() bool {
+	return slices.ContainsFunc(a.Tags, func(t string) bool {
+		return strings.EqualFold(t, "SERVICE_USER")
+	}) ||
+		isServiceAccountEmail(a.Email) ||
+		isServiceAccountEmail(a.Name) ||
+		isServiceAccountEmail(a.DisplayName) ||
+		isServiceAccountEmail(a.Username)
+}
+
 // FormatChangeReviewersAndAssignees extracts and formats the assignees and reviewers
 // lists for a change, incorporating CC annotations and Attention Set status.
 func FormatChangeReviewersAndAssignees(change *ChangeInfo) (assignees []string, reviewers []string) {
@@ -94,20 +120,26 @@ func FormatChangeReviewersAndAssignees(change *ChangeInfo) (assignees []string, 
 	// 2. CC reviewers are listed in assignees.
 	if change.Reviewers != nil {
 		for _, acc := range change.Reviewers["CC"] {
-			inAttn := acc.AccountID != 0 && attnMap[acc.AccountID]
-			assignees = append(assignees, FormatReviewer(acc, inAttn, true))
 			if acc.AccountID != 0 {
 				seenAccs[acc.AccountID] = true
 			}
+			if acc.IsServiceAccount() {
+				continue
+			}
+			inAttn := acc.AccountID != 0 && attnMap[acc.AccountID]
+			assignees = append(assignees, FormatReviewer(acc, inAttn, true))
 		}
 
 		// 3. Regular reviewers.
 		for _, acc := range change.Reviewers["REVIEWER"] {
-			inAttn := acc.AccountID != 0 && attnMap[acc.AccountID]
-			reviewers = append(reviewers, FormatReviewer(acc, inAttn, false))
 			if acc.AccountID != 0 {
 				seenAccs[acc.AccountID] = true
 			}
+			if acc.IsServiceAccount() {
+				continue
+			}
+			inAttn := acc.AccountID != 0 && attnMap[acc.AccountID]
+			reviewers = append(reviewers, FormatReviewer(acc, inAttn, false))
 		}
 	}
 
@@ -116,6 +148,9 @@ func FormatChangeReviewersAndAssignees(change *ChangeInfo) (assignees []string, 
 	if len(change.AttentionSet) > 0 {
 		var remaining []AttentionSetInfo
 		for _, info := range change.AttentionSet {
+			if info.Account.IsServiceAccount() {
+				continue
+			}
 			if info.Account.AccountID != 0 && !seenAccs[info.Account.AccountID] {
 				remaining = append(remaining, info)
 			}

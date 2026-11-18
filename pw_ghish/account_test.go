@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -225,6 +226,153 @@ func TestFormatChangeReviewersAndAssignees(t *testing.T) {
 			t.Errorf("reviewers mismatch\ngot:  %v\nwant: %v", reviewers, wantReviewers)
 		}
 	})
+
+	t.Run("ignores service account bot reviewers while preserving humans", func(t *testing.T) {
+		change := &ChangeInfo{
+			Owner: AccountInfo{
+				AccountID: 1,
+				Name:      "Owner Alice",
+			},
+			Reviewers: map[string][]AccountInfo{
+				"REVIEWER": {
+					{
+						AccountID:   1002720,
+						Name:        "android-build-ayeaye@system.gserviceaccount.com",
+						DisplayName: "Lint",
+						Email:       "android-build-ayeaye@system.gserviceaccount.com",
+						Tags:        []string{"SERVICE_USER"},
+					},
+					{
+						AccountID: 2,
+						Name:      "Human Bob",
+						Email:     "bob@example.com",
+					},
+					{
+						AccountID: 1002722,
+						Name:      "CQ Bot Account",
+						Email:     "cq-bot@example.org",
+						Tags:      []string{"SERVICE_USER"},
+					},
+				},
+				"CC": {
+					{
+						AccountID: 1002721,
+						Name:      "pigweed-try-builder",
+						Email:     "pigweed-try-builder@pigweed-service-accounts.iam.gserviceaccount.com",
+					},
+					{
+						AccountID: 3,
+						Name:      "Human Carol",
+						Email:     "carol@example.com",
+					},
+				},
+			},
+			AttentionSet: map[string]AttentionSetInfo{
+				// Minimal AttentionSet entries without Email/Tags so seenAccs[acc.AccountID]
+				// deduplication from skipped REVIEWER/CC bots is directly exercised.
+				"1002720": {
+					Account: AccountInfo{
+						AccountID: 1002720,
+						Name:      "Lint",
+					},
+				},
+				"1002721": {
+					Account: AccountInfo{
+						AccountID: 1002721,
+						Name:      "Try Builder",
+					},
+				},
+				"1002723": {
+					Account: AccountInfo{
+						AccountID: 1002723,
+						Name:      "Service Bot",
+						Tags:      []string{"SERVICE_USER"},
+					},
+				},
+			},
+		}
+
+		assignees, reviewers := FormatChangeReviewersAndAssignees(change)
+		wantAssignees := []string{"Owner Alice", "Human Carol (cc)"}
+		if !slices.Equal(assignees, wantAssignees) {
+			t.Errorf("assignees mismatch\ngot:  %v\nwant: %v", assignees, wantAssignees)
+		}
+		wantReviewers := []string{"Human Bob"}
+		if !slices.Equal(reviewers, wantReviewers) {
+			t.Errorf("reviewers mismatch\ngot:  %v\nwant: %v", reviewers, wantReviewers)
+		}
+	})
+}
+
+func TestAccountInfo_IsServiceAccount(t *testing.T) {
+	tests := []struct {
+		name string
+		acc  AccountInfo
+		want bool
+	}{
+		{
+			name: "human_account",
+			acc:  AccountInfo{Name: "Alice", Email: "alice@example.com", Username: "alice"},
+			want: false,
+		},
+		{
+			name: "non_matching_gserviceaccount_suffix",
+			acc:  AccountInfo{Email: "alice@notgserviceaccount.com"},
+			want: false,
+		},
+		{
+			name: "service_user_tag",
+			acc:  AccountInfo{Name: "CQ Bot Account", Email: "cq@example.com", Tags: []string{"SERVICE_USER"}},
+			want: true,
+		},
+		{
+			name: "iam_gserviceaccount_email",
+			acc:  AccountInfo{Name: "pigweed-try-builder", Email: "try@pigweed-service-accounts.iam.gserviceaccount.com"},
+			want: true,
+		},
+		{
+			name: "system_gserviceaccount_username_with_human_name",
+			acc:  AccountInfo{Name: "Lint", Username: "ayeaye@system.gserviceaccount.com"},
+			want: true,
+		},
+		{
+			name: "gwsq_alias",
+			acc:  AccountInfo{Email: "gwsq-pigweed@google.com"},
+			want: true,
+		},
+		{
+			name: "groupagent_prefix",
+			acc:  AccountInfo{Name: "Pigweed AI Code Reviewer", Email: "groupagent-pigweed-review@google.com"},
+			want: true,
+		},
+		{
+			name: "groupagent_non_review_prefix",
+			acc:  AccountInfo{Email: "groupagent-fuchsia-risk@google.com"},
+			want: true,
+		},
+		{
+			name: "gwsq_singular_review_alias",
+			acc:  AccountInfo{Name: "Sapphire Bluetooth Reviews", Email: "sapphire-review@google.com"},
+			want: true,
+		},
+		{
+			name: "gwsq_reviews_alias",
+			acc:  AccountInfo{Email: "pigweed-reviews@google.com"},
+			want: true,
+		},
+		{
+			name: "gwsq_reviewers_alias",
+			acc:  AccountInfo{Email: "fuchsia-reviewers@google.com"},
+			want: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.acc.IsServiceAccount(); got != tc.want {
+				t.Errorf("%+v.IsServiceAccount() = %v, want %v", tc.acc, got, tc.want)
+			}
+		})
+	}
 }
 
 func TestGetSelfAccountCached(t *testing.T) {

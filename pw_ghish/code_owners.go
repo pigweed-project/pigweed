@@ -398,11 +398,6 @@ func representativeFilesByDir(files []string) []string {
 	return reps
 }
 
-func isServiceAccountEmail(email string) bool {
-	lower := strings.ToLower(strings.TrimSpace(email))
-	return strings.HasSuffix(lower, "gserviceaccount.com") || strings.HasPrefix(lower, "gwsq-")
-}
-
 // selectOwnersForFiles resolves the minimal set of non-author owners covering
 // all modified directories.
 //
@@ -463,7 +458,7 @@ func selectOwnersForFiles(
 						continue
 					}
 					dist, hasDist := info.Scorings["DISTANCE"]
-					if !isServiceAccountEmail(email) && (!hasDist || dist <= 1) {
+					if !info.Account.IsServiceAccount() && (!hasDist || dist <= 1) {
 						gerritSpecificHumans = append(gerritSpecificHumans, email)
 					} else {
 						gerritFallbacks = append(gerritFallbacks, email)

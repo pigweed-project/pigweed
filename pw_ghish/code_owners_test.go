@@ -424,3 +424,30 @@ func TestCreate_WithReviewerOwners_MergeCommitUsesRemergeDiffAndRecentAuthor(t *
 		t.Errorf("expected git push to contain r=joshconner@google.com, got %q", pushCall)
 	}
 }
+
+func TestSelectOwnersForFiles_FiltersServiceAccountOwners(t *testing.T) {
+	got := selectOwnersForFiles(
+		[]string{"pw_cli/tool.py"},
+		"author@example.com",
+		"",
+		func(_ string) ([]CodeOwnerInfo, error) {
+			return []CodeOwnerInfo{
+				{
+					Account:  AccountInfo{Email: "cq-bot@example.com", Tags: []string{"SERVICE_USER"}},
+					Scorings: map[string]float64{"DISTANCE": 1},
+				},
+				{
+					Account: AccountInfo{Email: "pigweed-reviews@google.com"},
+				},
+				{
+					Account:  AccountInfo{Email: "human@example.com"},
+					Scorings: map[string]float64{"DISTANCE": 1},
+				},
+			}, nil
+		},
+		nil,
+	)
+	if len(got) != 1 || got[0] != "human@example.com" {
+		t.Errorf("selectOwnersForFiles = %v, want [human@example.com]", got)
+	}
+}
