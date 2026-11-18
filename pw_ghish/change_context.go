@@ -220,7 +220,7 @@ func FormatGerritError(err error, actionDesc string, changeID string, gerritHost
 		if strings.Contains(lower, "abandoned") {
 			return fmt.Errorf("error %s change %s: change is already closed (abandoned).\n\nUnderlying error: %w", actionDesc, changeID, err)
 		}
-		if strings.Contains(lower, "not work in progress") || strings.Contains(lower, "not draft") || strings.Contains(lower, "not wip") {
+		if isAlreadyReadyConflict(err) {
 			return fmt.Errorf("error %s change %s: change is already marked as ready for review (not in work-in-progress/draft state).\n\nUnderlying error: %w", actionDesc, changeID, err)
 		}
 		if strings.Contains(lower, "new") {
@@ -241,6 +241,11 @@ func FormatGerritError(err error, actionDesc string, changeID string, gerritHost
 	}
 
 	return fmt.Errorf("error %s change %s: %w", actionDesc, changeID, err)
+}
+
+func isAlreadyReadyConflict(err error) bool {
+	return IsGerritHTTPStatus(err, http.StatusConflict) &&
+		strings.Contains(strings.ToLower(err.Error()), "not work in progress")
 }
 
 // FormatError translates an error from a Gerrit operation on this change into an actionable error.

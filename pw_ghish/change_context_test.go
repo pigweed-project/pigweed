@@ -630,6 +630,14 @@ func TestFormatGerritError(t *testing.T) {
 			wantContains: []string{"already marked as ready for review"},
 		},
 		{
+			name:         "HTTP 409 Conflict not work in progress with non-ready action",
+			err:          &GerritAPIError{StatusCode: http.StatusConflict, Body: "change is not work in progress"},
+			action:       "updating",
+			changeID:     "12345",
+			wantExitCode: ExitCodeFailure,
+			wantContains: []string{"already marked as ready for review"},
+		},
+		{
 			name:         "HTTP 409 Conflict open",
 			err:          &GerritAPIError{StatusCode: http.StatusConflict, Body: "change is new"},
 			action:       "restoring",
@@ -683,6 +691,66 @@ func TestFormatGerritError(t *testing.T) {
 				if strings.Contains(msg, absent) {
 					t.Errorf("expected %q to be absent from error, got:\n%s", absent, msg)
 				}
+			}
+		})
+	}
+}
+
+func TestIsAlreadyReadyConflict(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "409 not work in progress",
+			err:  &GerritAPIError{StatusCode: http.StatusConflict, Body: "change is not work in progress"},
+			want: true,
+		},
+		{
+			name: "wrapped 409 mixed case",
+			err:  fmt.Errorf("outer: %w", &GerritAPIError{StatusCode: http.StatusConflict, Body: "Change Is Not Work In Progress"}),
+			want: true,
+		},
+		{
+			name: "nil error",
+			err:  nil,
+			want: false,
+		},
+		{
+			name: "plain non-API error containing not work in progress",
+			err:  errors.New("change is not work in progress"),
+			want: false,
+		},
+		{
+			name: "500 API error containing not work in progress",
+			err:  &GerritAPIError{StatusCode: http.StatusInternalServerError, Body: "not work in progress"},
+			want: false,
+		},
+		{
+			name: "404 API error containing not work in progress",
+			err:  &GerritAPIError{StatusCode: http.StatusNotFound, Body: "not work in progress"},
+			want: false,
+		},
+		{
+			name: "409 merged",
+			err:  &GerritAPIError{StatusCode: http.StatusConflict, Body: "change is merged"},
+			want: false,
+		},
+		{
+			name: "409 removed not draft substring",
+			err:  &GerritAPIError{StatusCode: http.StatusConflict, Body: "change is not draft"},
+			want: false,
+		},
+		{
+			name: "409 removed not wip substring",
+			err:  &GerritAPIError{StatusCode: http.StatusConflict, Body: "change is not wip"},
+			want: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isAlreadyReadyConflict(tc.err); got != tc.want {
+				t.Errorf("isAlreadyReadyConflict(%v) = %v, want %v", tc.err, got, tc.want)
 			}
 		})
 	}
