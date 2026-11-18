@@ -165,10 +165,14 @@ using OptionalTupleData = SpecialMembersAdapter<
     OptionalTupleStorageBase<Types...>,
     kAllTriviallyDestructible<Types...>,
     SelectSpecialMemberTrait((std::is_move_constructible_v<Types> && ...),
-                             sizeof...(Types) == 0),
+                             ((std::is_trivially_copyable_v<Types> &&
+                               std::is_trivially_move_constructible_v<Types>) &&
+                              ...)),
     kCopyCtorTrait<Types...>,
     SelectSpecialMemberTrait((std::is_move_constructible_v<Types> && ...),
-                             sizeof...(Types) == 0),
+                             ((std::is_trivially_copyable_v<Types> &&
+                               kIsTriviallyReassignable<Types, Types&&>) &&
+                              ...)),
     SelectSpecialMemberTrait(
         (std::is_copy_constructible_v<Types> && ...),
         (kIsTriviallyReassignable<Types, const Types&> && ...))>;

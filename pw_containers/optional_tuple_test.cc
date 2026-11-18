@@ -591,12 +591,12 @@ PW_CONSTEXPR_TEST(OptionalTuple, ConstexprOperations, {
 
   // Move construction & move assignment
   pw::OptionalTuple<int, bool, std::string_view> moved(std::move(tuple));
-  PW_TEST_EXPECT_TRUE(tuple.empty());  // NOLINT(bugprone-use-after-move)
   PW_TEST_EXPECT_EQ(moved.count(), 2u);
+  PW_TEST_EXPECT_EQ(moved.value<std::string_view>(), "hi");
 
   tuple = std::move(moved);
-  PW_TEST_EXPECT_TRUE(moved.empty());  // NOLINT(bugprone-use-after-move)
   PW_TEST_EXPECT_EQ(tuple.count(), 2u);
+  PW_TEST_EXPECT_EQ(tuple.value<std::string_view>(), "hi");
 });
 #endif  // PW_CXX_STANDARD_IS_SUPPORTED(20)
 
@@ -630,7 +630,11 @@ static_assert(
     std::is_trivially_copy_constructible_v<pw::OptionalTuple<int, bool>>);
 static_assert(
     std::is_trivially_copy_assignable_v<pw::OptionalTuple<int, bool>>);
-static_assert(!std::is_trivially_copyable_v<pw::OptionalTuple<int, bool>>);
+static_assert(
+    std::is_trivially_move_constructible_v<pw::OptionalTuple<int, bool>>);
+static_assert(
+    std::is_trivially_move_assignable_v<pw::OptionalTuple<int, bool>>);
+static_assert(std::is_trivially_copyable_v<pw::OptionalTuple<int, bool>>);
 static_assert(std::is_copy_assignable_v<pw::OptionalTuple<int, bool>>);
 static_assert(std::is_move_constructible_v<pw::OptionalTuple<int, bool>>);
 static_assert(std::is_move_assignable_v<pw::OptionalTuple<int, bool>>);
