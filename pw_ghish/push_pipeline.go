@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/spf13/cobra"
 )
@@ -950,33 +951,65 @@ func formatTopicsNotSupportedError(topic, source, commandHint string) error {
 	)
 }
 
+func changeWebURL(ctx context.Context, cfg *Config, ch *ChangeInfo) string {
+	gerritURL, err := cfg.GerritURL(ctx)
+	if err != nil || gerritURL == "" {
+		gerritURL = "https://" + cfg.GerritHost(ctx)
+	}
+	baseURL := strings.TrimSuffix(strings.TrimSuffix(gerritURL, "/"), "/a")
+	return fmt.Sprintf("%s/c/%s/+/%d", baseURL, ch.Project, ch.Number)
+}
+
+func formatExistingSingleChangeError(ctx context.Context, cfg *Config, changeID string, ex *ChangeInfo) error {
+	changeURL := changeWebURL(ctx, cfg, ex)
+	return fmt.Errorf("a pull request for Change-Id %s already exists:\n  %s\n\nTo upload a new patchset, run:\n  gh pr push", sanitizeSingleLineTerminal(changeID), changeURL)
+}
+
 // VerifyStackChanges inspects all commits in origin/<branch>..HEAD when --stack
 // is enabled, emits formatting warnings across the stack, queries Gerrit for each
 // commit's Change-Id, prints the stack push plan, and enforces Change-Id continuity:
 //   - For 'push', every commit in the stack must match an existing Gerrit change.
-//   - For 'create', no [NEW CL] commit may sit below an [UPDATE] commit in the stack.
+//   - For 'create', at least one commit must be new, and no [NEW CL] commit may
+//     sit below an [UPDATE] commit in the stack.
 func VerifyStackChanges(ctx context.Context, cmd *cobra.Command, cfg *Config, branch string, headState *VerifiedPushState, commandName string) error {
 	commits, err := cfg.GitClient().StackCommits(ctx, branch)
+	existingHeadFallback := func() error {
+		if commandName != "create" || headState == nil || headState.ExistingChange == nil {
+			return nil
+		}
+		if len(commits) == 1 {
+			return formatExistingSingleChangeError(ctx, cfg, headState.ChangeID, headState.ExistingChange)
+		}
+		changeURL := changeWebURL(ctx, cfg, headState.ExistingChange)
+		return fmt.Errorf(
+			"could not verify all commits in the stack on Gerrit, and HEAD (Change-Id %s) already exists:\n  %s\n\n"+
+				"  • Retry 'gh pr create --stack' if Gerrit had a transient error.\n"+
+				"  • If every commit in the stack already exists on Gerrit, run:\n"+
+				"      gh pr push --stack",
+			sanitizeSingleLineTerminal(headState.ChangeID), changeURL,
+		)
+	}
+
 	if err != nil || len(commits) == 0 {
-		return nil
+		return existingHeadFallback()
 	}
 
 	for i, c := range commits {
 		if i == len(commits)-1 {
 			continue // HEAD warnings were already emitted by VerifyHeadForPush.
 		}
-		for _, w := range CheckCommitMessageWarnings(c.Body, fmt.Sprintf("commit %s (%q)", c.Hash, c.Subject)) {
+		for _, w := range CheckCommitMessageWarnings(c.Body, fmt.Sprintf("commit %s (%q)", sanitizeSingleLineTerminal(c.Hash), sanitizeSingleLineTerminal(c.Subject))) {
 			fmt.Fprintln(cmd.ErrOrStderr(), w)
 		}
 	}
 
 	if headState == nil || !headState.GerritQueried {
-		return nil
+		return existingHeadFallback()
 	}
 
 	client, err := NewGerritClient(ctx, cmd)
 	if err != nil {
-		return nil
+		return existingHeadFallback()
 	}
 
 	existingByIdx := make([]*ChangeInfo, len(commits))
@@ -987,60 +1020,89 @@ func VerifyStackChanges(ctx context.Context, cmd *cobra.Command, cfg *Config, br
 		}
 		ch, ok := queryExistingChangeByID(ctx, client, c.ChangeID, "SUBMIT_REQUIREMENTS")
 		if !ok {
-			return nil
+			return existingHeadFallback()
 		}
 		existingByIdx[i] = ch
 	}
 
 	if len(commits) > 1 {
-		fmt.Fprintf(cmd.OutOrStdout(), "Stack plan (%d commits -> %s):\n", len(commits), branch)
+		fmt.Fprintf(cmd.OutOrStdout(), "Stack plan (%d commits -> %s):\n", len(commits), sanitizeSingleLineTerminal(branch))
 		for i, c := range commits {
 			status := "[NEW CL]"
 			if existingByIdx[i] != nil {
 				status = fmt.Sprintf("[UPDATE #%d]", existingByIdx[i].Number)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "  %d. %s %-16s %s\n", i+1, c.Hash, status, c.Subject)
+			fmt.Fprintf(cmd.OutOrStdout(), "  %d. %s %-16s %s\n",
+				i+1, sanitizeSingleLineTerminal(c.Hash), status, sanitizeSingleLineTerminal(c.Subject))
 		}
 	}
 
-	if commandName == "push" {
-		for i, c := range commits {
-			if existingByIdx[i] == nil {
-				if i == len(commits)-1 && c.ChangeID == headState.ChangeID {
-					return FormatMissingChangePushError(ctx, cmd, cfg, headState, true)
-				}
-				return fmt.Errorf(
-					"cannot push stack with 'gh pr push --stack': commit %s (%q) with Change-Id %s does not match any existing change on Gerrit.\n\n"+
-						"  • If a commit's Change-Id was overwritten during 'git commit --amend -m' or 'git rebase',\n"+
-						"    restore its original Change-Id trailer before pushing.\n"+
-						"  • If you added a new commit to the stack and want to create a new CL for it, run:\n"+
-						"      gh pr create --stack\n"+
-						"  • To bypass this check, pass --force",
-					c.Hash, c.Subject, c.ChangeID,
-				)
-			}
-		}
+	if commandName == "push" && existingByIdx[len(commits)-1] == nil {
+		return FormatMissingChangePushError(ctx, cmd, cfg, headState, true)
 	}
 
 	if commandName == "create" {
-		firstNewIdx := -1
-		for i, ex := range existingByIdx {
-			if ex == nil && firstNewIdx < 0 {
-				firstNewIdx = i
-			} else if ex != nil && firstNewIdx >= 0 {
-				newC := commits[firstNewIdx]
-				laterC := commits[i]
+		newCount := 0
+		for _, ex := range existingByIdx {
+			if ex == nil {
+				newCount++
+			}
+		}
+		if newCount == 0 {
+			if len(commits) == 1 {
+				return formatExistingSingleChangeError(ctx, cfg, headState.ChangeID, existingByIdx[0])
+			}
+			topEx := existingByIdx[len(commits)-1]
+			changeURL := changeWebURL(ctx, cfg, topEx)
+			return fmt.Errorf(
+				"a pull request already exists for all %d commits in stack origin/%s..HEAD (HEAD is Change-Id %s):\n  %s\n\n"+
+					"To upload new patchsets for the stack, run:\n  gh pr push --stack",
+				len(commits), sanitizeSingleLineTerminal(branch), sanitizeSingleLineTerminal(headState.ChangeID), changeURL,
+			)
+		}
+	}
+
+	if commandName == "push" || commandName == "create" {
+		for i, c := range commits {
+			if existingByIdx[i] != nil {
+				continue
+			}
+			var existingAbove *ChangeInfo
+			var laterC StackCommit
+			for j := i + 1; j < len(commits); j++ {
+				if existingByIdx[j] != nil {
+					existingAbove = existingByIdx[j]
+					laterC = commits[j]
+					break
+				}
+			}
+			if existingAbove == nil {
+				continue
+			}
+			cleanHash := sanitizeSingleLineTerminal(c.Hash)
+			cleanSubj := sanitizeSingleLineTerminal(c.Subject)
+			cleanCID := sanitizeSingleLineTerminal(c.ChangeID)
+			if commandName == "push" {
 				return fmt.Errorf(
-					"stack order error: commit %s (%q, Change-Id %s) has no matching change on Gerrit, "+
-						"but sits below existing change #%d (%s %q) in the stack.\n\n"+
-						"This usually happens when an earlier commit in the stack lost its Change-Id during a rebase or amend.\n"+
-						"  • Restore the original Change-Id on commit %s, or\n"+
-						"  • Pass --force if you intentionally inserted a new commit in the middle of an existing stack",
-					newC.Hash, newC.Subject, newC.ChangeID,
-					ex.Number, laterC.Hash, laterC.Subject,
-					newC.Hash,
+					"cannot push stack with 'gh pr push --stack': commit %s (%q) with Change-Id %s does not match any existing change on Gerrit (sits below existing change #%d).\n\n"+
+						"  • If a commit's Change-Id was overwritten during 'git commit --amend -m' or 'git rebase',\n"+
+						"    restore its original Change-Id trailer before pushing.\n"+
+						"  • If you intentionally inserted a new commit below existing CLs in the stack, run:\n"+
+						"      gh pr push --stack --force --base %s",
+					cleanHash, cleanSubj, cleanCID, existingAbove.Number, sanitizeSingleLineTerminal(branch),
 				)
 			}
+			return fmt.Errorf(
+				"stack order error: commit %s (%q, Change-Id %s) has no matching change on Gerrit, "+
+					"but sits below existing change #%d (%s %q) in the stack.\n\n"+
+					"This can happen when an earlier commit lost its Change-Id during a rebase, or when you inserted a new commit below existing CLs.\n"+
+					"  • If accidental, restore the original Change-Id on commit %s.\n"+
+					"  • If you intentionally inserted a new commit below existing CLs, run:\n"+
+					"      gh pr create --stack --force",
+				cleanHash, cleanSubj, cleanCID,
+				existingAbove.Number, sanitizeSingleLineTerminal(laterC.Hash), sanitizeSingleLineTerminal(laterC.Subject),
+				cleanHash,
+			)
 		}
 	}
 
@@ -1213,4 +1275,18 @@ func CheckSubmodulePolicy(ctx context.Context, git GitClient, pcfg *ProjectConfi
 	}
 
 	return nil
+}
+
+func sanitizeSingleLineTerminal(s string) string {
+	cleaned := SanitizeUntrustedText(s)
+	cleaned = strings.Map(func(r rune) rune {
+		if r == '\r' || r == '\n' || r == '\t' {
+			return ' '
+		}
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, cleaned)
+	return strings.TrimSpace(cleaned)
 }

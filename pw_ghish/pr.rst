@@ -95,11 +95,13 @@ Supported flags
 
 Existing change guard
 =====================
-If a change with the same ``Change-Id`` already exists on Gerrit, ``pr create``
-stops with an error showing the existing change URL and directs you to use
-``pr push`` instead. This prevents confusion between creating a new change and
-uploading a new patchset to an existing one. Pass ``--force`` to bypass this
-check.
+For a single commit, if a change with the same ``Change-Id`` already exists on
+Gerrit, ``pr create`` stops with an error showing the existing change URL and
+directs you to use ``pr push`` instead. With ``--stack``, ``pr create``
+inspects the full stack: if every commit already exists on Gerrit it directs
+you to ``gh pr push --stack``, and if a new commit sits below an existing CL it
+prints the stack plan and directs you to ``gh pr create --stack --force``. Pass
+``--force`` to bypass this check.
 
 Multi-commit stack guard
 ========================
@@ -207,7 +209,8 @@ an existing change on Gerrit, and directs you to restore the original
 Like ``pr create``, ``pr push`` requires ``--stack`` when uploading multiple
 unpushed commits. With ``--stack``, both commands verify every commit in the
 stack for missing, multiple, or duplicate ``Change-Id`` trailers, unsquashed
-``fixup!``/``squash!`` commits, and stack ``Change-Id`` continuity.
+``fixup!``/``squash!`` commits, and stack ``Change-Id`` continuity (requiring
+``--force`` when a new commit sits below an existing CL).
 
 -------------------------
 Editing metadata: pr edit

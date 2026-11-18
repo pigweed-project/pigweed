@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -31,8 +30,11 @@ var createCmd = &cobra.Command{
 	Short:       "Create a new change by pushing current HEAD to Gerrit",
 	Long: `Create a new Gerrit change by pushing the current HEAD commit to refs/for/<branch>.
 
-If a change with the same Change-Id already exists on Gerrit, this command will error
-and suggest using 'gh pr push' to upload a new patchset instead. Use --force to bypass this check.
+If a single commit's Change-Id already exists on Gerrit, this command errors
+and suggests 'gh pr push'. With --stack, if every commit in the stack already
+exists it suggests 'gh pr push --stack'; if a new commit sits below an existing
+CL it prints the stack plan and suggests 'gh pr create --stack --force'. Use
+--force to bypass this check.
 
 Supports rich push options:
   - Commit message & bug trailers: --title, --body, --body-file, --bug, --fixed
@@ -67,24 +69,8 @@ Supports rich push options:
 		if err := CheckTopicAllowed(ctx, cfg, state.ExistingChange, RequestedTopic(flags.PushOptions), "gh pr create (without --topic)"); err != nil {
 			return err
 		}
-		if state.ExistingChange != nil {
-			gerritURL, _ := cfg.GerritURL(ctx)
-			baseURL := strings.TrimSuffix(gerritURL, "/a")
-			changeURL := fmt.Sprintf("%s/c/%s/+/%d", baseURL, state.ExistingChange.Project, state.ExistingChange.Number)
-			return fmt.Errorf("a pull request for Change-Id %s already exists:\n  %s\n\nTo upload a new patchset, run:\n  gh pr push", state.ChangeID, changeURL)
-		}
-
-		// A change that does not exist yet has no labels to read, but the
-		// project it is going to does. Ask, so --auto votes this host's label
-		// rather than whatever the profile happens to be compiled with.
-		var autoSubmit AutoSubmitDecision
-		if flags.PushOptions.AutoSubmit {
-			autoSubmit, err = decideProjectAutoSubmit(ctx, cmd, cfg)
-			if err != nil {
-				return err
-			}
-			flags.PushOptions.AutoSubmitLabel = autoSubmit.Vote
-			flags.PushOptions.AutoSubmitUnsupported = autoSubmit.Unsupported
+		if state.ExistingChange != nil && !flags.Stack {
+			return formatExistingSingleChangeError(ctx, cfg, state.ChangeID, state.ExistingChange)
 		}
 
 		if err := ValidateCommitStack(ctx, cfg.GitClient(), branch, flags.Stack, "create"); err != nil {
@@ -99,6 +85,19 @@ Supports rich push options:
 			if err := VerifyStackChanges(ctx, cmd, cfg, branch, state, "create"); err != nil {
 				return err
 			}
+		}
+
+		// A change that does not exist yet has no labels to read, but the
+		// project it is going to does. Ask, so --auto votes this host's label
+		// rather than whatever the profile happens to be compiled with.
+		var autoSubmit AutoSubmitDecision
+		if flags.PushOptions.AutoSubmit {
+			autoSubmit, err = decideProjectAutoSubmit(ctx, cmd, cfg)
+			if err != nil {
+				return err
+			}
+			flags.PushOptions.AutoSubmitLabel = autoSubmit.Vote
+			flags.PushOptions.AutoSubmitUnsupported = autoSubmit.Unsupported
 		}
 
 		flags.PushOptions.Reviewers, err = ExpandReviewersForPush(ctx, cmd, cfg, branch, nil, flags.PushOptions.Reviewers)
@@ -151,8 +150,12 @@ Supports rich push options:
 		if state != nil && state.ChangeID != "" {
 			details = append(details, ReceiptField{Key: "Change", Value: state.ChangeID})
 		}
+		summary := "Change created successfully."
+		if flags.Stack {
+			summary = "Stack pushed successfully."
+		}
 		PrintReceipt(cmd.OutOrStdout(), Receipt{
-			Summary: "Change created successfully.",
+			Summary: summary,
 			Details: details,
 			URL:     ExtractGerritURLFromGitOutput(pushBuf.String()),
 			Next:    "gh pr checks --watch [--fail-fast]",

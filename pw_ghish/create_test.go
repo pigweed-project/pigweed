@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -414,8 +415,8 @@ func TestCreate_MultiCommitStackGuard_AllowsWithStack(t *testing.T) {
 		t.Fatalf("Expected --stack to succeed, got: %v", err)
 	}
 
-	if !strings.Contains(output, "✓ Change created successfully.") {
-		t.Errorf("Expected output to contain '✓ Change created successfully.', got: %s", output)
+	if !strings.Contains(output, "✓ Stack pushed successfully.") {
+		t.Errorf("Expected output to contain '✓ Stack pushed successfully.', got: %s", output)
 	}
 }
 
@@ -1011,6 +1012,132 @@ func TestCreate_RealGit_CommitMessageFlagsAndRollback(t *testing.T) {
 		}
 		if got := repo.ReadFile("base.txt"); got != "dirty pre-commit\n" {
 			t.Errorf("dirty working tree file lost on rollback: %q", got)
+		}
+	})
+}
+
+func TestCreate_Stack_ExistingHead(t *testing.T) {
+	id1 := "I1111111111111111111111111111111111111111"
+	id2 := "I2222222222222222222222222222222222222222"
+
+	stackLog := fmt.Sprintf(
+		"aaa1111\x00pw_ghish: Base commit\x00pw_ghish: Base commit\n\nChange-Id: %s\n\x1e"+
+			"bbb2222\x00pw_ghish: Top commit\x00pw_ghish: Top commit\n\nChange-Id: %s\n\x1e",
+		id1, id2,
+	)
+
+	newFixture := func(t *testing.T, existingIDs ...string) *MockGitRunner {
+		t.Helper()
+		server := NewMockGerritServer(t)
+		server.On("GET", "/changes/", func(w http.ResponseWriter, r *http.Request) {
+			q := r.URL.Query().Get("q")
+			switch {
+			case slices.Contains(existingIDs, id2) && strings.Contains(q, id2):
+				server.RespondJSON(w, http.StatusOK, []map[string]any{
+					DefaultMockChange(497839, WithChangeID(id2)),
+				})
+			case slices.Contains(existingIDs, id1) && strings.Contains(q, id1):
+				server.RespondJSON(w, http.StatusOK, []map[string]any{
+					DefaultMockChange(497800, WithChangeID(id1)),
+				})
+			default:
+				server.RespondJSON(w, http.StatusOK, []map[string]any{})
+			}
+		})
+		return NewMockGit(t).WithBranch("main").
+			WithCommit("pw_ghish: Top commit\n\nChange-Id: "+id2+"\n").
+			OnCommand("rev-list --count origin/main..HEAD", "2\n").
+			OnCommand("log --reverse --format=%h%x00%s%x00%B%x1e origin/main..HEAD", stackLog)
+	}
+
+	t.Run("inspects full stack and suggests --force instead of gh pr push", func(t *testing.T) {
+		mockGit := newFixture(t, id2)
+		out, err := executeCommand(RootCmd, "pr", "create", "--base", "main", "--stack")
+		if err == nil {
+			t.Fatal("expected error when new commit sits below existing CL")
+		}
+		for _, want := range []string{"[NEW CL]", "[UPDATE #497839]"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("expected Stack plan output to contain %q, got:\n%s", want, out)
+			}
+		}
+		if !strings.Contains(err.Error(), "gh pr create --stack --force") {
+			t.Errorf("expected remediation to suggest 'gh pr create --stack --force', got: %v", err)
+		}
+		if mockGit.HasCall("push") {
+			t.Errorf("expected no git push on unconfirmed stack reorder, got: %v", mockGit.Calls)
+		}
+	})
+
+	t.Run("all commits already exist suggests gh pr push --stack", func(t *testing.T) {
+		mockGit := newFixture(t, id1, id2)
+		_, err := executeCommand(RootCmd, "pr", "create", "--base", "main", "--stack")
+		if err == nil {
+			t.Fatal("expected error when all stack commits already exist on Gerrit")
+		}
+		for _, want := range []string{"already exists", "/c/pigweed/pigweed/+/497839", "gh pr push --stack"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("expected error to contain %q, got: %v", want, err)
+			}
+		}
+		if mockGit.HasCall("push") {
+			t.Errorf("expected no git push when all commits already exist, got: %v", mockGit.Calls)
+		}
+	})
+
+	t.Run("Gerrit lookup error on earlier stack commit reports stack lookup failure", func(t *testing.T) {
+		server := NewMockGerritServer(t)
+		server.On("GET", "/changes/", func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Query().Get("q"), id2) {
+				server.RespondJSON(w, http.StatusOK, []map[string]any{DefaultMockChange(497839, WithChangeID(id2))})
+				return
+			}
+			server.RespondJSON(w, http.StatusInternalServerError, map[string]any{"error": "boom"})
+		})
+		mockGit := NewMockGit(t).WithBranch("main").
+			WithCommit("pw_ghish: Top commit\n\nChange-Id: "+id2+"\n").
+			OnCommand("rev-list --count origin/main..HEAD", "2\n").
+			OnCommand("log --reverse --format=%h%x00%s%x00%B%x1e origin/main..HEAD", stackLog)
+
+		_, err := executeCommand(RootCmd, "pr", "create", "--base", "main", "--stack")
+		if err == nil {
+			t.Fatal("expected error on Gerrit 500 during stack lookup")
+		}
+		for _, want := range []string{"could not verify all commits in the stack", "gh pr push --stack"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("expected error to contain %q, got: %v", want, err)
+			}
+		}
+		if mockGit.HasCall("push") {
+			t.Errorf("expected no git push on lookup error, got: %v", mockGit.Calls)
+		}
+	})
+
+	t.Run("single-commit create --stack on existing HEAD suggests gh pr push", func(t *testing.T) {
+		singleLog := fmt.Sprintf("bbb2222\x00pw_ghish: Top commit\x00pw_ghish: Top commit\n\nChange-Id: %s\n\x1e", id2)
+		server := NewMockGerritServer(t)
+		server.OnJSON("GET", "/changes/", http.StatusOK, []map[string]any{
+			DefaultMockChange(497839, WithChangeID(id2)),
+		})
+		mockGit := NewMockGit(t).WithBranch("main").
+			WithCommit("pw_ghish: Top commit\n\nChange-Id: "+id2+"\n").
+			OnCommand("rev-list --count origin/main..HEAD", "1\n").
+			OnCommand("log --reverse --format=%h%x00%s%x00%B%x1e origin/main..HEAD", singleLog)
+
+		_, err := executeCommand(RootCmd, "pr", "create", "--base", "main", "--stack")
+		if err == nil {
+			t.Fatal("expected error when single-commit stack already exists on Gerrit")
+		}
+		for _, want := range []string{"already exists", "gh pr push"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("expected error to contain %q, got: %v", want, err)
+			}
+		}
+		if strings.Contains(err.Error(), "--stack") {
+			t.Errorf("did not expect --stack in single-commit error, got: %v", err)
+		}
+		if mockGit.HasCall("push") {
+			t.Errorf("expected no git push when single-commit stack already exists, got: %v", mockGit.Calls)
 		}
 	})
 }

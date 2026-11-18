@@ -430,44 +430,80 @@ func TestPush_NewChangeWithForceSucceeds(t *testing.T) {
 	}
 }
 
-func TestPush_Stack_MissingChangeInMiddleFails(t *testing.T) {
+func TestPush_Stack_NewCommitBelowExistingChange(t *testing.T) {
 	id1 := "I1111111111111111111111111111111111111111"
 	id2 := "I2222222222222222222222222222222222222222"
 
-	server := NewMockGerritServer(t)
-	server.On("GET", "/changes/*", func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query().Get("q")
-		if q == id2 {
-			server.RespondJSON(w, http.StatusOK, []map[string]any{
-				DefaultMockChange(488949, WithChangeID(id2)),
-			})
-			return
+	t.Run("suggests gh pr push --stack --force --base", func(t *testing.T) {
+		stackLog := fmt.Sprintf(
+			"aaa1111\x00pw_ghish: First commit\x00pw_ghish: First commit\n\nChange-Id: %s\n\x1e"+
+				"bbb2222\x00pw_ghish: Second commit\x00pw_ghish: Second commit\n\nChange-Id: %s\n\x1e",
+			id1, id2,
+		)
+		server := NewMockGerritServer(t)
+		server.On("GET", "/changes/*", func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Query().Get("q"), id2) {
+				server.RespondJSON(w, http.StatusOK, []map[string]any{
+					DefaultMockChange(488949, WithChangeID(id2)),
+				})
+				return
+			}
+			server.RespondJSON(w, http.StatusOK, []map[string]any{})
+		})
+		mockGit := NewMockGit(t).WithBranch("main").
+			WithCommit("pw_ghish: Second commit\n\nChange-Id: "+id2+"\n").
+			OnCommand("rev-list --count origin/main..HEAD", "2\n").
+			OnCommand("log --reverse --format=%h%x00%s%x00%B%x1e origin/main..HEAD", stackLog)
+
+		_, err := executeCommand(RootCmd, "pr", "push", "--base", "main", "--stack")
+		if err == nil {
+			t.Fatal("Expected error when an earlier commit in the stack does not match any Gerrit change")
 		}
-		server.RespondJSON(w, http.StatusOK, []map[string]any{})
+		for _, want := range []string{"aaa1111", id1, "gh pr push --stack --force --base main"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("Expected error to mention %q, got: %v", want, err)
+			}
+		}
+		if mockGit.HasCall("push") {
+			t.Errorf("Expected no git push when stack verification fails, calls: %v", mockGit.Calls)
+		}
 	})
 
-	stackLog := fmt.Sprintf(
-		"aaa1111\x00pw_ghish: First commit\x00pw_ghish: First commit\n\nChange-Id: %s\n\x1e"+
-			"bbb2222\x00pw_ghish: Second commit\x00pw_ghish: Second commit\n\nChange-Id: %s\n\x1e",
-		id1, id2,
-	)
-	mockGit := NewMockGit(t).WithBranch("main").
-		WithCommit("pw_ghish: Second commit\n\nChange-Id: "+id2+"\n").
-		OnCommand("rev-list --count origin/main..HEAD", "2\n").
-		OnCommand("log --reverse --format=%h%x00%s%x00%B%x1e origin/main..HEAD", stackLog)
+	t.Run("reports missing HEAD before out-of-order base when HEAD has no existing Gerrit change", func(t *testing.T) {
+		id3 := "I3333333333333333333333333333333333333333"
+		doomedLog := fmt.Sprintf(
+			"aaa1111\x00pw_ghish: New base\x00pw_ghish: New base\n\nChange-Id: %s\n\x1e"+
+				"bbb2222\x00pw_ghish: Existing mid\x00pw_ghish: Existing mid\n\nChange-Id: %s\n\x1e"+
+				"ccc3333\x00pw_ghish: New top\x00pw_ghish: New top\n\nChange-Id: %s\n\x1e",
+			id1, id2, id3,
+		)
+		server := NewMockGerritServer(t)
+		server.On("GET", "/changes/", func(w http.ResponseWriter, r *http.Request) {
+			if strings.Contains(r.URL.Query().Get("q"), id2) {
+				server.RespondJSON(w, http.StatusOK, []map[string]any{DefaultMockChange(488949, WithChangeID(id2))})
+				return
+			}
+			server.RespondJSON(w, http.StatusOK, []map[string]any{})
+		})
+		mockGit := NewMockGit(t).WithBranch("main").
+			WithCommit("pw_ghish: New top\n\nChange-Id: "+id3+"\n").
+			OnCommand("rev-list --count origin/main..HEAD", "3\n").
+			OnCommand("log --reverse --format=%h%x00%s%x00%B%x1e origin/main..HEAD", doomedLog)
 
-	_, err := executeCommand(RootCmd, "pr", "push", "--base", "main", "--stack")
-	if err == nil {
-		t.Fatal("Expected error when an earlier commit in the stack does not match any Gerrit change")
-	}
-	for _, want := range []string{"aaa1111", id1, "gh pr create --stack"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("Expected error to mention %q, got: %v", want, err)
+		_, err := executeCommand(RootCmd, "pr", "push", "--base", "main", "--stack")
+		if err == nil {
+			t.Fatal("expected error on [NEW, UPDATE, NEW] push --stack")
 		}
-	}
-	if mockGit.HasCall("push") {
-		t.Errorf("Expected no git push when stack verification fails, calls: %v", mockGit.Calls)
-	}
+		if !strings.Contains(err.Error(), id3) {
+			t.Errorf("expected missing-HEAD error mentioning %s, got: %v", id3, err)
+		}
+		if strings.Contains(err.Error(), "gh pr push --stack --force --base main") {
+			t.Errorf("did not expect out-of-order '--force --base main' remediation when HEAD is missing, got: %v", err)
+		}
+		if mockGit.HasCall("push") {
+			t.Errorf("expected no git push, got: %v", mockGit.Calls)
+		}
+	})
 }
 
 // When runPush resolves a Commit-Queue+1 dry run ahead of git push and git

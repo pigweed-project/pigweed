@@ -1145,3 +1145,178 @@ func TestQueryExistingChangeByID(t *testing.T) {
 		}
 	})
 }
+
+func TestSanitizeSingleLineTerminal(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "plain_text",
+			in:   "pw_ghish: Fix edge case",
+			want: "pw_ghish: Fix edge case",
+		},
+		{
+			name: "ansi_escapes_stripped",
+			in:   "\x1b[31mpw_ghish: Red\x1b[0m \x1b[1;4mbold\x1b[0m",
+			want: "pw_ghish: Red bold",
+		},
+		{
+			name: "newlines_carriage_returns_and_tabs_become_spaces",
+			in:   "  line1\nline2\rline3\tend  ",
+			want: "line1 line2 line3 end",
+		},
+		{
+			name: "control_characters_dropped",
+			in:   "ab\x00cd\x07ef\x7fgh",
+			want: "abcdefgh",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sanitizeSingleLineTerminal(tc.in); got != tc.want {
+				t.Errorf("sanitizeSingleLineTerminal(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestChangeWebURL(t *testing.T) {
+	ctx := context.Background()
+	ch := &ChangeInfo{Project: "pigweed/pigweed", Number: 497839}
+
+	t.Run("strips /a suffix", func(t *testing.T) {
+		cfg := &Config{Host: "https://pigweed-review.googlesource.com/a"}
+		got := changeWebURL(ctx, cfg, ch)
+		want := "https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/497839"
+		if got != want {
+			t.Errorf("changeWebURL = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("strips trailing slash and /a/ suffix", func(t *testing.T) {
+		for _, host := range []string{
+			"https://gerrit.example.com/",
+			"https://gerrit.example.com/a/",
+		} {
+			cfg := &Config{Host: host}
+			got := changeWebURL(ctx, cfg, ch)
+			want := "https://gerrit.example.com/c/pigweed/pigweed/+/497839"
+			if got != want {
+				t.Errorf("changeWebURL(%q) = %q, want %q", host, got, want)
+			}
+		}
+	})
+
+	t.Run("falls back to GerritHost when GerritURL errors", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		oldMockCWD := MockCWD
+		MockCWD = tmpDir
+		t.Cleanup(func() { MockCWD = oldMockCWD })
+
+		mockGit := NewMockGit(t).
+			OnError("config --get remote.origin.url", fmt.Errorf("no origin")).
+			OnError("remote get-url origin", fmt.Errorf("no origin"))
+
+		SetTestProfile(t, "generic")
+		oldHostFlag := HostFlag
+		HostFlag = "fallback-review.googlesource.com"
+		t.Cleanup(func() { HostFlag = oldHostFlag })
+
+		cfg := &Config{
+			gitClient: NewGitClient(mockGit),
+		}
+		got := changeWebURL(ctx, cfg, ch)
+		want := "https://fallback-review.googlesource.com/c/pigweed/pigweed/+/497839"
+		if got != want {
+			t.Errorf("changeWebURL fallback = %q, want %q", got, want)
+		}
+	})
+}
+
+func TestVerifyStackChanges_ExistingHeadFallback(t *testing.T) {
+	ctx := context.Background()
+	headID := "I2222222222222222222222222222222222222222"
+	existing := &ChangeInfo{
+		Project:  "pigweed/pigweed",
+		Number:   497839,
+		ChangeID: headID,
+	}
+
+	t.Run("len(commits) == 1 in existingHeadFallback suggests gh pr push", func(t *testing.T) {
+		singleLog := fmt.Sprintf("bbb2222\x00pw_ghish: Top commit\x00pw_ghish: Top commit\n\nChange-Id: %s\n\x1e", headID)
+		mockGit := NewMockGit(t).WithBranch("main").
+			OnCommand("log --reverse --format=%h%x00%s%x00%B%x1e origin/main..HEAD", singleLog)
+		cfg := &Config{
+			Host:      "https://pigweed-review.googlesource.com/a",
+			gitClient: NewGitClient(mockGit),
+		}
+		cmd := &cobra.Command{Use: "create"}
+		headState := &VerifiedPushState{
+			ChangeID:       headID,
+			ExistingChange: existing,
+			GerritQueried:  false,
+		}
+
+		err := VerifyStackChanges(ctx, cmd, cfg, "main", headState, "create")
+		if err == nil {
+			t.Fatal("expected error from single-commit existingHeadFallback")
+		}
+		wantURL := "https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/497839"
+		for _, want := range []string{"already exists", wantURL, "gh pr push"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("expected error to contain %q, got: %v", want, err)
+			}
+		}
+		if strings.Contains(err.Error(), "--stack") {
+			t.Errorf("did not expect --stack in single-commit fallback error, got: %v", err)
+		}
+	})
+
+	t.Run("StackCommits error or empty stack falls back to multi-commit existing HEAD error", func(t *testing.T) {
+		for _, tc := range []struct {
+			name  string
+			setup func(*MockGitRunner)
+		}{
+			{
+				name: "StackCommits error",
+				setup: func(m *MockGitRunner) {
+					m.OnError("log --reverse --format=%h%x00%s%x00%B%x1e origin/main..HEAD", fmt.Errorf("git log failed"))
+				},
+			},
+			{
+				name: "StackCommits empty",
+				setup: func(m *MockGitRunner) {
+					m.OnCommand("log --reverse --format=%h%x00%s%x00%B%x1e origin/main..HEAD", "")
+				},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				mockGit := NewMockGit(t).WithBranch("main")
+				tc.setup(mockGit)
+				cfg := &Config{
+					Host:      "https://pigweed-review.googlesource.com/a",
+					gitClient: NewGitClient(mockGit),
+				}
+				cmd := &cobra.Command{Use: "create"}
+				headState := &VerifiedPushState{
+					ChangeID:       headID,
+					ExistingChange: existing,
+					GerritQueried:  true,
+				}
+
+				err := VerifyStackChanges(ctx, cmd, cfg, "main", headState, "create")
+				if err == nil {
+					t.Fatal("expected error when StackCommits fails or returns empty")
+				}
+				wantURL := "https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/497839"
+				for _, want := range []string{"could not verify all commits in the stack", wantURL, "gh pr push --stack"} {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("expected error to contain %q, got: %v", want, err)
+					}
+				}
+			})
+		}
+	})
+}
