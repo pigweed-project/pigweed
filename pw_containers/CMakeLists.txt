@@ -111,6 +111,16 @@ pw_add_library(pw_containers._maybe INTERFACE
     pw_third_party.fuchsia.stdcompat
 )
 
+pw_add_library(pw_containers._special_members INTERFACE
+  HEADERS
+    public/pw_containers/internal/special_members.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_containers._tag
+    pw_polyfill
+)
+
 pw_add_library(pw_containers._common INTERFACE
   HEADERS
     public/pw_containers/internal/traits.h
@@ -1053,7 +1063,9 @@ pw_add_test(pw_containers.internal_helpers_test
     pw_compilation_testing._pigweed_only_negative_compilation
     pw_containers._maybe
     pw_containers._pack_indexing
+    pw_containers._special_members
     pw_containers._tag
+    pw_containers._test_helpers
     pw_polyfill
     pw_unit_test.constexpr
   GROUPS

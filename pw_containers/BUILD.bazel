@@ -226,6 +226,17 @@ cc_library(
 )
 
 cc_library(
+    name = "special_members",
+    hdrs = ["public/pw_containers/internal/special_members.h"],
+    strip_include_prefix = "public",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":tag",
+        "//pw_polyfill",
+    ],
+)
+
+cc_library(
     name = "common",
     hdrs = [
         "public/pw_containers/internal/traits.h",
@@ -994,7 +1005,9 @@ pw_cc_test(
     deps = [
         ":maybe",
         ":pack_indexing",
+        ":special_members",
         ":tag",
+        ":test_helpers",
         "//pw_polyfill",
         "//pw_unit_test:constexpr",
     ],

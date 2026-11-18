@@ -115,6 +115,16 @@ pw_source_set("maybe") {
   visibility = [ "$dir_pigweed/*" ]
 }
 
+pw_source_set("special_members") {
+  public = [ "public/pw_containers/internal/special_members.h" ]
+  public_configs = [ ":public_include_path" ]
+  public_deps = [
+    ":tag",
+    dir_pw_polyfill,
+  ]
+  visibility = [ "$dir_pigweed/*" ]
+}
+
 pw_source_set("common") {
   public = [
     "public/pw_containers/internal/traits.h",
@@ -945,7 +955,9 @@ pw_test("internal_helpers_test") {
   deps = [
     ":maybe",
     ":pack_indexing",
+    ":special_members",
     ":tag",
+    ":test_helpers",
     "$dir_pw_unit_test:constexpr",
     dir_pw_polyfill,
   ]
