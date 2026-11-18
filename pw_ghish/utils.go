@@ -644,16 +644,24 @@ func isChangeIdentifier(arg string) bool {
 	if len(parts) <= 2 {
 		allDigits := true
 		for _, p := range parts {
-			if _, err := strconv.Atoi(p); err != nil {
+			if !isPositiveGerritNumber(p) {
 				allDigits = false
 				break
 			}
 		}
-		if allDigits && len(parts[0]) > 0 {
+		if allDigits && len(parts) > 0 {
 			return true
 		}
 	}
 	return false
+}
+
+func isPositiveGerritNumber(s string) bool {
+	if len(s) == 0 || len(s) > 9 || s[0] == '0' {
+		return false
+	}
+	_, err := strconv.ParseUint(s, 10, 32)
+	return err == nil
 }
 
 // ResolveActiveChangeID attempts to resolve the active Gerrit change identifier from the local git repository.
