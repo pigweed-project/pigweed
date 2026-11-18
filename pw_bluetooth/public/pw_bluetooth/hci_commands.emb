@@ -2323,14 +2323,55 @@ struct LEReadSupportedStatesCommand:
 # TODO: b/265052417 - Definition needs to be added
 
 
-# 7.8.31 LE Remote Connection Parameter Request Reply command
-# HCI_LE_Remote_Connection_Parameter_Request_Reply
-# TODO: b/265052417 - Definition needs to be added
+struct LERemoteConnectionParameterRequestReplyCommand:
+  -- 7.8.31 LE Remote Connection Parameter Request Reply command (v4.1) (LE)
+  -- HCI_LE_Remote_Connection_Parameter_Request_Reply
+
+  [requires: interval_min <= interval_max && min_connection_event_length <= max_connection_event_length]
+
+  let hdr_size = hci.CommandHeader.$size_in_bytes
+  0     [+hdr_size]  hci.CommandHeader  header
+  $next [+2]         UInt               connection_handle
+    [requires: 0x0000 <= this <= 0x0EFF]
+
+  $next [+2]         UInt               interval_min
+    -- Time: N * 1.25 ms
+    -- Time Range: 7.5 ms to 4 s
+    [requires: 0x0006 <= this <= 0x0C80]
+
+  $next [+2]         UInt               interval_max
+    -- Time: N * 1.25 ms
+    -- Time Range: 7.5 ms to 4 s
+    [requires: 0x0006 <= this <= 0x0C80]
+
+  $next [+2]         UInt               max_latency
+    -- Maximum Peripheral latency for the connection in number of subrated
+    -- connection events.
+    [requires: 0x0000 <= this <= 0x01F3]
+
+  $next [+2]         UInt               timeout
+    -- Supervision timeout for the connection.
+    -- Time: N * 10 ms
+    -- Time Range: 100 ms to 32 s
+    [requires: 0x000A <= this <= 0x0C80]
+
+  $next [+2]         UInt               min_connection_event_length
+    -- Time: N * 0.625 ms
+
+  $next [+2]         UInt               max_connection_event_length
+    -- Time: N * 0.625 ms
 
 
-# 7.8.32 LE Remote Connection Parameter Request Negative Reply command
-# HCI_LE_Remote_Connection_Parameter_Request_Negative_Reply
-# TODO: b/265052417 - Definition needs to be added
+struct LERemoteConnectionParameterRequestNegativeReplyCommand:
+  -- 7.8.32 LE Remote Connection Parameter Request Negative Reply command (v4.1) (LE)
+  -- HCI_LE_Remote_Connection_Parameter_Request_Negative_Reply
+  let hdr_size = hci.CommandHeader.$size_in_bytes
+  0     [+hdr_size]  hci.CommandHeader  header
+  $next [+2]         UInt               connection_handle
+    [requires: 0x0000 <= this <= 0x0EFF]
+
+  $next [+1]         hci.StatusCode     reason
+    -- Reason that the connection parameter request was rejected.
 
 
 # 7.8.33 LE Set Data Length command

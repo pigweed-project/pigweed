@@ -501,6 +501,12 @@ enum OpCode:
   LE_TEST_END                                                  = 0x201F
     -- LE Test End Command (v4.0) (LE)
 
+  LE_REMOTE_CONNECTION_PARAMETER_REQUEST_REPLY                 = 0x2020
+    -- LE Remote Connection Parameter Request Reply Command (v4.1) (LE)
+
+  LE_REMOTE_CONNECTION_PARAMETER_REQUEST_NEGATIVE_REPLY        = 0x2021
+    -- LE Remote Connection Parameter Request Negative Reply Command (v4.1) (LE)
+
   LE_SET_DATA_LENGTH                                           = 0x2022
     -- LE Set Data Length Command (v4.2) (LE)
 

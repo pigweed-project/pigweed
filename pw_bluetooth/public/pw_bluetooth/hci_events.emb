@@ -1334,6 +1334,24 @@ struct LEReadSupportedStatesCommandCompleteEvent:
   $next [+8]         LESupportedStates         le_states
 
 
+struct LERemoteConnectionParameterRequestReplyCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (7.8.31 LE Remote Connection Parameter Request Reply command)
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
+  $next [+1]         hci.StatusCode            status
+  $next [+2]         UInt                      connection_handle
+    [requires: 0x0000 <= this <= 0x0EFF]
+
+
+struct LERemoteConnectionParameterRequestNegativeReplyCommandCompleteEvent:
+  -- 7.7.14 Command Complete event (7.8.32 LE Remote Connection Parameter Request Negative Reply command)
+  let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
+  0     [+hdr_size]  hci.CommandCompleteEvent  command_complete
+  $next [+1]         hci.StatusCode            status
+  $next [+2]         UInt                      connection_handle
+    [requires: 0x0000 <= this <= 0x0EFF]
+
+
 struct LESetExtendedAdvertisingParametersCommandCompleteEvent:
   -- 7.7.14 Command Complete event (7.8.53 LE Set Extended Advertising Parameters command)
   let hdr_size = hci.CommandCompleteEvent.$size_in_bytes
@@ -1967,9 +1985,34 @@ struct LELongTermKeyRequestSubevent:
   $next [+8]                           UInt         random_number
   $next [+2]                           UInt         encrypted_diversifier
 
-# 7.7.65.6 LE Remote Connection Parameter Request event
-# HCI_LE_Remote_Connection_Parameter_Request
-# TODO: b/265052417 - Definition needs to be added
+struct LERemoteConnectionParameterRequestSubevent:
+  -- 7.7.65.6 LE Remote Connection Parameter Request event (v4.1) (LE)
+  -- HCI_LE_Remote_Connection_Parameter_Request
+  0     [+LEMetaEvent.$size_in_bytes]  LEMetaEvent  le_meta_event
+  $next [+2]                           UInt         connection_handle
+    -- Only the lower 12-bits are meaningful.
+    [requires: 0x0000 <= this <= 0x0EFF]
+
+  $next [+2]                           UInt         interval_min
+    -- Time: N * 1.25 ms
+    -- Time Range: 7.5 ms to 4 s
+    [requires: 0x0006 <= this <= 0x0C80]
+
+  $next [+2]                           UInt         interval_max
+    -- Time: N * 1.25 ms
+    -- Time Range: 7.5 ms to 4 s
+    [requires: 0x0006 <= this <= 0x0C80]
+
+  $next [+2]                           UInt         max_latency
+    -- Maximum Peripheral latency for the connection in number of subrated
+    -- connection events.
+    [requires: 0x0000 <= this <= 0x01F3]
+
+  $next [+2]                           UInt         timeout
+    -- Supervision timeout for the connection.
+    -- Time: N * 10 ms
+    -- Time Range: 100 ms to 32 s
+    [requires: 0x000A <= this <= 0x0C80]
 
 
 # 7.7.65.7 LE Data Length Change event

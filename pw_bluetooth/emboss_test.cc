@@ -920,5 +920,68 @@ TEST(EmbossTest, CommandHeaderOpcodeUintAndLeSubEventCodes) {
             0x2A);
 }
 
+TEST(EmbossTest, LERemoteConnectionParameterRequest) {
+  std::array<
+      uint8_t,
+      emboss::LERemoteConnectionParameterRequestSubeventView::SizeInBytes()>
+      event_buf{};
+  auto event_writer =
+      emboss::MakeLERemoteConnectionParameterRequestSubeventView(&event_buf);
+  event_writer.le_meta_event().header().event_code().Write(
+      emboss::EventCode::LE_META_EVENT);
+  event_writer.le_meta_event().header().parameter_total_size().Write(
+      emboss::LERemoteConnectionParameterRequestSubeventView::SizeInBytes() -
+      emboss::EventHeaderView::SizeInBytes());
+  event_writer.le_meta_event().subevent_code_enum().Write(
+      emboss::LeSubEventCode::REMOTE_CONNECTION_PARAMETER_REQUEST);
+  event_writer.connection_handle().Write(0x0001);
+  event_writer.interval_min().Write(0x0006);
+  event_writer.interval_max().Write(0x0018);
+  event_writer.max_latency().Write(0x0000);
+  event_writer.timeout().Write(0x00C8);
+  EXPECT_TRUE(event_writer.Ok());
+
+  std::array<
+      uint8_t,
+      emboss::LERemoteConnectionParameterRequestReplyCommandView::SizeInBytes()>
+      reply_buf{};
+  auto reply_writer =
+      emboss::MakeLERemoteConnectionParameterRequestReplyCommandView(
+          &reply_buf);
+  reply_writer.header().opcode().Write(
+      emboss::OpCode::LE_REMOTE_CONNECTION_PARAMETER_REQUEST_REPLY);
+  reply_writer.header().parameter_total_size().Write(
+      emboss::LERemoteConnectionParameterRequestReplyCommandView::
+          SizeInBytes() -
+      emboss::CommandHeaderView::SizeInBytes());
+  reply_writer.connection_handle().Write(0x0001);
+  reply_writer.interval_min().Write(0x0006);
+  reply_writer.interval_max().Write(0x0018);
+  reply_writer.max_latency().Write(0x0000);
+  reply_writer.timeout().Write(0x00C8);
+  reply_writer.min_connection_event_length().Write(0x0000);
+  reply_writer.max_connection_event_length().Write(0x0000);
+  EXPECT_TRUE(reply_writer.Ok());
+
+  std::array<
+      uint8_t,
+      emboss::LERemoteConnectionParameterRequestNegativeReplyCommandView::
+          SizeInBytes()>
+      neg_reply_buf{};
+  auto neg_reply_writer =
+      emboss::MakeLERemoteConnectionParameterRequestNegativeReplyCommandView(
+          &neg_reply_buf);
+  neg_reply_writer.header().opcode().Write(
+      emboss::OpCode::LE_REMOTE_CONNECTION_PARAMETER_REQUEST_NEGATIVE_REPLY);
+  neg_reply_writer.header().parameter_total_size().Write(
+      emboss::LERemoteConnectionParameterRequestNegativeReplyCommandView::
+          SizeInBytes() -
+      emboss::CommandHeaderView::SizeInBytes());
+  neg_reply_writer.connection_handle().Write(0x0001);
+  neg_reply_writer.reason().Write(
+      emboss::StatusCode::UNACCEPTABLE_CONNECTION_PARAMETERS);
+  EXPECT_TRUE(neg_reply_writer.Ok());
+}
+
 }  // namespace
 }  // namespace pw::bluetooth
