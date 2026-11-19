@@ -212,6 +212,30 @@ pw_cc_test(
     ],
 )
 
+pw_cc_test(
+    name = "connection_test",
+    srcs = ["connection_test.cc"],
+    target_compatible_with = [":enabled"],
+    deps = [
+        ":connection",
+        ":send_queue",
+        "//pw_allocator:best_fit",
+        "//pw_allocator:synchronized_allocator",
+        "//pw_bytes",
+        "//pw_containers:inline_deque",
+        "//pw_containers:vector",
+        "//pw_status",
+        "//pw_stream",
+        "//pw_string:string",
+        "//pw_sync:lock_annotations",
+        "//pw_sync:mutex",
+        "//pw_sync:thread_notification",
+        "//pw_thread:test_thread_context",
+        "//pw_thread:thread",
+        "//pw_thread:thread_core",
+    ],
+)
+
 cc_binary(
     name = "test_pw_rpc_server",
     srcs = ["test_pw_rpc_server.cc"],

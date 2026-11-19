@@ -137,6 +137,28 @@ pw_test("hpack_test") {
   deps = [ ":hpack" ]
 }
 
+pw_test("connection_test") {
+  sources = [ "connection_test.cc" ]
+  deps = [
+    ":connection",
+    ":send_queue",
+    "$dir_pw_allocator:best_fit",
+    "$dir_pw_allocator:synchronized_allocator",
+    "$dir_pw_bytes",
+    "$dir_pw_containers:inline_deque",
+    "$dir_pw_containers:vector",
+    "$dir_pw_status",
+    "$dir_pw_stream",
+    "$dir_pw_string",
+    "$dir_pw_sync:lock_annotations",
+    "$dir_pw_sync:mutex",
+    "$dir_pw_sync:thread_notification",
+    "$dir_pw_thread:test_thread_context",
+    "$dir_pw_thread:thread",
+    "$dir_pw_thread:thread_core",
+  ]
+}
+
 pw_executable("test_pw_rpc_server") {
   sources = [ "test_pw_rpc_server.cc" ]
   deps = [
