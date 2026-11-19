@@ -332,6 +332,7 @@ func TestLive_ProfileValidation(t *testing.T) {
 	}
 }
 
+// TODO: b/586589869 - Remove TestLive_AuthMethodValidation when checkRemovedAuthMethodEnv is deleted.
 // TestLive_AuthMethodValidation verifies that setting the removed
 // GH_ISH_AUTH_METHOD variable exits with ExitCodeAuth.
 func TestLive_AuthMethodValidation(t *testing.T) {
@@ -1214,7 +1215,7 @@ func TestLive_Checks_CanceledIsNotReportedAsFailed(t *testing.T) {
 // cmd/main.go translates the error into the documented status instead of the
 // blanket exit 1 it used to use.
 func TestLive_Checks_ProcessExitCode(t *testing.T) {
-	bin := filepath.Join(t.TempDir(), "gh-ish")
+	bin := filepath.Join(t.TempDir(), "ghish")
 	build := exec.Command("go", "build", "-o", bin, "./cmd")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("could not build the binary under test: %v\n%s", err, out)
@@ -1281,7 +1282,7 @@ func TestLive_View_JSONBugFields(t *testing.T) {
 }
 
 // TestLive_View_BugAgreesWithCommitMessage checks the invariant rather than a
-// fixture: whatever bug fields gh-ish reports for the change under development
+// fixture: whatever bug fields ghish reports for the change under development
 // must be exactly what its own commit message says. This one cannot rot, since
 // both sides are read from the same live change.
 func TestLive_View_BugAgreesWithCommitMessage(t *testing.T) {
@@ -1396,7 +1397,7 @@ func TestLive_IssueLifecycle(t *testing.T) {
 
 	const totalSteps = 7
 	timestamp := time.Now().UTC().Format("2006-01-02 15:04:05 UTC")
-	initialTitle := fmt.Sprintf("[gh-ish LIVE TEST] Issue Lifecycle Walkthrough (%s)", timestamp)
+	initialTitle := fmt.Sprintf("[ghish LIVE TEST] Issue Lifecycle Walkthrough (%s)", timestamp)
 	initialBody := "This is a temporary live integration test issue created by `pw_ghish` (`./gh issue`).\n\n" +
 		"It will be automatically closed as OBSOLETE at the end of the test run."
 
@@ -1493,7 +1494,7 @@ func TestLive_IssueLifecycle(t *testing.T) {
 	// -------------------------------------------------------------------------
 	// STEP 3: Edit issue (Title, Priority -> P2, Severity -> S3, Assignee -> me)
 	// -------------------------------------------------------------------------
-	updatedTitle := fmt.Sprintf("[gh-ish LIVE TEST] Updated & Assigned (%s)", timestamp)
+	updatedTitle := fmt.Sprintf("[ghish LIVE TEST] Updated & Assigned (%s)", timestamp)
 	editOut, err := executeLiveCommand("issue", "edit", issueIDStr,
 		"-t", updatedTitle,
 		"-P", "P2",

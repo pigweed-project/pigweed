@@ -54,17 +54,17 @@ Command families
      - Check credentials across Gerrit, LUCI Buildbucket, and Buganizer in
        ``googler`` and ``community`` modes.
    * - :ref:`gh hook <module-pw_ghish-hook>`
-     - *(None — gh-ish extension)*
+     - *(None — ghish extension)*
      - **Agent Tool Guards & Git Hooks**
      - Install and run coding agent ``PreToolUse`` guards and Gerrit
        ``commit-msg`` / ``pre-push`` Git hooks.
    * - :ref:`gh wt <module-pw_ghish-worktree>`
-     - *(None — gh-ish extension)*
+     - *(None — ghish extension)*
      - **Git Worktrees & Bazel Cache Pool**
      - Allocate warm physical build slots (``pw-01..N``), manage project
        symlinks, and sync Antigravity (Jetski) IDE workspaces.
    * - :ref:`gh sense <module-pw_ghish-sense>`
-     - *(None — gh-ish extension)*
+     - *(None — ghish extension)*
      - **Context Sensing &** ``/crank``
      - Gather Git, worktree, Gerrit review, LUCI CI, and issue state in one
        pass to power ``/crank`` and safe branch preparation.

@@ -44,7 +44,7 @@ following threats:
 | Threat ID | Threat Actor / Vector | What They Can Access | Impact if Exploited |
 | :--- | :--- | :--- | :--- |
 | **T1: Sandbox Credential Escape** | Sandboxed AI coding agents, Bazel test actions, or third-party build scripts running on the same machine. | Typically blocked from reading `~/.ssh` and `~/.config/chrome_infra/auth`, **but allowed to read/write `/tmp`, the Git workspace, and often `~/.cache`**. | If `pw_ghish` writes bearer tokens, refresh tokens, or SSO headers into `/tmp`, `out/`, or `~/.cache/ghish/`, a sandboxed process can steal live `@google.com` credentials. |
-| **T2: Local Process & Binary Planting** | Unprivileged local software running under the developer's UID (`npm` postinstall scripts, `pip` setup.py, untrusted repo hooks) or shared-host users. | Files in world-writable directories (`/tmp`), unverified downloaded binaries, or group/world-writable cache directories. | Trojanizing a helper binary (`luci-auth`, `gh-ish`) or reading leftover tempfiles after a `SIGKILL`. |
+| **T2: Local Process & Binary Planting** | Unprivileged local software running under the developer's UID (`npm` postinstall scripts, `pip` setup.py, untrusted repo hooks) or shared-host users. | Files in world-writable directories (`/tmp`), unverified downloaded binaries, or group/world-writable cache directories. | Trojanizing a helper binary (`luci-auth`, `ghish`) or reading leftover tempfiles after a `SIGKILL`. |
 | **T3: Cross-Origin & Redirect Token Leakage** | Malicious URL passed on the CLI (`./gh pr view https://evil.com/...`), malicious `.ghish.toml` in an untrusted repo, or an HTTP `302` redirect to an external domain. | Any HTTP request made by `pw_ghish` transports. | Exfiltrating a user's `Authorization: Bearer` token or `sso_client` ticket to an attacker-controlled server. |
 | **T4: Over-Scoped "God Tokens"** | Any compromised backend endpoint, proxy, or leaked request header. | The OAuth2 `access_token` sent on that request. | If a token carries superuser scopes like `cloud-platform`, or if `community` mode requests internal scopes (`buganizer`, `androidbuild.internal`) beyond `gerritcodereview` + `userinfo.email`, leaking one token compromises GCP projects or widens exposure unnecessarily. |
 | **T5: 1P Corp Policy & RAPT Bypass** | Custom OAuth flows or custom refresh-token stores that bypass `gcert` or `luci-auth`. | Long-lived refresh tokens stored on disk without Google ReAuth / RAPT (20-hour hardware security key proof). | Weakens Google Corp's 20-hour hardware-key session boundary and leaves orphaned tokens behind after `luci-auth logout`. |
@@ -95,7 +95,7 @@ invariant ID (`SEC-INV-*`) in review comments when flagging a violation.
   `stripAuthOnCrossHostRedirect`.
 * **`SEC-INV-6` (Cryptographic & Permission Verification of Bootstrapped Binaries)**:
   Any helper binary downloaded or staged by `pw_ghish` in a user-writable
-  directory (such as `luci-auth` in `~/.local/share/ghish/bin/`, as opposed to
+  directory (such as `luci-auth` or `ghish` in `~/.config/ghish/bin/`, as opposed to
   root-owned OS binaries in `/usr/bin` or `/bin`) must be verified against a
   compiled-in SHA256 digest and stored in a directory owned by `os.Getuid()`
   created with mode `0700` and verified to have no group or world write
@@ -141,7 +141,7 @@ flagPath, err := os.CreateTemp("", "ghish-sso-headers-*")
 **Good:**
 ```go
 // Pass non-secret headers via CLI flags, or use a 0700 user-private runtime dir
-// (~/.local/share/ghish/run/) and never write Authorization bearer tokens to disk.
+// ($XDG_RUNTIME_DIR/ghish/) and never write Authorization bearer tokens to disk.
 ```
 
 ---

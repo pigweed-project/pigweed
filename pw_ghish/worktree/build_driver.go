@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"pigweed.dev/pw_ghish"
@@ -108,6 +109,7 @@ func (n NoopBuildDriver) GarbageCollect(dryRun bool, validWorkspacePaths map[str
 // BazelDriver manages the non-invasive try-import .bazelrc snippet and _bazel_$USER output base GC.
 type BazelDriver struct {
 	HomeDir        string
+	ConfigBaseDir  string // Optional override for XDG_CONFIG_HOME / ~/.config
 	BazelCacheRoot string // e.g. ~/.cache/bazel/_bazel_$USER
 }
 
@@ -127,8 +129,49 @@ func NewDefaultBazelDriver() (*BazelDriver, error) {
 	}, nil
 }
 
-func (b *BazelDriver) snippetPath() string {
-	return filepath.Join(b.HomeDir, ".config", "pw_ghish", "bazelrc.worktrees")
+func (b *BazelDriver) configBaseDir() string {
+	if b.ConfigBaseDir != "" {
+		return b.ConfigBaseDir
+	}
+	return pw_ghish.BaseConfigDir(b.HomeDir)
+}
+
+func (b *BazelDriver) homeConfigDir() string {
+	if b.HomeDir == "" || !filepath.IsAbs(b.HomeDir) {
+		return ""
+	}
+	return filepath.Join(b.HomeDir, ".config")
+}
+
+func (b *BazelDriver) canonicalSnippetPath() string {
+	base := b.configBaseDir()
+	if base == "" || !filepath.IsAbs(base) {
+		return ""
+	}
+	return filepath.Join(base, "ghish", "bazelrc.worktrees")
+}
+
+func (b *BazelDriver) snippetPath(migrate bool) string {
+	dir := pw_ghish.ResolveUserConfigDirWithFallback(b.configBaseDir(), b.homeConfigDir(), migrate)
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "bazelrc.worktrees")
+}
+
+// TODO: b/586589869 - Remove legacySnippetPaths after rollout.
+func (b *BazelDriver) legacySnippetPaths() []string {
+	var paths []string
+	for _, dir := range []string{b.configBaseDir(), b.homeConfigDir()} {
+		if dir != "" && filepath.IsAbs(dir) {
+			// TODO: b/586589869 - Remove legacy pw_ghish snippet path after rollout.
+			p := filepath.Join(dir, "pw_ghish", "bazelrc.worktrees")
+			if len(paths) == 0 || paths[0] != p {
+				paths = append(paths, p)
+			}
+		}
+	}
+	return paths
 }
 
 func (b *BazelDriver) userBazelrcPath() string {
@@ -172,7 +215,10 @@ func (b *BazelDriver) CheckAndConfigure(fix bool, validWorkspacePaths map[string
 	}
 
 	// 2. Check/generate bazelrc.worktrees snippet
-	snippetFile := b.snippetPath()
+	snippetFile := b.snippetPath(fix)
+	if snippetFile == "" {
+		return items, fmt.Errorf("failed to resolve user config directory for Bazel snippet")
+	}
 	expectedSnippet := b.expectedSnippetContent()
 	existingSnippet, err := os.ReadFile(snippetFile)
 	if err == nil && strings.Contains(string(existingSnippet), "--experimental_repository_cache_hardlinks") &&
@@ -202,14 +248,38 @@ func (b *BazelDriver) CheckAndConfigure(fix bool, validWorkspacePaths map[string
 		})
 	}
 
-	// 3. Check/append try-import line in ~/.bazelrc
-	tryImportLine := fmt.Sprintf("try-import %s", snippetFile)
+	// 3. Check/append (or upgrade legacy) try-import line in ~/.bazelrc
+	desiredSnippet := snippetFile
+	if !fix && runtime.GOOS != "windows" {
+		if canonical := b.canonicalSnippetPath(); canonical != "" {
+			desiredSnippet = canonical
+		}
+	}
+	tryImportLine := fmt.Sprintf("try-import %s", desiredSnippet)
+	// TODO: b/586589869 - Remove legacyTryImportLines upgrade path after rollout.
+	var legacyTryImportLines []string
+	for _, p := range b.legacySnippetPaths() {
+		line := fmt.Sprintf("try-import %s", p)
+		if line != tryImportLine {
+			legacyTryImportLines = append(legacyTryImportLines, line)
+		}
+	}
 	userRc := b.userBazelrcPath()
 	rcData, err := os.ReadFile(userRc)
 	if err != nil && !os.IsNotExist(err) {
 		return items, fmt.Errorf("refusing to modify %s: failed to read existing file: %w", userRc, err)
 	}
 	hasImport := err == nil && strings.Contains(string(rcData), tryImportLine)
+	matchedLegacyImport := ""
+	if err == nil {
+		for _, legacyLine := range legacyTryImportLines {
+			if strings.Contains(string(rcData), legacyLine) {
+				matchedLegacyImport = legacyLine
+				break
+			}
+		}
+	}
+	hasLegacyImport := matchedLegacyImport != ""
 
 	if hasImport {
 		items = append(items, ChecklistItem{
@@ -218,9 +288,19 @@ func (b *BazelDriver) CheckAndConfigure(fix bool, validWorkspacePaths map[string
 			Summary:  fmt.Sprintf("`%s` present in %s", tryImportLine, userRc),
 		})
 	} else if fix {
+		replacedLegacy := false
 		err := SafeModifyFile(userRc, 0644, func(existing []byte, exists bool) ([]byte, error) {
 			if exists && strings.Contains(string(existing), tryImportLine) {
 				return existing, nil
+			}
+			if exists {
+				text := string(existing)
+				for _, legacyLine := range legacyTryImportLines {
+					if strings.Contains(text, legacyLine) {
+						replacedLegacy = true
+						return []byte(strings.Replace(text, legacyLine, tryImportLine, 1)), nil
+					}
+				}
 			}
 			var newContent string
 			if len(existing) > 0 {
@@ -232,10 +312,20 @@ func (b *BazelDriver) CheckAndConfigure(fix bool, validWorkspacePaths map[string
 		if err != nil {
 			return items, fmt.Errorf("failed to update %s: %w", userRc, err)
 		}
+		summary := fmt.Sprintf("Added `%s` to %s (preserved existing lines)", tryImportLine, userRc)
+		if replacedLegacy {
+			summary = fmt.Sprintf("Updated legacy try-import to `%s` in %s", tryImportLine, userRc)
+		}
 		items = append(items, ChecklistItem{
 			Category: "User ~/.bazelrc Hook",
 			Status:   ChecklistRepaired,
-			Summary:  fmt.Sprintf("Added `%s` to %s (preserved existing lines)", tryImportLine, userRc),
+			Summary:  summary,
+		})
+	} else if hasLegacyImport {
+		items = append(items, ChecklistItem{
+			Category: "User ~/.bazelrc Hook",
+			Status:   ChecklistWarning,
+			Summary:  fmt.Sprintf("Legacy `%s` present in %s (run `./gh wt init` to update to `%s`)", matchedLegacyImport, userRc, tryImportLine),
 		})
 	} else {
 		items = append(items, ChecklistItem{

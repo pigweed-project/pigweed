@@ -121,7 +121,7 @@ func runAudit(cmd *cobra.Command, mgr *Manager, slots int, jsonOutput bool) erro
 	}
 
 	out := cmd.OutOrStdout()
-	fmt.Fprintln(out, "Inspecting gh-ish Worktree Environment (Read-Only Check)...")
+	fmt.Fprintln(out, "Inspecting ghish Worktree Environment (Read-Only Check)...")
 	fmt.Fprintln(out)
 	counts := printChecklist(out, items)
 	fmt.Fprintln(out)
@@ -199,7 +199,7 @@ func newInitCommand(mgr *Manager) *cobra.Command {
 			}
 
 			out := cmd.OutOrStdout()
-			fmt.Fprintln(out, "Inspecting & Converging gh-ish Worktree Environment...")
+			fmt.Fprintln(out, "Inspecting & Converging ghish Worktree Environment...")
 			fmt.Fprintln(out)
 			counts := printChecklist(out, items)
 			fmt.Fprintln(out)

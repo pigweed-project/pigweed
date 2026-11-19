@@ -380,7 +380,7 @@ func TestBusytownProvider_ZeroValueAndTokenFallbacks(t *testing.T) {
 			return "resolver-android-token", nil
 		},
 	})
-	t.Setenv("GH_ISH_AUTH_MODE", "googler")
+	t.Setenv("GHISH_AUTH_MODE", "googler")
 
 	type seenReq struct {
 		url  string

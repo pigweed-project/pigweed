@@ -73,9 +73,9 @@ rather than performing an unintended operation:
     changes as patchsets and configures the merge strategy at the repository
     level)
 
---------------------------
-Adding new flags in gh-ish
---------------------------
+-------------------------
+Adding new flags in ghish
+-------------------------
 When adding or proposing a new flag to ``pw_ghish``:
 
 1. **Check official GitHub CLI reference**: Consult ``gh help <command>`` (or

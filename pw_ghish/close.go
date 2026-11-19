@@ -31,7 +31,7 @@ var closeCmd = &cobra.Command{
 			return err
 		}
 
-		_, err = chCtx.Client.AbandonChange(chCtx.Context, chCtx.ChangeID, "Abandoned via gh-ish")
+		_, err = chCtx.Client.AbandonChange(chCtx.Context, chCtx.ChangeID, "Abandoned via ghish")
 		if err != nil {
 			return chCtx.FormatError(err, "closing")
 		}

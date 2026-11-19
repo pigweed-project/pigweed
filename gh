@@ -13,11 +13,11 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-# Wrapper script to run gh-ish with prebuilt caching by Git commit hash.
+# Wrapper script to run ghish with prebuilt caching by Git commit hash.
 #
 # If the current Git commit hash matches the saved hash of the prebuilt binary,
 # it executes the prebuilt directly with zero Bazel startup overhead. If the hash
-# changed or the prebuilt does not exist, it builds //pw_ghish:gh-ish via
+# changed or the prebuilt does not exist, it builds //pw_ghish:ghish via
 # bazelisk and caches the resulting binary.
 #
 # Without Bazel build files or bazelisk (e.g. a copy of this script in a
@@ -60,7 +60,7 @@ export BAZELISK_SKIP_WRAPPER=1
 # Resolve the repository paths and the content hashes of pw_ghish/ and
 # MODULE.bazel.lock in a single lock-free `git rev-parse` call. The combined
 # hash is compared against `out/gh/git_hash` (written after each build) to
-# detect when the cached `out/gh/gh-ish` binary needs to be rebuilt.
+# detect when the cached `out/gh/ghish` binary needs to be rebuilt.
 #
 # Outside a Pigweed checkout (e.g. a copy of this script in another repository)
 # `git rev-parse` fails on `HEAD:pw_ghish`, echoing the unresolved argument and
@@ -83,10 +83,10 @@ _LOCK_HASH=""
     --path-format=absolute --git-common-dir \
     HEAD:pw_ghish HEAD:MODULE.bazel.lock 2>/dev/null || true
 )
-_pw_gh_is_object_id() {
+_ghish_is_object_id() {
   [[ "$1" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]]
 }
-if ! _pw_gh_is_object_id "$_TREE_HASH" || ! _pw_gh_is_object_id "$_LOCK_HASH"; then
+if ! _ghish_is_object_id "$_TREE_HASH" || ! _ghish_is_object_id "$_LOCK_HASH"; then
   _TREE_HASH=""
   _LOCK_HASH=""
 fi
@@ -123,13 +123,26 @@ elif [ -n "${PW_ENVIRONMENT_ROOT:-}" ] && [ -d "${PW_ENVIRONMENT_ROOT}/cipd/pack
   export PATH="${PW_ENVIRONMENT_ROOT}/cipd/packages/luci:${PATH}"
 fi
 
+# Normalize canonical GHISH_* / _GHISH_* wrapper variables with fallbacks to
+# legacy PW_GH_* / _PW_GH_* names during rollout.
+# TODO: b/586589869 - Remove legacy PW_GH_* / _PW_GH_* fallbacks after rollout.
+_GHISH_FORCE_BUILD="${GHISH_FORCE_BUILD:-${PW_GH_FORCE_BUILD:-}}"
+_GHISH_USE_CIPD="${GHISH_USE_CIPD:-${PW_GH_USE_CIPD:-}}"
+_GHISH_BIN="${GHISH_BIN:-${PW_GH_BIN:-}}"
+_GHISH_CIPD_VERSION="${GHISH_CIPD_VERSION:-${PW_GH_CIPD_VERSION:-}}"
+_GHISH_CIPD_ROOT="${GHISH_CIPD_ROOT:-${PW_GH_CIPD_ROOT:-}}"
+_GHISH_DEBUG="${GHISH_DEBUG:-${PW_GH_DEBUG:-}}"
+_GHISH_OUT_DIR_EFF="${_GHISH_OUT_DIR:-${_PW_GH_OUT_DIR:-}}"
+
 # Internal handoff to the binary, which passes its environment to every
-# subprocess, including git hooks run by `./gh pr create`. Pigweed's
-# environment parser rejects unrecognized PW_ variables there. This is not a
-# Pigweed setting, so rather than registering it with that parser, it uses the
-# _PW_ prefix for internal variables, which the parser does not check.
+# subprocess, including git hooks run by `./gh pr create`. Neither _GHISH_ nor
+# _PW_ triggers Pigweed's PW_ environment parser check.
+export _GHISH_SCRIPT_DIR="${_PW_SCRIPT_DIR}"
+# TODO: b/586589869 - Stop exporting _PW_GH_SCRIPT_DIR once CIPD binaries roll.
 export _PW_GH_SCRIPT_DIR="${_PW_SCRIPT_DIR}"
-export GH_ISH_INVOKED_AS="${GH_ISH_INVOKED_AS:-./gh}"
+export GHISH_INVOKED_AS="${GHISH_INVOKED_AS:-${GH_ISH_INVOKED_AS:-./gh}}"
+# TODO: b/586589869 - Stop exporting GH_ISH_INVOKED_AS once CIPD binaries roll.
+export GH_ISH_INVOKED_AS="${GHISH_INVOKED_AS}"
 if [ -z "${BUILD_WORKSPACE_DIRECTORY:-}" ]; then
   if [ -n "$_CALLER_TOPLEVEL" ]; then
     export BUILD_WORKSPACE_DIRECTORY="$_CALLER_TOPLEVEL"
@@ -139,32 +152,42 @@ if [ -z "${BUILD_WORKSPACE_DIRECTORY:-}" ]; then
 fi
 export BUILD_WORKING_DIRECTORY="${PWD}"
 
+_ghish_is_exec_file() {
+  [ -n "${1:-}" ] && [ -f "$1" ] && [ -x "$1" ]
+}
+
 # When invoked from a downstream superproject (e.g. via a `gh -> pigweed/gh`
-# symlink) or when PW_GH_USE_CIPD is set, prefer the CIPD prebuilt binary so
+# symlink) or when GHISH_USE_CIPD is set, prefer the CIPD prebuilt binary so
 # downstream GN/CMake projects do not pay a Bazel + Go toolchain build penalty.
-if [ -z "${PW_GH_FORCE_BUILD:-}" ] && { [ -n "${PW_GH_USE_CIPD:-}" ] || { [ -n "$_CALLER_TOPLEVEL" ] && [ "$_CALLER_TOPLEVEL" != "$_PW_SCRIPT_DIR" ] && [ ! "$_CALLER_TOPLEVEL" -ef "$_PW_SCRIPT_DIR" ]; }; }; then
+# TODO: b/586589869 - Remove legacy `.../gh-ish` CIPD path fallbacks after rollout.
+if [ -z "$_GHISH_FORCE_BUILD" ] && { [ -n "$_GHISH_USE_CIPD" ] || { [ -n "$_CALLER_TOPLEVEL" ] && [ "$_CALLER_TOPLEVEL" != "$_PW_SCRIPT_DIR" ] && [ ! "$_CALLER_TOPLEVEL" -ef "$_PW_SCRIPT_DIR" ]; }; }; then
   for _CIPD_GH in \
-    "${PW_GH_BIN:-}" \
+    "${_GHISH_BIN}" \
+    "${PW_ENVIRONMENT_ROOT:-}/cipd/packages/pigweed/ghish" \
+    "${PW_ENVIRONMENT_ROOT:-}/cipd/packages/ghish/ghish" \
+    "${_CALLER_TOPLEVEL}/environment/cipd/packages/pigweed/ghish" \
+    "${_CALLER_TOPLEVEL}/environment/cipd/packages/ghish/ghish" \
+    "${_CALLER_TOPLEVEL}/.environment/cipd/packages/pigweed/ghish" \
     "${PW_ENVIRONMENT_ROOT:-}/cipd/packages/pigweed/gh-ish" \
     "${PW_ENVIRONMENT_ROOT:-}/cipd/packages/ghish/gh-ish" \
     "${_CALLER_TOPLEVEL}/environment/cipd/packages/pigweed/gh-ish" \
     "${_CALLER_TOPLEVEL}/environment/cipd/packages/ghish/gh-ish" \
     "${_CALLER_TOPLEVEL}/.environment/cipd/packages/pigweed/gh-ish"; do
-    if [ -n "$_CIPD_GH" ] && [ -x "$_CIPD_GH" ]; then
+    if _ghish_is_exec_file "$_CIPD_GH"; then
       exec "$_CIPD_GH" "$@"
     fi
   done
 fi
 
 # Prebuilt cache directory (defaults to out/gh, which is .gitignored in Pigweed).
-declare -r _GH_DIR="${_PW_GH_OUT_DIR:-${_PW_SCRIPT_DIR}/out/gh}"
-declare -r _GH_BIN="${_GH_DIR}/gh-ish"
+declare -r _GH_DIR="${_GHISH_OUT_DIR_EFF:-${_PW_SCRIPT_DIR}/out/gh}"
+declare -r _GH_BIN="${_GH_DIR}/ghish"
 declare -r _GH_HASH_FILE="${_GH_DIR}/git_hash"
 
 # Run the cached binary directly when pw_ghish and its dependencies have not
 # changed since the last build, avoiding Bazel startup overhead. Documentation
 # edits under pw_ghish/ are ignored since they do not affect the binary.
-if [ -z "${PW_GH_FORCE_BUILD:-}" ] && [ -x "$_GH_BIN" ] && [ -f "$_GH_HASH_FILE" ] && [ -n "$_CURRENT_HASH" ]; then
+if [ -z "$_GHISH_FORCE_BUILD" ] && _ghish_is_exec_file "$_GH_BIN" && [ -f "$_GH_HASH_FILE" ] && [ -n "$_CURRENT_HASH" ]; then
   read -r _SAVED_HASH < "$_GH_HASH_FILE" 2>/dev/null || true
   if [ "$_CURRENT_HASH" = "$_SAVED_HASH" ] &&
      GIT_CONFIG_NOSYSTEM=1 GIT_OPTIONAL_LOCKS=0 \
@@ -174,15 +197,15 @@ if [ -z "${PW_GH_FORCE_BUILD:-}" ] && [ -x "$_GH_BIN" ] && [ -f "$_GH_HASH_FILE"
   fi
 fi
 
-# Building gh-ish from source requires a Pigweed checkout with Bazel build files
+# Building ghish from source requires a Pigweed checkout with Bazel build files
 # and bazelisk.
-_pw_gh_can_build() {
+_ghish_can_build() {
   [ -f "${_PW_SCRIPT_DIR}/MODULE.bazel" ] &&
     [ -f "${_PW_SCRIPT_DIR}/pw_ghish/BUILD.bazel" ] &&
     command -v bazelisk >/dev/null 2>&1
 }
 
-_pw_gh_cipd_platform() {
+_ghish_cipd_platform() {
   case "$(uname -s)-$(uname -m)" in
     Linux-x86_64) echo "linux-amd64" ;;
     Darwin-arm64) echo "mac-arm64" ;;
@@ -190,32 +213,34 @@ _pw_gh_cipd_platform() {
   esac
 }
 
-# Fetches the gh-ish CIPD prebuilt into a per-user cache using the `cipd` client
+# Fetches the ghish CIPD prebuilt into a per-user cache using the `cipd` client
 # from PATH and executes it. Used when there is neither a bootstrapped
 # environment nor a way to build from source (e.g. a copy of this script checked
 # into a repository that does not include Pigweed). The package is re-resolved
-# at most once a day, or immediately when PW_GH_CIPD_VERSION changes.
-_pw_gh_exec_cipd() {
+# at most once a day, or immediately when GHISH_CIPD_VERSION changes.
+_ghish_exec_cipd() {
   if ! command -v cipd >/dev/null 2>&1; then
-    echo "Error: cannot run gh-ish: building it requires bazelisk and Pigweed's" \
+    echo "Error: cannot run ghish: building it requires bazelisk and Pigweed's" \
       "Bazel build files, and 'cipd' is not on PATH to fetch a prebuilt." >&2
     exit 1
   fi
   local platform
-  if ! platform=$(_pw_gh_cipd_platform); then
-    echo "Error: no gh-ish CIPD prebuilt for $(uname -s)-$(uname -m)" \
+  if ! platform=$(_ghish_cipd_platform); then
+    echo "Error: no ghish CIPD prebuilt for $(uname -s)-$(uname -m)" \
       "(available: linux-amd64, mac-arm64)." >&2
     exit 1
   fi
-  local want="pigweed/ghish/${platform} ${PW_GH_CIPD_VERSION:-latest}"
-  local root="${PW_GH_CIPD_ROOT:-${XDG_CACHE_HOME:-${HOME}/.cache}/pigweed/gh/cipd}/${platform}"
-  local bin="${root}/gh-ish"
-  local stamp="${root}/.pw_gh_ensured"
+  local want="pigweed/ghish/${platform} ${_GHISH_CIPD_VERSION:-latest}"
+  local root="${_GHISH_CIPD_ROOT:-${XDG_CACHE_HOME:-${HOME}/.cache}/ghish/cipd}/${platform}"
+  local bin="${root}/ghish"
+  # TODO: b/586589869 - Remove legacy gh-ish CIPD binary fallback after rollout.
+  local legacy_bin="${root}/gh-ish"
+  local stamp="${root}/.ghish_ensured"
 
   local now="${EPOCHSECONDS:-$(date +%s)}"
   local mtime
   mtime=$(stat -c %Y "$stamp" 2>/dev/null || stat -f %m "$stamp" 2>/dev/null || echo 0)
-  if [ ! -x "$bin" ] ||
+  if { ! _ghish_is_exec_file "$bin" && ! _ghish_is_exec_file "$legacy_bin"; } ||
     [ "$(cat "$stamp" 2>/dev/null || true)" != "$want" ] ||
     [ $((now - mtime)) -gt 86400 ]; then
     mkdir -p "$root"
@@ -225,8 +250,8 @@ _pw_gh_exec_cipd() {
     if printf '%s\n' "$want" |
       cipd ensure -root "$root" -ensure-file - -log-level warning >/dev/null; then
       printf '%s\n' "$want" >"$stamp"
-    elif [ -x "$bin" ]; then
-      echo "Warning: failed to update ${want} from CIPD; using cached ${bin}." >&2
+    elif _ghish_is_exec_file "$bin" || _ghish_is_exec_file "$legacy_bin"; then
+      echo "Warning: failed to update ${want} from CIPD; using cached binary." >&2
       # Back off for a day instead of retrying (e.g. while offline) every run.
       touch "$stamp" 2>/dev/null || true
     else
@@ -234,19 +259,22 @@ _pw_gh_exec_cipd() {
       exit 1
     fi
   fi
+  if ! _ghish_is_exec_file "$bin" && _ghish_is_exec_file "$legacy_bin"; then
+    bin="$legacy_bin"
+  fi
   exec "$bin" "$@"
 }
 
 if [ -z "$_CURRENT_HASH" ]; then
   _CURRENT_HASH=$(GIT_CONFIG_NOSYSTEM=1 GIT_OPTIONAL_LOCKS=0 git -C "$_PW_SCRIPT_DIR" rev-parse HEAD 2>/dev/null || true)
 fi
-if [ -z "$_CURRENT_HASH" ] && [ -n "${PW_GH_DEBUG:-}" ]; then
+if [ -z "$_CURRENT_HASH" ] && [ -n "$_GHISH_DEBUG" ]; then
   echo "Warning: git rev-parse HEAD failed in $_PW_SCRIPT_DIR; caching disabled." >&2
 fi
 
 _STALE=1
 _DIRTY=$(GIT_CONFIG_NOSYSTEM=1 GIT_OPTIONAL_LOCKS=0 git -C "$_PW_SCRIPT_DIR" status --porcelain -- pw_ghish ':(exclude)*.md' ':(exclude)*.rst' 2>/dev/null || true)
-if [ -z "${PW_GH_FORCE_BUILD:-}" ] && [ -z "$_DIRTY" ] && [ -n "$_CURRENT_HASH" ]; then
+if [ -z "$_GHISH_FORCE_BUILD" ] && [ -z "$_DIRTY" ] && [ -n "$_CURRENT_HASH" ]; then
   if [ -f "$_GH_BIN" ] && [ -f "$_GH_HASH_FILE" ]; then
     _SAVED_HASH=$(cat "$_GH_HASH_FILE" 2>/dev/null || true)
     if [ "$_CURRENT_HASH" = "$_SAVED_HASH" ]; then
@@ -254,11 +282,11 @@ if [ -z "${PW_GH_FORCE_BUILD:-}" ] && [ -z "$_DIRTY" ] && [ -n "$_CURRENT_HASH" 
     fi
   fi
   if [ $_STALE -eq 1 ] && [ -n "$_MAIN_REPO_DIR" ] && [ "$_MAIN_REPO_DIR" != "$_PW_SCRIPT_DIR" ] && [ ! "$_MAIN_REPO_DIR" -ef "$_PW_SCRIPT_DIR" ]; then
-    if [ -f "${_MAIN_REPO_DIR}/out/gh/gh-ish" ] && [ -f "${_MAIN_REPO_DIR}/out/gh/git_hash" ]; then
+    if [ -f "${_MAIN_REPO_DIR}/out/gh/ghish" ] && [ -f "${_MAIN_REPO_DIR}/out/gh/git_hash" ]; then
       _MAIN_SAVED_HASH=$(cat "${_MAIN_REPO_DIR}/out/gh/git_hash" 2>/dev/null || true)
       if [ "$_CURRENT_HASH" = "$_MAIN_SAVED_HASH" ]; then
         mkdir -p "$_GH_DIR"
-        cp -f "${_MAIN_REPO_DIR}/out/gh/gh-ish" "$_GH_BIN"
+        cp -f "${_MAIN_REPO_DIR}/out/gh/ghish" "$_GH_BIN"
         chmod +x "$_GH_BIN"
         echo "$_CURRENT_HASH" > "$_GH_HASH_FILE"
         _STALE=0
@@ -267,8 +295,8 @@ if [ -z "${PW_GH_FORCE_BUILD:-}" ] && [ -z "$_DIRTY" ] && [ -n "$_CURRENT_HASH" 
   fi
 fi
 
-if [ $_STALE -eq 1 ] && [ -z "${PW_GH_FORCE_BUILD:-}" ] && ! _pw_gh_can_build; then
-  _pw_gh_exec_cipd "$@"
+if [ $_STALE -eq 1 ] && [ -z "$_GHISH_FORCE_BUILD" ] && ! _ghish_can_build; then
+  _ghish_exec_cipd "$@"
 fi
 
 if [ $_STALE -eq 1 ]; then
@@ -280,16 +308,16 @@ if [ $_STALE -eq 1 ]; then
   # and replay it only if the build really fails.
   if [ -t 2 ]; then
     if [ -n "$_DIRTY" ]; then
-      printf " ⏱  Building gh-ish (local uncommitted changes in pw_ghish)...\n" >&2
+      printf " ⏱  Building ghish (local uncommitted changes in pw_ghish)...\n" >&2
     else
-      printf " ⏱  Building gh-ish (commit %.8s)...\n" "${_CURRENT_HASH:-unknown}" >&2
+      printf " ⏱  Building ghish (commit %.8s)...\n" "${_CURRENT_HASH:-unknown}" >&2
     fi
   fi
 
   _LOCK_DIRTY=$(GIT_CONFIG_NOSYSTEM=1 GIT_OPTIONAL_LOCKS=0 git -C "$_PW_SCRIPT_DIR" status --porcelain -- MODULE.bazel.lock 2>/dev/null || true)
   _BUILD_STATUS=0
   _BUILD_LOG=""
-  _pw_gh_cleanup_build() {
+  _ghish_cleanup_build() {
     if [ -n "$_BUILD_LOG" ]; then
       rm -f "$_BUILD_LOG"
     fi
@@ -300,7 +328,7 @@ if [ $_STALE -eq 1 ]; then
   # Clean up the log and restore MODULE.bazel.lock however the build ends.
   # INT/TERM exit through the EXIT trap; the traps are cleared before `exec`,
   # which skips them anyway.
-  trap '_pw_gh_cleanup_build' EXIT
+  trap '_ghish_cleanup_build' EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
   if [ ! -t 2 ]; then
@@ -315,7 +343,7 @@ if [ $_STALE -eq 1 ]; then
     bazelisk build \
       --noshow_progress \
       --noshow_loading_progress \
-      //pw_ghish:gh-ish
+      //pw_ghish:ghish
   ) >&3 2>&3 || _BUILD_STATUS=$?
   exec 3>&-
   if [ "$_BUILD_STATUS" -ne 0 ]; then
@@ -324,15 +352,15 @@ if [ $_STALE -eq 1 ]; then
     if [ -n "$_BUILD_LOG" ]; then
       (cat "$_BUILD_LOG" >&2) || :
     fi
-    (echo "Error: failed to build //pw_ghish:gh-ish (exit ${_BUILD_STATUS})." >&2) || :
+    (echo "Error: failed to build //pw_ghish:ghish (exit ${_BUILD_STATUS})." >&2) || :
     exit "$_BUILD_STATUS"
   fi
-  _pw_gh_cleanup_build
+  _ghish_cleanup_build
   trap - EXIT INT TERM
 
-  _BUILT_BIN="${_PW_SCRIPT_DIR}/bazel-bin/pw_ghish/gh-ish_/gh-ish"
+  _BUILT_BIN="${_PW_SCRIPT_DIR}/bazel-bin/pw_ghish/ghish_/ghish"
   if [ ! -f "$_BUILT_BIN" ]; then
-    _BUILT_BIN="${_PW_SCRIPT_DIR}/bazel-bin/pw_ghish/gh-ish"
+    _BUILT_BIN="${_PW_SCRIPT_DIR}/bazel-bin/pw_ghish/ghish"
   fi
   if [ ! -f "$_BUILT_BIN" ]; then
     echo "Error: built binary not found at $_BUILT_BIN" >&2

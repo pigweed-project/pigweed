@@ -161,7 +161,7 @@ be concise and descriptive.
 
 ## Gerrit, CI, Buganizer Issues, and Worktrees (`./gh`)
 
-Pigweed provides `./gh` (`//pw_ghish:gh-ish`), which exposes Gerrit code
+Pigweed provides `./gh` (`//pw_ghish:ghish`), which exposes Gerrit code
 reviews (`./gh pr`), LUCI Buildbucket CI checks (`./gh pr checks`, `./gh run`),
 Google Issue Tracker / Buganizer (`./gh issue`), and multi-agent Git/Bazel
 worktrees (`./gh wt`) using standard GitHub CLI (`gh`) syntax.

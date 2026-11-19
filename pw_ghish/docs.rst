@@ -59,7 +59,7 @@ Run the ``./gh`` repository wrapper from anywhere in your Pigweed checkout:
    # Enable automated submission once review and CI checks pass:
    $ ./gh pr merge --auto
 
-The ``./gh`` wrapper compiles and caches the ``//pw_ghish:gh-ish`` binary in
+The ``./gh`` wrapper compiles and caches the ``//pw_ghish:ghish`` binary in
 ``out/gh/`` keyed by Git commit hash, reusing the cached binary when ``HEAD``
 has not changed.
 

@@ -202,7 +202,7 @@ func TestExecGitRunner_RealWorktreeAndSymlinkLifecycle(t *testing.T) {
 
 	// 5. Real Git Unmanaged Worktree Collision: create an unmanaged worktree outside ~/wrk/slots/
 	// holding branch "ghish", then run mgr.Use("ghish", ...) and verify one-shot success!
-	unmanagedWorktreeDir := filepath.Join(tmpDir, "pw-ghish")
+	unmanagedWorktreeDir := filepath.Join(tmpDir, "pigweed-alt")
 	runGitCmd(primaryRepo, "worktree", "add", "-b", "ghish", unmanagedWorktreeDir, "origin/main")
 
 	resGhish, err := mgr.Use("ghish", "", "", LeaseModeWrite, "conv-ghish")

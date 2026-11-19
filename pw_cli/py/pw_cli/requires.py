@@ -180,15 +180,19 @@ def parse_requirement(req: str) -> Requirement:
 
 @log_entry_exit
 def find_gh() -> str:
-    """Returns the path to './gh' (gh-ish) for the current repository."""
+    """Returns the path to './gh' (ghish) for the current repository."""
     gh = _git_root() / 'gh'
     if gh.is_file() and os.access(gh, os.X_OK):
         return str(gh)
-    gh_ish = shutil.which('gh-ish')
-    if gh_ish:
-        return gh_ish
+    ghish = shutil.which('ghish')
+    if ghish:
+        return ghish
+    # TODO: b/586589869 - Remove legacy 'gh-ish' fallback after rollout.
+    legacy = shutil.which('gh-ish')
+    if legacy:
+        return legacy
     raise FileNotFoundError(
-        f"couldn't find '{gh}' or 'gh-ish' to look up requirements"
+        f"couldn't find '{gh}' or 'ghish' to look up requirements"
     )
 
 

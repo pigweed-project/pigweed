@@ -46,25 +46,25 @@ If no change ID is specified, the active change for the current branch is review
 
 Examples:
 # Trigger presubmit / Commit-Queue dry run on the active change
-gh-ish pr review --trigger
+ghish pr review --trigger
 
 # Publish all staged draft comments on the active change
-gh-ish pr review --publish
+ghish pr review --publish
 
 # Approve the active change on the current branch
-gh-ish pr review --approve -m "Looks good to me"
+ghish pr review --approve -m "Looks good to me"
 
 # Approve and trigger presubmit / Commit-Queue dry run
-gh-ish pr review --approve --trigger
+ghish pr review --approve --trigger
 
 # Approve a change by number with a message
-gh-ish pr review 12345 --approve -m "Looks good to me"
+ghish pr review 12345 --approve -m "Looks good to me"
 
 # Request changes on a specific change
-gh-ish pr review 12345 --request-changes -m "Please fix the typo"
+ghish pr review 12345 --request-changes -m "Please fix the typo"
 
 # Leave a comment without voting
-gh-ish pr review 12345 --comment -m "Just a question"`,
+ghish pr review 12345 --comment -m "Just a question"`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			msg, err := resolveCommentMessage(opts.message, opts.body, opts.bodyFile, cmd.InOrStdin(), false)

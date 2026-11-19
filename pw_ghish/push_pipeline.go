@@ -547,7 +547,7 @@ func executePush(ctx context.Context, cmd *cobra.Command, cfg *Config, branch st
 	if err != nil {
 		errStr := errBuf.String()
 		if strings.Contains(errStr, "missing Change-Id") {
-			return fmt.Errorf("remote rejected push because a commit is missing a Change-Id in its footer.\n\nGerrit requires a Change-Id line in each commit message.\nTo resolve this:\n  1. Install the gh-ish commit-msg hook:\n     ./gh hook install --git\n  2. Amend your commit to generate the Change-Id:\n     git commit --amend --no-edit\n  3. Retry push:\n     ./gh pr push\n\nUnderlying error: %w", err)
+			return fmt.Errorf("remote rejected push because a commit is missing a Change-Id in its footer.\n\nGerrit requires a Change-Id line in each commit message.\nTo resolve this:\n  1. Install the ghish commit-msg hook:\n     ./gh hook install --git\n  2. Amend your commit to generate the Change-Id:\n     git commit --amend --no-edit\n  3. Retry push:\n     ./gh pr push\n\nUnderlying error: %w", err)
 		}
 		if strings.Contains(strings.ToLower(errStr), "contributor license agreement") || strings.Contains(errStr, "cla.developers.google.com") {
 			return fmt.Errorf("remote rejected push because the Google Contributor License Agreement (CLA) has not been signed for your account or commit email.\n\nTo resolve this:\n  1. Sign the CLA at https://cla.developers.google.com/\n  2. Verify your Git author email matches your Gerrit/CLA email:\n     git config user.email\n  3. If you amended user.email, reset the commit author and retry:\n     git commit --amend --reset-author --no-edit\n     ./gh pr push\n\nUnderlying error: %w", err)

@@ -1,15 +1,15 @@
 ---
 name: ghish
 description: >-
-  Use the ./gh CLI (gh-ish) for all Gerrit code reviews (CLs, pwrev), LUCI
+  Use the ./gh CLI (ghish) for all Gerrit code reviews (CLs, pwrev), LUCI
   Buildbucket CI checks and tryjobs, Buganizer issues (b/, pwbug.dev), and
   pushing changes using GitHub CLI syntax.
 ---
 
-# `gh-ish` (`./gh`): Gerrit, Buildbucket & Buganizer CLI
+# `ghish` (`./gh`): Gerrit, Buildbucket & Buganizer CLI
 
 Pigweed provides `./gh` (a cached repository wrapper around
-`//pw_ghish:gh-ish`), exposing Gerrit code reviews (`./gh pr`), LUCI Buildbucket
+`//pw_ghish:ghish`), exposing Gerrit code reviews (`./gh pr`), LUCI Buildbucket
 CI checks (`./gh pr checks`, `./gh run`), Google Issue Tracker / Buganizer
 (`./gh issue`), and worktree pools (`./gh wt`) through standard GitHub CLI
 (`gh`) syntax.

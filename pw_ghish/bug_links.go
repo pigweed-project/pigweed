@@ -26,7 +26,7 @@ import "strings"
 // There is deliberately no URL field. A `b/` ID resolves against whichever
 // tracker the host is wired to, and that is not derivable from the trailer.
 // Emitting a guessed URL that points at the wrong tracker would be worse than
-// emitting none, the same reasoning that makes gh-ish refuse to translate
+// emitting none, the same reasoning that makes ghish refuse to translate
 // `Fixes #456` rather than guess at `b/456`.
 type BugLink struct {
 	ID     string `json:"id"`

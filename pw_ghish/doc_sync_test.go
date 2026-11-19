@@ -22,7 +22,9 @@ package pw_ghish
 
 import (
 	"os"
+	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -132,6 +134,58 @@ func TestDocSync_SubcommandsDocumentedInRST(t *testing.T) {
 			expectedPhrase := top.Name() + " " + sub.Name()
 			if !strings.Contains(content, expectedPhrase) {
 				t.Errorf("subcommand %q is not documented in %s", expectedPhrase, rstFile)
+			}
+		}
+	}
+}
+
+var legacyDocNamingRe = regexp.MustCompile(`(?i)\bgh-ish\b|\bpw-ghish\b|\bgerrit-cli\b|GH_ISH_|\b_?PW_GH_|\.config/pw_ghish|\.cache/pw_ghish|(?:XDG_(?:CONFIG_HOME|CACHE_HOME|RUNTIME_DIR)|TMPDIR|Caches|<runtime_base>)/pw_ghish|pigweed/gh/cipd|\.local/share/ghish`)
+
+// legacyDocShimExempt reports whether line idx (0-based) in a doc file is
+// covered by a nearby b/586589869 rollout annotation (allowing blank lines
+// between an RST comment and the directive/paragraph it annotates).
+//
+// TODO: b/586589869 - Remove this exemption once rollout shims are deleted.
+func legacyDocShimExempt(lines []string, idx int) bool {
+	start := max(0, idx-5)
+	for i := idx; i >= start; i-- {
+		if strings.Contains(lines[i], legacyShimMarker) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestDocSync_ConsistentNaming verifies that pw_ghish RST documentation,
+// AGENTS.md, and matching agent skills/reviewers use canonical `ghish` /
+// `GHISH_*` / `~/.config/ghish` / `~/.cache/ghish` naming.
+func TestDocSync_ConsistentNaming(t *testing.T) {
+	rstFiles, err := filepath.Glob("*.rst")
+	if err != nil {
+		t.Fatalf("filepath.Glob(*.rst): %v", err)
+	}
+	if len(rstFiles) == 0 {
+		t.Fatal("filepath.Glob(*.rst) returned 0 files")
+	}
+	docPaths := append(rstFiles,
+		"AGENTS.md",
+		filepath.Join("..", "AGENTS.md"),
+		filepath.Join("..", ".agents", "skills", "ghish", "SKILL.md"),
+		filepath.Join("..", ".agents", "skills", "manual-cli-test", "SKILL.md"),
+		filepath.Join("..", ".agents", "skills", "worktree", "SKILL.md"),
+		filepath.Join("..", ".agents", "agents", "ghish_security_reviewer.md"),
+		filepath.Join("..", ".agents", "agents", "go_ghish_reviewer.md"),
+	)
+	for _, path := range docPaths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Errorf("os.ReadFile(%q): %v", path, err)
+			continue
+		}
+		lines := strings.Split(string(data), "\n")
+		for i, line := range lines {
+			if m := legacyDocNamingRe.FindString(line); m != "" && !legacyDocShimExempt(lines, i) {
+				t.Errorf("%s:%d: contains legacy name %q; use canonical ghish / GHISH_* naming", path, i+1, m)
 			}
 		}
 	}

@@ -367,7 +367,7 @@ func isGitHTTPSAuthError(lower string) bool {
 func gitIPRestrictedAuthError(canonHost, verb string, mode AuthMode, cause error) error {
 	steps := []string{
 		"Corporate network and SSO access are required to access " + canonHost + ".",
-		"Switch to Googler mode on a managed corp machine:\n     export GH_ISH_AUTH_MODE=googler",
+		"Switch to Googler mode on a managed corp machine:\n     export GHISH_AUTH_MODE=googler",
 	}
 	if mode == AuthModeGoogler {
 		steps = []string{"unset GERRIT_TOKEN", "gcert"}

@@ -356,7 +356,7 @@ func TestSense_ResumeConflict_UploadWIP_And_OncallTriage(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("USER", "testuser")
-	t.Setenv("GH_ISH_ONCALL_FILE", schedFile)
+	t.Setenv("GHISH_ONCALL_FILE", schedFile)
 
 	outOncall, err := executeCommand(RootCmd, "sense", "--json")
 	if err != nil {

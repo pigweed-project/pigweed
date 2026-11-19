@@ -20,8 +20,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
+
+	"pigweed.dev/pw_ghish"
 )
 
 // Residency describes whether a project currently occupies a physical slot on disk
@@ -117,7 +120,7 @@ func (s *Slot) UpsertLease(agentID string, mode LeaseMode, now time.Time) {
 	s.Leases = active
 }
 
-// State represents the persistent JSON registry stored at ~/.config/pw_ghish/worktrees.json.
+// State represents the persistent JSON registry stored at ~/.config/ghish/worktrees.json.
 type State struct {
 	Version         int                 `json:"version"`
 	PoolRoot        string              `json:"pool_root"`
@@ -166,6 +169,9 @@ func NewEmptyState(poolRoot, projectsDir, primaryRepo string, slotCount int) *St
 type StateStore struct {
 	StateFilePath string
 	LockFilePath  string
+
+	mu      sync.Mutex
+	homeDir string // Set by DefaultStateStore so Save() can defer config-dir migration.
 }
 
 // NewStateStore creates a StateStore pointing to the given state JSON file.
@@ -176,29 +182,71 @@ func NewStateStore(stateFilePath string) *StateStore {
 	}
 }
 
-// DefaultStateStore resolves ~/.config/pw_ghish/worktrees.json.
+func resolveDefaultStateFilePath(home string, migrate bool) (string, error) {
+	configDir := pw_ghish.ResolveUserConfigDir(home, migrate)
+	if configDir == "" {
+		return "", fmt.Errorf("failed to resolve user config directory for home %q", home)
+	}
+	statePath := filepath.Join(configDir, "worktrees.json")
+	// On reads (migrate=false), fall back to an existing legacy worktrees.json
+	// if canonical ghish/ already exists without one; on Save() (migrate=true),
+	// always write to statePath so state migrates to canonical ghish/.
+	// TODO: b/586589869 - Remove fallback when both ghish/ and legacy pw_ghish/ exist.
+	if !migrate {
+		if _, err := os.Stat(statePath); os.IsNotExist(err) {
+			var legacyDirs []string
+			if base := pw_ghish.BaseConfigDir(home); base != "" && filepath.IsAbs(base) {
+				legacyDirs = append(legacyDirs, base)
+			}
+			if home != "" && filepath.IsAbs(home) {
+				legacyDirs = append(legacyDirs, filepath.Join(home, ".config"))
+			}
+			for _, dir := range legacyDirs {
+				// TODO: b/586589869 - Remove legacy pw_ghish state fallback after rollout.
+				legacyState := filepath.Join(dir, "pw_ghish", "worktrees.json")
+				if _, lerr := os.Stat(legacyState); lerr == nil {
+					return legacyState, nil
+				}
+			}
+		}
+	}
+	return statePath, nil
+}
+
+// DefaultStateStore resolves ${XDG_CONFIG_HOME:-~/.config}/ghish/worktrees.json
+// without mutating the filesystem (deferred to Save so init() and read-only
+// commands stay side-effect-free).
 func DefaultStateStore() (*StateStore, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve user home directory: %w", err)
 	}
-	configDir := filepath.Join(home, ".config", "pw_ghish")
-	return NewStateStore(filepath.Join(configDir, "worktrees.json")), nil
+	statePath, err := resolveDefaultStateFilePath(home, false)
+	if err != nil {
+		return nil, err
+	}
+	s := NewStateStore(statePath)
+	s.homeDir = home
+	return s, nil
 }
 
 // WithLock acquires an exclusive OS flock on worktrees.lock, executes fn, and releases the lock.
 func (s *StateStore) WithLock(fn func() error) error {
-	if err := os.MkdirAll(filepath.Dir(s.LockFilePath), 0755); err != nil {
-		return fmt.Errorf("failed to create state directory %s: %w", filepath.Dir(s.LockFilePath), err)
+	s.mu.Lock()
+	lockPath := s.LockFilePath
+	s.mu.Unlock()
+
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0755); err != nil {
+		return fmt.Errorf("failed to create state directory %s: %w", filepath.Dir(lockPath), err)
 	}
-	lockFile, err := os.OpenFile(s.LockFilePath, os.O_CREATE|os.O_RDWR, 0644)
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
-		return fmt.Errorf("failed to open lockfile %s: %w", s.LockFilePath, err)
+		return fmt.Errorf("failed to open lockfile %s: %w", lockPath, err)
 	}
 	defer lockFile.Close()
 
 	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
-		return fmt.Errorf("failed to acquire exclusive flock on %s: %w", s.LockFilePath, err)
+		return fmt.Errorf("failed to acquire exclusive flock on %s: %w", lockPath, err)
 	}
 	defer func() {
 		_ = syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
@@ -209,13 +257,17 @@ func (s *StateStore) WithLock(fn func() error) error {
 
 // Load reads the State from disk, or returns nil, os.ErrNotExist if not initialized.
 func (s *StateStore) Load() (*State, error) {
-	data, err := os.ReadFile(s.StateFilePath)
+	s.mu.Lock()
+	statePath := s.StateFilePath
+	s.mu.Unlock()
+
+	data, err := os.ReadFile(statePath)
 	if err != nil {
 		return nil, err
 	}
 	var st State
 	if err := json.Unmarshal(data, &st); err != nil {
-		return nil, fmt.Errorf("failed to parse state file %s: %w\nRemediation: Run `./gh wt init` to repair or recreate state", s.StateFilePath, err)
+		return nil, fmt.Errorf("failed to parse state file %s: %w\nRemediation: Run `./gh wt init` to repair or recreate state", statePath, err)
 	}
 	if st.Projects == nil {
 		st.Projects = make(map[string]*Project)
@@ -231,7 +283,17 @@ func (s *StateStore) Save(st *State) error {
 	if st == nil {
 		return fmt.Errorf("internal error: cannot save nil state")
 	}
-	return SafeModifyFile(s.StateFilePath, 0644, func(_ []byte, _ bool) ([]byte, error) {
+	s.mu.Lock()
+	if s.homeDir != "" {
+		if migratedPath, err := resolveDefaultStateFilePath(s.homeDir, true); err == nil && migratedPath != "" {
+			s.StateFilePath = migratedPath
+			s.LockFilePath = migratedPath + ".lock"
+		}
+	}
+	statePath := s.StateFilePath
+	s.mu.Unlock()
+
+	return SafeModifyFile(statePath, 0644, func(_ []byte, _ bool) ([]byte, error) {
 		return json.MarshalIndent(st, "", "  ")
 	})
 }

@@ -875,7 +875,7 @@ func (m *Manager) checkoutSlotBranchLocked(
 		return m.Git.CreateBranch(targetSlot.Path, branch, baseRef)
 	}
 
-	// Case 1: desiredBranch is currently checked out in another worktree (e.g., ~/wrk/pw-ghish) or owned by another project.
+	// Case 1: desiredBranch is currently checked out in another worktree (e.g., ~/wrk/pigweed) or owned by another project.
 	if ownerDesc, inUse := checkedOutByOther[desiredBranch]; inUse {
 		actualBranch := m.nextAvailableBranchNameLocked(st, targetSlot.Path, projectName, desiredBranch, checkedOutByOther)
 		baseRef := createFrom

@@ -17,7 +17,7 @@ Pigweed developers and AI agents use `./gh wt` (`pw_ghish/worktree`) to juggle m
    - `MOUNTED`: Occupies a warm slot in `~/wrk/slots/<slot_prefix>XX` and appears as an active project in the Jetski left sidebar.
    - `PARKED`: Shelved in Git (`refs/heads/<branch>`) and Gerrit (`pwrev.dev/XXX` or configured shortlink), consuming **0 disk slots** and archived in the Jetski sidebar. Supports juggling $M$ projects on $N$ slots ($M > N$) via automatic LRU swap-out of clean/unleased slots.
 4. **Never Manually Edit `~/.bazelrc`:**
-   All shared Bazel cache settings (`~/.config/pw_ghish/bazelrc.worktrees` and the `try-import` line in `~/.bazelrc`) are managed exclusively by `./gh wt init`. **Agents must NEVER manually edit or delete `~/.bazelrc`.**
+   All shared Bazel cache settings (`~/.config/ghish/bazelrc.worktrees` and the `try-import` line in `~/.bazelrc`) are managed exclusively by `./gh wt init`. **Agents must NEVER manually edit or delete `~/.bazelrc`.**
 
 ---
 
@@ -44,7 +44,7 @@ When the user instructs you to work on a specific project (e.g., *"Project rpc-f
    }
    ```
    - If another agent holds an active write lease on `<project>`, `./gh wt use` automatically **warm-forks** to `<project>-fork-1` in a free slot to prevent Git index collisions.
-   - If the branch `<project>` is already checked out in an unmanaged worktree (e.g., `~/wrk/pw-ghish` or `~/wrk/pigweed`) or has unmerged local commits from an earlier session, `./gh wt use` automatically creates `<project>-wt` at `origin/main` without touching the unmanaged worktree.
+   - If the branch `<project>` is already checked out in an unmanaged worktree (e.g., `~/wrk/pigweed` or `~/wrk/pigweed-alt`) or has unmerged local commits from an earlier session, `./gh wt use` automatically creates `<project>-wt` at `origin/main` without touching the unmanaged worktree.
    - If all slots are occupied, `./gh wt use` automatically **LRU-parks** the oldest idle, clean (`!DIRTY`) project to free a warm slot.
 
 2. **Strict One-Shot Rule — NEVER Run Manual `git worktree` Commands:**

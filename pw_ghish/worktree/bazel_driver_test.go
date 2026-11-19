@@ -17,6 +17,7 @@ package worktree
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -66,6 +67,110 @@ func TestBazelDriver_CheckAndConfigureIdempotent(t *testing.T) {
 	rcAfter2, _ := os.ReadFile(userRc)
 	if strings.Count(string(rcAfter2), "try-import") != 1 {
 		t.Errorf("expected idempotent try-import count 1 after run 2, got %d", strings.Count(string(rcAfter2), "try-import"))
+	}
+	wantImport := "try-import " + filepath.Join(homeDir, ".config", "ghish", "bazelrc.worktrees")
+	if !strings.Contains(string(rcAfter2), wantImport) {
+		t.Errorf("expected %q in .bazelrc, got:\n%s", wantImport, string(rcAfter2))
+	}
+}
+
+// TODO: b/586589869 - Remove legacy bazelrc migration test after rollout.
+func TestBazelDriver_UpgradesLegacyTryImportInPlace(t *testing.T) {
+	homeDir := t.TempDir()
+	driver := &BazelDriver{
+		HomeDir:        homeDir,
+		BazelCacheRoot: filepath.Join(homeDir, ".cache", "bazel", "_bazel_test"),
+	}
+
+	legacyDir := filepath.Join(homeDir, ".config", "pw_ghish")
+	if err := os.MkdirAll(legacyDir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	legacySnippet := filepath.Join(legacyDir, "bazelrc.worktrees")
+	if err := os.WriteFile(legacySnippet, []byte(driver.expectedSnippetContent()), 0644); err != nil {
+		t.Fatalf("WriteFile(legacySnippet): %v", err)
+	}
+	userRc := filepath.Join(homeDir, ".bazelrc")
+	initialRc := "build --jobs=16\ntry-import " + legacySnippet + "\n"
+	if err := os.WriteFile(userRc, []byte(initialRc), 0644); err != nil {
+		t.Fatalf("WriteFile(.bazelrc): %v", err)
+	}
+
+	if _, err := driver.CheckAndConfigure(true, map[string]bool{}); err != nil {
+		t.Fatalf("CheckAndConfigure(true): %v", err)
+	}
+
+	updatedRc, err := os.ReadFile(userRc)
+	if err != nil {
+		t.Fatalf("ReadFile(.bazelrc): %v", err)
+	}
+	wantImport := "try-import " + filepath.Join(homeDir, ".config", "ghish", "bazelrc.worktrees")
+	if runtime.GOOS == "windows" {
+		wantImport = "try-import " + legacySnippet
+	}
+	if strings.Count(string(updatedRc), "try-import") != 1 || !strings.Contains(string(updatedRc), wantImport) {
+		t.Errorf("expected legacy try-import replaced in place with %q, got:\n%s", wantImport, string(updatedRc))
+	}
+	if !strings.Contains(string(updatedRc), "build --jobs=16") {
+		t.Errorf("expected custom user bazelrc line preserved, got:\n%s", string(updatedRc))
+	}
+}
+
+// TODO: b/586589869 - Remove legacy bazelrc check/XDG migration tests after rollout.
+func TestBazelDriver_CheckWarnsOnLegacyImportAndUpgradesAcrossCustomXDG(t *testing.T) {
+	homeDir := t.TempDir()
+	xdgDir := filepath.Join(t.TempDir(), "custom-xdg")
+	legacyDir := filepath.Join(homeDir, ".config", "pw_ghish")
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	legacySnippet := filepath.Join(legacyDir, "bazelrc.worktrees")
+	if err := os.WriteFile(legacySnippet, []byte("common --experimental_repository_cache_hardlinks\ncommon --experimental_disk_cache_gc_max_size=80G\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(snippet): %v", err)
+	}
+	userRc := filepath.Join(homeDir, ".bazelrc")
+	if err := os.WriteFile(userRc, []byte("build --jobs=8\ntry-import "+legacySnippet+"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(.bazelrc): %v", err)
+	}
+
+	driver := &BazelDriver{
+		HomeDir:        homeDir,
+		ConfigBaseDir:  xdgDir,
+		BazelCacheRoot: filepath.Join(homeDir, ".cache", "bazel", "_bazel_test"),
+	}
+
+	// 1. Read-only --check warns about legacy try-import (on Unix) and does not mutate disk.
+	checkItems, err := driver.CheckAndConfigure(false, nil)
+	if err != nil {
+		t.Fatalf("CheckAndConfigure(false): %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(xdgDir, "ghish")); !os.IsNotExist(err) {
+		t.Fatalf("CheckAndConfigure(false) unexpectedly migrated config dir (err=%v)", err)
+	}
+	var sawLegacyWarning bool
+	for _, it := range checkItems {
+		if it.Category == "User ~/.bazelrc Hook" && it.Status == ChecklistWarning && strings.Contains(it.Summary, "Legacy `try-import") {
+			sawLegacyWarning = true
+		}
+	}
+	if runtime.GOOS != "windows" && !sawLegacyWarning {
+		t.Errorf("expected ChecklistWarning for legacy try-import under --check, got: %+v", checkItems)
+	}
+
+	// 2. fix=true replaces ~/.config/pw_ghish try-import in-place without duplicating.
+	if _, err := driver.CheckAndConfigure(true, nil); err != nil {
+		t.Fatalf("CheckAndConfigure(true): %v", err)
+	}
+	updatedRc, err := os.ReadFile(userRc)
+	if err != nil {
+		t.Fatalf("ReadFile(.bazelrc): %v", err)
+	}
+	wantImport := "try-import " + filepath.Join(xdgDir, "ghish", "bazelrc.worktrees")
+	if runtime.GOOS == "windows" {
+		wantImport = "try-import " + legacySnippet
+	}
+	if strings.Count(string(updatedRc), "try-import") != 1 || !strings.Contains(string(updatedRc), wantImport) {
+		t.Errorf("expected single upgraded try-import %q, got:\n%s", wantImport, string(updatedRc))
 	}
 }
 

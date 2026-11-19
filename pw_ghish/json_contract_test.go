@@ -305,7 +305,7 @@ type jsonCase struct {
 var jsonSmokeTweaks = map[string]jsonCase{
 	// A parked project, and a mounted one linked to an issue and holding a
 	// lease: parked_projects[], issue_id, and active_leases.
-	"gh-ish wt list": {setup: [][]string{
+	"ghish wt list": {setup: [][]string{
 		{"wt", "use", "shelved"},
 		{"wt", "park", "shelved"},
 		{"wt", "use", "--issue", "345678", "--agent", "json-contract"},
@@ -313,7 +313,7 @@ var jsonSmokeTweaks = map[string]jsonCase{
 	// Inside a pool-managed project, with the fleet and a target tracked in
 	// another slot: worktree.current_status from the pool, the fleet lists,
 	// and target.existing_worktree.
-	"gh-ish sense": {
+	"ghish sense": {
 		args:    []string{"sense", "b/345678", "--fleet"},
 		setup:   [][]string{{"wt", "init"}, {"wt", "use", "smoke"}, {"wt", "use", "--issue", "345678"}},
 		project: "smoke",
@@ -325,7 +325,7 @@ var jsonExtraCases = []jsonCase{
 	{
 		// Failure reports must go to stderr under --json.
 		name:         "pr_checks_failing",
-		entry:        "gh-ish pr checks",
+		entry:        "ghish pr checks",
 		args:         []string{"pr", "checks", "12345", "--log-failed"},
 		fieldList:    true,
 		prepare:      func(t *testing.T, f *pw_ghish.KindSmokeFixture) { f.ServeFailingBuild(t) },
@@ -334,7 +334,7 @@ var jsonExtraCases = []jsonCase{
 	},
 	{
 		name:      "issue_develop_worktree",
-		entry:     "gh-ish issue develop",
+		entry:     "ghish issue develop",
 		args:      []string{"issue", "develop", "345678", "--worktree"},
 		setup:     [][]string{{"wt", "init"}},
 		workspace: true,
@@ -347,7 +347,7 @@ func jsonCases(cmds []jsonCommand) []jsonCase {
 	var cases []jsonCase
 	for _, jc := range cmds {
 		c := jsonCase{
-			name:      strings.ReplaceAll(strings.TrimPrefix(jc.entry, "gh-ish "), " ", "_"),
+			name:      strings.ReplaceAll(strings.TrimPrefix(jc.entry, "ghish "), " ", "_"),
 			entry:     jc.entry,
 			args:      kindSmokeArgs[jc.entry],
 			fieldList: jc.fieldList,

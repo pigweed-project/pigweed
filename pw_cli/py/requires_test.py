@@ -459,17 +459,25 @@ class FindGhTest(FakeGhMixin):
 
     def test_gh_in_repo_root(self) -> None:
         gh = self.install_fake_gh(self.repo)
-        self.install_fake_gh(self.bin_dir, name='gh-ish')
+        self.install_fake_gh(self.bin_dir, name='ghish')
         self.assertEqual(Path(requires.find_gh()).resolve(), gh.resolve())
 
-    def test_gh_ish_on_path(self) -> None:
+    def test_ghish_on_path(self) -> None:
         (self.repo / 'gh').write_text('not executable\n')
-        gh_ish = self.install_fake_gh(self.bin_dir, name='gh-ish')
-        self.assertEqual(Path(requires.find_gh()).resolve(), gh_ish.resolve())
+        ghish = self.install_fake_gh(self.bin_dir, name='ghish')
+        self.assertEqual(Path(requires.find_gh()).resolve(), ghish.resolve())
+
+    def test_legacy_gh_ish_on_path(self) -> None:
+        # TODO: b/586589869 - Remove legacy 'gh-ish' test after rollout.
+        if shutil.which('ghish'):
+            self.skipTest('ghish is installed on PATH')
+        (self.repo / 'gh').write_text('not executable\n')
+        legacy = self.install_fake_gh(self.bin_dir, name='gh-ish')
+        self.assertEqual(Path(requires.find_gh()).resolve(), legacy.resolve())
 
     def test_not_found(self) -> None:
-        if shutil.which('gh-ish'):
-            self.skipTest('gh-ish is installed on PATH')
+        if shutil.which('ghish') or shutil.which('gh-ish'):
+            self.skipTest('ghish is installed on PATH')
         with self.assertRaisesRegex(FileNotFoundError, "couldn't find"):
             requires.find_gh()
 
@@ -866,8 +874,8 @@ class RunTest(FakeGhMixin):
         self.assertEqual(self.gh_calls(), [])
 
     def test_run_without_gh(self) -> None:
-        if shutil.which('gh-ish'):
-            self.skipTest('gh-ish is installed on PATH')
+        if shutil.which('ghish') or shutil.which('gh-ish'):
+            self.skipTest('ghish is installed on PATH')
         (self.repo / 'gh').unlink()
         head = self.git(self.repo, 'rev-parse', 'HEAD')
         with self.assertLogs(requires._LOG, logging.ERROR) as logs:

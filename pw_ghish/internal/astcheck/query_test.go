@@ -26,7 +26,7 @@ import (
 func TestFindCompositeLits(t *testing.T) {
 	files := astcheck.MustLoadFiles(t, writeTempTree(t, map[string]string{
 		"cmd.go": `package ghish
-var rootCmd = &cobra.Command{Use: "gh-ish"}
+var rootCmd = &cobra.Command{Use: "ghish"}
 func setup() {
 	sub := &cobra.Command{Use: "pr " + "view"}
 	_ = sub
@@ -37,7 +37,7 @@ func setup() {
 	if len(lits) != 2 {
 		t.Fatalf("expected 2 cobra.Command literals, got %d", len(lits))
 	}
-	if u, ok := lits[0].StringField("Use"); !ok || u != "gh-ish" || lits[0].VarName != "rootCmd" || lits[0].FuncName != "" {
+	if u, ok := lits[0].StringField("Use"); !ok || u != "ghish" || lits[0].VarName != "rootCmd" || lits[0].FuncName != "" {
 		t.Errorf("unexpected package-level CompositeLitMatch: %+v use=%q", lits[0], u)
 	}
 	if u, ok := lits[1].StringField("Use"); !ok || u != "pr view" || lits[1].VarName != "sub" || lits[1].FuncName != "setup" {

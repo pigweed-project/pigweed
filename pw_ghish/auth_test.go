@@ -746,6 +746,19 @@ func TestResolveAuthMode(t *testing.T) {
 
 	t.Run("env var community", func(t *testing.T) {
 		WithHermeticAuth(t, AuthResolvers{})
+		t.Setenv("GHISH_AUTH_MODE", "community")
+		mode, reason, err := ResolveAuthMode(ctx, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if mode != AuthModeCommunity || !strings.Contains(reason, "GHISH_AUTH_MODE=community") {
+			t.Errorf("got (%q, %q), want (community, GHISH_AUTH_MODE=community)", mode, reason)
+		}
+	})
+
+	// TODO: b/586589869 - Remove legacy GH_ISH_AUTH_MODE fallback test after rollout.
+	t.Run("legacy env var community fallback", func(t *testing.T) {
+		WithHermeticAuth(t, AuthResolvers{})
 		t.Setenv("GH_ISH_AUTH_MODE", "community")
 		mode, reason, err := ResolveAuthMode(ctx, nil)
 		if err != nil {
@@ -987,15 +1000,15 @@ func TestDefaultGerritToken_ModeScopes(t *testing.T) {
 		},
 	})
 
-	t.Setenv("GH_ISH_AUTH_MODE", "community")
+	t.Setenv("GHISH_AUTH_MODE", "community")
 	if tok, src, err := DefaultGerritToken(t.Context()); err != nil || tok != "tok-1" || src != "luci-auth" {
 		t.Fatalf("community DefaultGerritToken() = (%q, %q, %v), want (tok-1, luci-auth, nil)", tok, src, err)
 	}
-	t.Setenv("GH_ISH_AUTH_MODE", "googler")
+	t.Setenv("GHISH_AUTH_MODE", "googler")
 	if tok, src, err := DefaultGerritToken(t.Context()); err != nil || tok != "tok-2" || src != "luci-auth" {
 		t.Fatalf("googler DefaultGerritToken() = (%q, %q, %v), want (tok-2, luci-auth, nil)", tok, src, err)
 	}
-	t.Setenv("GH_ISH_AUTH_MODE", "none")
+	t.Setenv("GHISH_AUTH_MODE", "none")
 	if _, _, err := DefaultGerritToken(t.Context()); !errors.Is(err, errLUCIAuthDisabled) {
 		t.Fatalf("none DefaultGerritToken() err = %v, want %v", err, errLUCIAuthDisabled)
 	}
@@ -1184,6 +1197,7 @@ func TestOAuthTokenCommand_AutoConfiguresSSOCredHelper(t *testing.T) {
 	})
 }
 
+// TODO: b/586589869 - Remove TestResolveAuthMode_RemovedAuthMethodEnv when checkRemovedAuthMethodEnv is deleted.
 func TestResolveAuthMode_RemovedAuthMethodEnv(t *testing.T) {
 	WithHermeticAuth(t, AuthResolvers{})
 	// An explicit --auth-mode flag does not bypass the GH_ISH_AUTH_METHOD check.
@@ -1191,8 +1205,8 @@ func TestResolveAuthMode_RemovedAuthMethodEnv(t *testing.T) {
 
 	wantNoneErr := fmt.Sprintf(
 		"GH_ISH_AUTH_METHOD=none is set, but GH_ISH_AUTH_METHOD has been removed.\n\n"+
-			"gh-ish now picks Gerrit credentials automatically: GERRIT_TOKEN when set, otherwise Corp SSO (googler mode) or luci-auth (for *.googlesource.com).\n"+
-			"To disable authentication, use --auth-mode=none or GH_ISH_AUTH_MODE=none.\n\n"+
+			"ghish now picks Gerrit credentials automatically: GERRIT_TOKEN when set, otherwise Corp SSO (googler mode) or luci-auth (for *.googlesource.com).\n"+
+			"To disable authentication, use --auth-mode=none or GHISH_AUTH_MODE=none.\n\n"+
 			"Remediation:\n"+
 			"  1. Unset it: unset GH_ISH_AUTH_METHOD\n"+
 			"  2. Run '%s' (for *.googlesource.com)\n"+

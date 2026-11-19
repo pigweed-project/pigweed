@@ -8,7 +8,7 @@ Developing
    :name: pw_ghish
 
 This section is for contributors developing, testing, and extending ``pw_ghish``
-(``//pw_ghish:gh-ish``).
+(``//pw_ghish:ghish``).
 
 .. toctree::
    :maxdepth: 1
@@ -25,13 +25,13 @@ Building and running locally
 
 .. code-block:: console
 
-   $ bazelisk build //pw_ghish:gh-ish
+   $ bazelisk build //pw_ghish:ghish
 
-When you run ``./gh`` from the repository root, the wrapper script checks
-``out/gh/gh-ish-<commit>`` and automatically rebuilds the binary when ``HEAD``
-changes. During local development on uncommitted changes, you can either run
-``bazelisk run //pw_ghish:gh-ish -- <args>`` or delete cached binaries in
-``out/gh/`` to force a fresh build.
+When you run ``./gh`` from the repository root, the wrapper script caches
+``out/gh/ghish`` keyed by Git content hash and automatically rebuilds the binary
+when ``pw_ghish`` changes. During local development on uncommitted changes, you
+can either run ``bazelisk run //pw_ghish:ghish -- <args>`` or delete cached
+binaries in ``out/gh/`` to force a fresh build.
 
 -------------
 Running tests
@@ -175,7 +175,7 @@ Follow this checklist when adding or updating a runnable Cobra command:
    ``pr diff``), declare ``OutputAnnotation: OutputRaw`` instead.
 #. **Register in the kind smoke harness**: Add one ``kindSmokeArgs`` entry in
    ``pw_ghish/kind_contract_test.go`` keyed by the command path (for example
-   ``"gh-ish pr view": {"pr", "view", "12345"}``), using ``kindSmokeSetup`` for
+   ``"ghish pr view": {"pr", "view", "12345"}``), using ``kindSmokeSetup`` for
    any unmeasured preparation steps (see
    :ref:`module-pw_ghish-developing-kind-smoke`).
 #. **Stay within subprocess and RPC budgets**: Construct all external processes
@@ -282,16 +282,6 @@ HTTP request:
 * If a count change is intentional (including a decrease that triggers the
   stale-budget check), update the pin in ``perfbudget_test.go`` or
   ``kindSmokeBudgetPins`` in the same CL and explain why in the CL description.
-
-To run informational wall-clock benchmarks locally against production Gerrit:
-
-.. code-block:: console
-
-   $ go test -v -tags=live ./pw_ghish -run TestLiveBench
-
-Set ``GH_ISH_BIN`` to benchmark a prebuilt binary and
-``GH_ISH_PERF_UPDATE_BASELINE=1`` to update
-``pw_ghish/testdata/perf_baseline.json``.
 
 --------------------
 Contributor sections

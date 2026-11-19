@@ -21,6 +21,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"pigweed.dev/pw_ghish"
 )
 
 // IDEIntegrationDriver abstracts IDE/agent harness project registration and archival.
@@ -75,7 +77,7 @@ func (j *JetskiIDEDriver) effectivePrefix() string {
 // projects directory (~/.gemini/config/projects or ~/.antigravity/config/projects),
 // or a disabled driver if no projects config directory exists on the host.
 func NewDefaultJetskiIDEDriver() *JetskiIDEDriver {
-	if os.Getenv("GH_ISH_IDE_SYNC") == "0" || os.Getenv("GH_ISH_IDE_SYNC") == "off" {
+	if syncVal := pw_ghish.Getenv("GHISH_IDE_SYNC"); syncVal == "0" || syncVal == "off" {
 		return &JetskiIDEDriver{Disabled: true}
 	}
 	home, err := os.UserHomeDir()

@@ -146,7 +146,7 @@ func NewKindSmokeFixture(t *testing.T) *KindSmokeFixture {
 
 	pinGoldenEnv(t)
 	isolatePerfGitEnv(t)
-	t.Setenv("GH_ISH_IDE_SYNC", "0")
+	t.Setenv("GHISH_IDE_SYNC", "0")
 	t.Setenv("CONVERSATION_ID", "")
 	// Commits made by the fixture and by commands get fixed dates, and git's
 	// version-dependent detached-HEAD advice stays out of the output.

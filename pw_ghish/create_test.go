@@ -471,7 +471,7 @@ func TestCreate_RejectsGitHubIssueSyntaxFromFlags(t *testing.T) {
 }
 
 // TestCreate_RejectsGitHubIssueSyntaxInHeadCommit covers the message an agent
-// wrote with plain `git commit`, which never passes through a gh-ish flag.
+// wrote with plain `git commit`, which never passes through a ghish flag.
 // This is the common case, so checking only the flags would miss most of it.
 func TestCreate_RejectsGitHubIssueSyntaxInHeadCommit(t *testing.T) {
 	mockGit := NewMockGit(t).WithBranch("main").WithCommit(

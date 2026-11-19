@@ -2045,7 +2045,7 @@ func senseOncall(ctx context.Context, cfg *Config, projCfg *ProjectConfig, warni
 	userEmail, userLogin := resolveCurrentUserIdentity(ctx, cfg)
 	res := SenseOncallState{UserLogin: userLogin, UserEmail: userEmail}
 
-	scheduleFile := strings.TrimSpace(os.Getenv("GH_ISH_ONCALL_FILE"))
+	scheduleFile := strings.TrimSpace(Getenv("GHISH_ONCALL_FILE"))
 	if scheduleFile == "" && projCfg != nil {
 		scheduleFile = strings.TrimSpace(projCfg.Oncall.ScheduleFile)
 	}

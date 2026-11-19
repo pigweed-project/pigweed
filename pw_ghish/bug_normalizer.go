@@ -206,7 +206,7 @@ func parseBugTrailer(trailerLine string) (key, value string, closes, ok bool) {
 // unchanged.
 //
 // This is the single place that decides what a bug trailer looks like when
-// gh-ish authors one itself, from `--bug` or `--fixed`. Contrast
+// ghish authors one itself, from `--bug` or `--fixed`. Contrast
 // normalizeTrailerValue, which canonicalizes only the value and leaves the key
 // exactly as the author wrote it: that one runs when carrying an existing
 // trailer forward, where rewriting a key the user did not ask to change would

@@ -190,7 +190,7 @@ var scratchFlag bool
 var scratchCmd = &cobra.Command{
 	Use: "scratch",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		_ = os.Setenv("PW_GH_SCOPES", scratchScopes)
+		_ = os.Setenv("GHISH_SCOPES", scratchScopes)
 		_, _ = os.CreateTemp("", "ghish-sso-headers-*")
 		if _, err := LoadCommandProjectConfig(cmd); err != nil {
 			return nil

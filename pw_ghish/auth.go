@@ -98,6 +98,7 @@ var AuthModeFlag string
 
 type authModeCacheKey struct {
 	flag    string
+	envVar  string
 	envMode string
 	cfg     *Config
 }
@@ -121,7 +122,7 @@ var authModeCache = NewCache[authModeCacheKey, cachedAuthMode]()
 //
 // Precedence:
 //  1. --auth-mode flag (AuthModeFlag)
-//  2. GH_ISH_AUTH_MODE environment variable
+//  2. GHISH_AUTH_MODE environment variable
 //  3. git config ghish.authmode (from cfg, or ctx when cfg is nil)
 //  4. Auto-detection (gosso on PATH, /usr/bin/sso-cred-helper present,
 //     @google.com git user.email, or sso:// or rpc:// remote)
@@ -136,9 +137,11 @@ func ResolveAuthMode(ctx context.Context, cfg *Config) (AuthMode, string, error)
 		cfg, _ = ctx.Value(configKey).(*Config)
 	}
 
+	envRaw, envVar := GetenvWithName("GHISH_AUTH_MODE")
 	cacheKey := authModeCacheKey{
 		flag:    strings.TrimSpace(AuthModeFlag),
-		envMode: strings.TrimSpace(os.Getenv("GH_ISH_AUTH_MODE")),
+		envVar:  envVar,
+		envMode: strings.TrimSpace(envRaw),
 		cfg:     cfg,
 	}
 	if cfg != nil {
@@ -160,7 +163,7 @@ func ResolveAuthMode(ctx context.Context, cfg *Config) (AuthMode, string, error)
 		source = fmt.Sprintf("--auth-mode=%s", cacheKey.flag)
 	} else if cacheKey.envMode != "" {
 		rawMode = cacheKey.envMode
-		source = fmt.Sprintf("GH_ISH_AUTH_MODE=%s", cacheKey.envMode)
+		source = fmt.Sprintf("%s=%s", cmp.Or(cacheKey.envVar, "GHISH_AUTH_MODE"), cacheKey.envMode)
 	} else if cfg != nil && cfg.Git != nil {
 		if v := cfg.GetProjectConfig(ctx).AuthMode; v != "" {
 			rawMode = v
@@ -220,22 +223,24 @@ func ResolveAuthMode(ctx context.Context, cfg *Config) (AuthMode, string, error)
 	return cacheAndReturn(AuthModeCommunity, "auto-detected (community environment)")
 }
 
+// TODO: b/586589869 - Remove checkRemovedAuthMethodEnv after rollout.
 // checkRemovedAuthMethodEnv fails if the removed GH_ISH_AUTH_METHOD variable is
 // still set to a non-empty value (empty or whitespace-only values are treated
 // as unset), so a stale `none` can't silently turn into authenticated requests.
 func checkRemovedAuthMethodEnv() error {
-	v := strings.TrimSpace(os.Getenv("GH_ISH_AUTH_METHOD"))
+	const envVar = "GH_ISH_AUTH_METHOD"
+	v := strings.TrimSpace(os.Getenv(envVar))
 	if v == "" {
 		return nil
 	}
-	steps := append([]string{"Unset it: unset GH_ISH_AUTH_METHOD"}, gerritCredentialSteps("", AuthModeAuto)...)
+	steps := append([]string{"Unset it: unset " + envVar}, gerritCredentialSteps("", AuthModeAuto)...)
 	steps = append(steps, "Check auth status: gh auth status")
 	return NewExitCodeError(ExitCodeAuth,
-		"GH_ISH_AUTH_METHOD=%s is set, but GH_ISH_AUTH_METHOD has been removed.\n\n"+
-			"gh-ish now picks Gerrit credentials automatically: GERRIT_TOKEN when set, otherwise Corp SSO (googler mode) or luci-auth (for *.googlesource.com).\n"+
-			"To disable authentication, use --auth-mode=none or GH_ISH_AUTH_MODE=none.\n\n"+
+		"%s=%s is set, but %s has been removed.\n\n"+
+			"ghish now picks Gerrit credentials automatically: GERRIT_TOKEN when set, otherwise Corp SSO (googler mode) or luci-auth (for *.googlesource.com).\n"+
+			"To disable authentication, use --auth-mode=none or GHISH_AUTH_MODE=none.\n\n"+
 			"Remediation:\n%s",
-		v, formatGerritRemediationSteps(steps...))
+		envVar, v, envVar, formatGerritRemediationSteps(steps...))
 }
 
 // AuthMethod describes a credential mechanism used to authenticate HTTP requests.
@@ -684,7 +689,7 @@ func modeAwareBearerToken(
 					"Remediation:\n"+
 					"%s\n"+
 					"  2. Check authentication status: gh auth status\n"+
-					"  3. For public projects without internal credentials: export GH_ISH_AUTH_MODE=community",
+					"  3. For public projects without internal credentials: export GHISH_AUTH_MODE=community",
 				service, modeReason, reqURL.Host, firstLine(tokErr.Error()),
 				luciAuthTokenRemediationStep1(luciAuthLoginCommand(mode)))
 		}
@@ -852,7 +857,7 @@ func resolveIssueTrackerCommandAuth(ctx context.Context, cfg *Config, profile Pr
 		return nil, NewExitCodeError(ExitCodeAuth,
 			"Google Issue Tracker requires authentication, which is disabled (%s).\n\n"+
 				"Remediation:\n"+
-				"  1. Re-enable authentication by removing --auth-mode=none / GH_ISH_AUTH_MODE=none.\n"+
+				"  1. Re-enable authentication by removing --auth-mode=none / GHISH_AUTH_MODE=none.\n"+
 				"  2. Check authentication status: gh auth status",
 			modeReason)
 	}
@@ -863,7 +868,7 @@ func resolveIssueTrackerCommandAuth(ctx context.Context, cfg *Config, profile Pr
 			"Google Issue Tracker CLI commands (gh issue) require Google Corp access (%s).\n\n"+
 				"Remediation:\n"+
 				"  1. View or file issues on the web at %s\n"+
-				"  2. If you are a Google employee on a Corp workstation, pass --auth-mode=googler (or set GH_ISH_AUTH_MODE=googler).",
+				"  2. If you are a Google employee on a Corp workstation, pass --auth-mode=googler (or set GHISH_AUTH_MODE=googler).",
 			modeReason, issueTrackerCommunityWebURL(profile))
 		return func(context.Context) (string, error) {
 			return "", authErr
@@ -941,12 +946,12 @@ func newIssueTrackerHTTPAuthError(ctx context.Context, endpoint, method, path, q
 				"  1. Enable %s on project %q.\n"+
 				"  2. Or remove the override (GHISH_QUOTA_PROJECT / GOOGLE_CLOUD_QUOTA_PROJECT,\n"+
 				"     issue.quota_project in .ghish.toml, or git config ghish.issue.quotaProject);\n"+
-				"     gh-ish's luci-auth credentials do not need a quota project.\n\n"+
+				"     ghish's luci-auth credentials do not need a quota project.\n\n"+
 				"Server Details: %s", statusCode, method, path, quotaProject, svcName, svcName, quotaProject, rawErr)
 		}
 		return fmt.Errorf("Google Issue Tracker quota project error (HTTP %d) for %s %s.\n\n"+
 			"Cause: The OAuth client that minted this token is not enabled for %s.\n"+
-			"gh-ish's luci-auth token does not need a quota project; this usually means\n"+
+			"ghish's luci-auth token does not need a quota project; this usually means\n"+
 			"GHISH_ISSUE_TOKEN/BUGANIZER_TOKEN came from another tool.\n\n"+
 			"Remediation:\n"+
 			"  1. Unset GHISH_ISSUE_TOKEN/BUGANIZER_TOKEN and re-authenticate with luci-auth:\n"+
@@ -1087,9 +1092,9 @@ func isGerritAutoAuthHost(h string) bool {
 // resolveGerritAuth picks the Gerrit credential for gerritHost (a hostname or
 // URL) in mode: none when authentication is disabled, else GERRIT_TOKEN, else
 // a luci-auth token. Auto-minted luci-auth tokens are only used for
-// Google-hosted Gerrit (isGerritAutoAuthHost); an explicit GERRIT_TOKEN goes
-// to any configured host. When no credential is found, the result is unauthed
-// and cause says why.
+// Google-hosted Gerrit (isGerritAutoAuthHost); an explicit token goes to any
+// configured host. When no credential is found, the result is unauthed and
+// cause says why.
 func resolveGerritAuth(ctx context.Context, gerritHost string, mode AuthMode) (resolvedGerritAuth, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -1197,18 +1202,18 @@ func gerritGooglerAuthError(modeReason, gerritHost string, cause error) error {
 			"Check auth status: gh auth status",
 		)
 		return NewExitCodeError(ExitCodeAuth,
-			"Gerrit host %s is not a Google-hosted Gerrit (*.googlesource.com); gh-ish only sends "+
+			"Gerrit host %s is not a Google-hosted Gerrit (*.googlesource.com); ghish only sends "+
 				"luci-auth tokens to Google hosts.\n\n"+
 				"Remediation:\n%s",
 			cleanHost, formatGerritRemediationSteps(steps...))
 	}
 	steps := append(gerritCredentialSteps(gerritHost, AuthModeGoogler),
-		"Switch to community mode: export GH_ISH_AUTH_MODE=community",
+		"Switch to community mode: export GHISH_AUTH_MODE=community",
 		"Check auth status: gh auth status",
 	)
 	return NewExitCodeError(ExitCodeAuth,
 		"Gerrit authentication required in googler mode (%s): no Gerrit credentials found for %s (%v).\n\n"+
-			"Cause: In googler mode, gh-ish does not fall back to unauthenticated Gerrit requests.\n\n"+
+			"Cause: In googler mode, ghish does not fall back to unauthenticated Gerrit requests.\n\n"+
 			"Remediation:\n%s",
 		modeReason, cleanHost, cause, formatGerritRemediationSteps(steps...))
 }
@@ -1516,9 +1521,8 @@ var OAuthTokenCommandRunner = func(ctx context.Context, name string, args ...str
 }
 
 // scriptDirEnvVar names the directory of the `gh` wrapper script, which the
-// wrapper exports for the binary. See the wrapper for why it uses the _PW_
-// prefix.
-const scriptDirEnvVar = "_PW_GH_SCRIPT_DIR"
+// wrapper exports for the binary.
+const scriptDirEnvVar = "_GHISH_SCRIPT_DIR"
 
 // findLuciAuthBinary locates the 'luci-auth' executable.
 //
@@ -1526,7 +1530,7 @@ const scriptDirEnvVar = "_PW_GH_SCRIPT_DIR"
 // In a Bazelisk-only workflow or './gh' invocation without sourcing
 // 'activate.sh', CIPD tools may not be on system PATH. We fall back only to
 // explicit environment roots (PW_ENVIRONMENT_ROOT, BUILD_WORKSPACE_DIRECTORY,
-// and _PW_GH_SCRIPT_DIR), never probing ambient cwd or Git repository paths.
+// and _GHISH_SCRIPT_DIR), never probing ambient cwd or Git repository paths.
 //
 // TODO: https://pwbug.dev/567289969 - Replace Pigweed CIPD directory probing
 // once tool discovery is driven by project profile configuration or
@@ -1555,7 +1559,7 @@ func findLuciAuthBinaryWithSearched(_ context.Context) (string, []string) {
 			filepath.Join(wsDir, ".environment", "cipd", "packages", "luci", "luci-auth"),
 		)
 	}
-	if scriptDir := strings.TrimSpace(os.Getenv(scriptDirEnvVar)); scriptDir != "" {
+	if scriptDir := strings.TrimSpace(Getenv(scriptDirEnvVar)); scriptDir != "" {
 		candidates = append(candidates,
 			filepath.Join(scriptDir, "environment", "cipd", "packages", "luci", "luci-auth"),
 			filepath.Join(scriptDir, ".environment", "cipd", "packages", "luci", "luci-auth"),
@@ -1613,7 +1617,7 @@ func parseOAuthTokenOutput(out []byte, now time.Time) (string, time.Time) {
 // mintLUCIAuthToken runs luci-auth once for scopes (a space-separated
 // luciAuthScopes set). It never falls back to another tool: luci-auth (with
 // sso-cred-helper on Corp Linux, or `luci-auth login` elsewhere) covers every
-// scope gh-ish needs.
+// scope ghish needs.
 func mintLUCIAuthToken(ctx context.Context, scopes string) (string, time.Time, error) {
 	bin, searched := findLuciAuthBinaryWithSearched(ctx)
 	if bin == "" {
@@ -1685,7 +1689,7 @@ func luciAuthTokenWithScope(ctx context.Context, scope string) (string, error) {
 	if scope != "" && !slices.Contains(scopeSet, scope) {
 		if mode != AuthModeGoogler {
 			return "", fmt.Errorf("the %s-mode luci-auth token does not include the %s scope "+
-				"(Googlers: export GH_ISH_AUTH_MODE=googler)", mode, scope)
+				"(Googlers: export GHISH_AUTH_MODE=googler)", mode, scope)
 		}
 		return "", fmt.Errorf("the %s-mode luci-auth token does not include the %s scope", mode, scope)
 	}
@@ -1739,13 +1743,13 @@ const ScopeGerritCodeReview = "https://www.googleapis.com/auth/gerritcodereview"
 // ScopeUserInfoEmail is the OAuth2 scope for reading the user's email address.
 const ScopeUserInfoEmail = "https://www.googleapis.com/auth/userinfo.email"
 
-// luciAuthScopes returns the one scope set gh-ish requests from luci-auth in
+// luciAuthScopes returns the one scope set ghish requests from luci-auth in
 // mode. luci-auth only mints tokens for the exact scope set the user logged in
 // with, so each mode uses a single set and needs one `luci-auth login`:
 //   - googler: Gerrit, userinfo.email, Buganizer, and Android Build, for every
 //     Googler regardless of repository.
 //   - community: Gerrit and userinfo.email only.
-//   - none: no scopes; gh-ish never runs luci-auth.
+//   - none: no scopes; ghish never runs luci-auth.
 func luciAuthScopes(mode AuthMode) []string {
 	switch mode {
 	case AuthModeGoogler:
@@ -1777,7 +1781,7 @@ func luciAuthLoginCommandForScope(ctx context.Context, scope string) string {
 		mode = AuthModeGoogler
 	}
 	if mode == AuthModeCommunity && scope != "" && !slices.Contains(luciAuthScopes(mode), scope) {
-		return "(Googlers) export GH_ISH_AUTH_MODE=googler; " + luciAuthLoginCommand(AuthModeGoogler)
+		return "(Googlers) export GHISH_AUTH_MODE=googler; " + luciAuthLoginCommand(AuthModeGoogler)
 	}
 	return luciAuthLoginCommand(mode)
 }
@@ -1789,7 +1793,7 @@ func ResetAuthTokenCaches() {
 
 // gerritTokenFromEnv returns the trimmed GERRIT_TOKEN. A value containing ':'
 // is a username:password pair for HTTP Basic auth, which only non-Google
-// Gerrit servers use and gh-ish does not support yet; sending it as a Bearer
+// Gerrit servers use and ghish does not support yet; sending it as a Bearer
 // token would fail with a confusing 401, so it is rejected up front.
 func gerritTokenFromEnv() (string, error) {
 	tok := strings.TrimSpace(os.Getenv("GERRIT_TOKEN"))

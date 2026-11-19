@@ -104,7 +104,7 @@ func GitHubIssueSyntaxError(refs []GitHubIssueRef, where string) error {
 			"commit message trailer instead:\n\n"+
 			"  Fixed: b/<id>    links the bug and closes it when the change is submitted\n"+
 			"  Bug: b/<id>      links the bug without closing it\n\n"+
-			"gh-ish can write the trailer for you, and accepts a bare number, a b/ ID, or\n"+
+			"ghish can write the trailer for you, and accepts a bare number, a b/ ID, or\n"+
 			"an issue URL:\n\n"+
 			"  gh pr push --fixed b/<id>\n"+
 			"  gh pr push --bug b/<id>\n"+

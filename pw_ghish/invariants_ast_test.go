@@ -478,3 +478,118 @@ func findTestGitViolations(fset *token.FileSet, f *ast.File, allowDirectSpawn bo
 	}
 	return violations
 }
+
+var (
+	legacyEnvPrefixRe = regexp.MustCompile(`^(?:GH_ISH|_?PW_GH)`)
+	legacyNamingRe    = regexp.MustCompile(`(?i)\bgh-ish\b|\bpw-ghish\b|\bgerrit-cli\b|GH_ISH_|\b_?PW_GH_|\.config/pw_ghish|\.cache/pw_ghish|(?:XDG_(?:CONFIG_HOME|CACHE_HOME|RUNTIME_DIR)|TMPDIR|Caches|<runtime_base>)/pw_ghish|pigweed/gh/cipd`)
+)
+
+// legacyShimMarker matches the rollout-shim annotation used to exempt
+// backward-compatibility shims tracked by b/586589869.
+// todo-check: ignore
+const legacyShimMarker = "TODO: b/586589869"
+
+// legacyShimExempt reports whether line (1-based) in lines carries, or is
+// immediately preceded by, a rollout-shim annotation for b/586589869.
+//
+// TODO: b/586589869 - Remove this exemption once rollout shims are deleted.
+func legacyShimExempt(lines []string, line int) bool {
+	if line < 1 || line > len(lines) {
+		return false
+	}
+	if strings.Contains(lines[line-1], legacyShimMarker) {
+		return true
+	}
+	for i := line - 2; i >= 0 && i >= line-15; i-- {
+		trimmed := strings.TrimSpace(lines[i])
+		if strings.Contains(trimmed, legacyShimMarker) {
+			return true
+		}
+		// Stop walking back past a blank line or block boundary.
+		if trimmed == "" || trimmed == "}" {
+			break
+		}
+	}
+	return false
+}
+
+func findLegacyNamingViolations(files []*astcheck.File) []string {
+	var violations []string
+	for _, cs := range astcheck.FindCalls(files, "os.Getenv", "os.LookupEnv", "os.Setenv") {
+		key, ok := astcheck.StringLitArg(cs.Call, 0)
+		if ok && legacyEnvPrefixRe.MatchString(key) {
+			lines := strings.Split(string(cs.File.Src), "\n")
+			if !legacyShimExempt(lines, cs.File.Line(cs.Call.Pos())) {
+				violations = append(violations, fmt.Sprintf("%s: %s(%q) uses legacy env prefix; use GHISH_* / _GHISH_* (and Getenv for soft-transition fallbacks)", cs.Pos, cs.Selector, key))
+			}
+		}
+	}
+	for _, cs := range astcheck.FindCalls(files, "filepath.Join") {
+		lines := strings.Split(string(cs.File.Src), "\n")
+		if legacyShimExempt(lines, cs.File.Line(cs.Call.Pos())) {
+			continue
+		}
+		for i := range len(cs.Call.Args) {
+			if seg, ok := astcheck.StringLitArg(cs.Call, i); ok && seg == "pw_ghish" {
+				violations = append(violations, fmt.Sprintf("%s: filepath.Join uses legacy dir segment %q; use \"ghish\"", cs.Pos, seg))
+			}
+		}
+	}
+	for _, fc := range files {
+		lines := strings.Split(string(fc.Src), "\n")
+		for n := range ast.Preorder(fc.AST) {
+			lit, ok := n.(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				continue
+			}
+			val, err := strconv.Unquote(lit.Value)
+			if err != nil {
+				val = strings.Trim(lit.Value, `"`+"`")
+			}
+			if m := legacyNamingRe.FindString(val); m != "" && !legacyShimExempt(lines, fc.Line(lit.Pos())) {
+				violations = append(violations, fmt.Sprintf("%s:%d: string literal contains legacy name %q; use canonical ghish / GHISH_* naming", fc.Path, fc.Line(lit.Pos()), m))
+			}
+		}
+		for _, cg := range fc.AST.Comments {
+			for _, c := range cg.List {
+				if m := legacyNamingRe.FindString(c.Text); m != "" && !legacyShimExempt(lines, fc.Line(c.Pos())) {
+					violations = append(violations, fmt.Sprintf("%s:%d: comment contains legacy name %q; use canonical ghish / GHISH_* naming", fc.Path, fc.Line(c.Pos()), m))
+				}
+			}
+		}
+	}
+	return violations
+}
+
+// TestInvariants_ConsistentNaming verifies that production Go code uses
+// canonical `ghish` / `GHISH_*` / `_GHISH_*` naming and XDG paths rather than
+// reintroducing legacy `gh-ish`, `GH_ISH_*`, `PW_GH_*`, `pw-ghish`, or
+// `gerrit-cli` spellings (except explicit b/586589869 rollout shims).
+func TestInvariants_ConsistentNaming(t *testing.T) {
+	files := astcheck.MustLoadFiles(t, ".", "worktree", "cmd")
+	for _, v := range findLegacyNamingViolations(files) {
+		t.Error(v)
+	}
+	for _, tc := range []struct {
+		name      string
+		src       string
+		wantCount int
+	}{
+		{"legacy os.Getenv rejected", `package p; import "os"; func f() { _ = os.Getenv("GH_ISH_AUTH_MODE") }`, 2},
+		{"legacy string literal rejected", `package p; const s = "via gh-ish"`, 1},
+		{"legacy comment rejected", "package p\n// Use PW_GH_BIN here.\n", 1},
+		{"legacy runtime_base comment rejected", "package p\n// Returns <runtime_base>/pw_ghish.\n", 1},
+		{"legacy filepath.Join segment rejected", `package p; import "path/filepath"; func f() { _ = filepath.Join("/home", ".config", "pw_ghish") }`, 1},
+		{"rollout shim exempted", "package p\n// TODO: b/586589869 - legacy shim.\nconst s = \"gh-ish\"\n", 0},
+	} {
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, tc.name+".go", tc.src, parser.ParseComments)
+		if err != nil {
+			t.Fatalf("ParseFile(%s): %v", tc.name, err)
+		}
+		got := findLegacyNamingViolations([]*astcheck.File{{AST: f, Path: tc.name + ".go", Src: []byte(tc.src), Fset: fset}})
+		if len(got) != tc.wantCount {
+			t.Errorf("%s: got %d violations (%v), want %d", tc.name, len(got), got, tc.wantCount)
+		}
+	}
+}

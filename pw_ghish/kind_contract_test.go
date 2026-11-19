@@ -48,72 +48,72 @@ import (
 // A runnable command with no entry fails TestKindContract_EveryCommandOptsIn.
 var kindSmokeArgs = map[string][]string{
 	// view
-	"gh-ish auth":        {"auth"},
-	"gh-ish auth status": {"auth", "status"},
-	"gh-ish hook status": {"hook", "status"},
-	"gh-ish issue view":  {"issue", "view", "345678"},
-	"gh-ish pr diff":     {"pr", "diff", "12345"},
-	"gh-ish pr view":     {"pr", "view", "12345"},
-	"gh-ish run view":    {"run", "view", "12345"},
-	"gh-ish sense":       {"sense"},
-	"gh-ish wt audit":    {"wt", "audit"},
+	"ghish auth":        {"auth"},
+	"ghish auth status": {"auth", "status"},
+	"ghish hook status": {"hook", "status"},
+	"ghish issue view":  {"issue", "view", "345678"},
+	"ghish pr diff":     {"pr", "diff", "12345"},
+	"ghish pr view":     {"pr", "view", "12345"},
+	"ghish run view":    {"run", "view", "12345"},
+	"ghish sense":       {"sense"},
+	"ghish wt audit":    {"wt", "audit"},
 	// list
-	"gh-ish issue list":   {"issue", "list"},
-	"gh-ish issue status": {"issue", "status"},
-	"gh-ish pr checks":    {"pr", "checks", "12345"},
-	"gh-ish pr list":      {"pr", "list"},
-	"gh-ish pr status":    {"pr", "status"},
-	"gh-ish run list":     {"run", "list", "12345"},
-	"gh-ish wt list":      {"wt", "list"},
+	"ghish issue list":   {"issue", "list"},
+	"ghish issue status": {"issue", "status"},
+	"ghish pr checks":    {"pr", "checks", "12345"},
+	"ghish pr list":      {"pr", "list"},
+	"ghish pr status":    {"pr", "status"},
+	"ghish run list":     {"run", "list", "12345"},
+	"ghish wt list":      {"wt", "list"},
 	// mutation
-	"gh-ish hook install":   {"hook", "install", "--git"},
-	"gh-ish hook uninstall": {"hook", "uninstall", "--git"},
-	"gh-ish issue close":    {"issue", "close", "345678"},
-	"gh-ish issue comment":  {"issue", "comment", "345678", "--body", "Smoke comment."},
-	"gh-ish issue create":   {"issue", "create", "--title", "Smoke issue", "--body", "Smoke body.", "--component", "1194524"},
-	"gh-ish issue develop":  {"issue", "develop", "345678"},
-	"gh-ish issue edit":     {"issue", "edit", "345678", "--title", "Smoke title"},
-	"gh-ish issue reopen":   {"issue", "reopen", "345678"},
-	"gh-ish pr checkout":    {"pr", "checkout", "12345"},
-	"gh-ish pr cherry-pick": {"pr", "cherry-pick", "12345"},
-	"gh-ish pr close":       {"pr", "close", "12345"},
-	"gh-ish pr comment":     {"pr", "comment", "12345", "--body", "Smoke comment."},
-	"gh-ish pr create":      {"pr", "create"},
-	"gh-ish pr edit":        {"pr", "edit", "12345", "--add-hashtag", "smoke"},
-	"gh-ish pr merge":       {"pr", "merge", "12345"},
-	"gh-ish pr push":        {"pr", "push"},
-	"gh-ish pr ready":       {"pr", "ready", "12345"},
-	"gh-ish pr reopen":      {"pr", "reopen", "12345"},
-	"gh-ish pr review":      {"pr", "review", "12345", "--approve"},
-	"gh-ish run rerun":      {"run", "rerun", "12345", "-j", "linux-gn"},
-	"gh-ish wt close":       {"wt", "close", "smoke"},
-	"gh-ish wt gc":          {"wt", "gc"},
-	"gh-ish wt init":        {"wt", "init"},
-	"gh-ish wt next":        {"wt", "next", "smoke"},
-	"gh-ish wt park":        {"wt", "park", "smoke"},
-	"gh-ish wt use":         {"wt", "use", "smoke"},
+	"ghish hook install":   {"hook", "install", "--git"},
+	"ghish hook uninstall": {"hook", "uninstall", "--git"},
+	"ghish issue close":    {"issue", "close", "345678"},
+	"ghish issue comment":  {"issue", "comment", "345678", "--body", "Smoke comment."},
+	"ghish issue create":   {"issue", "create", "--title", "Smoke issue", "--body", "Smoke body.", "--component", "1194524"},
+	"ghish issue develop":  {"issue", "develop", "345678"},
+	"ghish issue edit":     {"issue", "edit", "345678", "--title", "Smoke title"},
+	"ghish issue reopen":   {"issue", "reopen", "345678"},
+	"ghish pr checkout":    {"pr", "checkout", "12345"},
+	"ghish pr cherry-pick": {"pr", "cherry-pick", "12345"},
+	"ghish pr close":       {"pr", "close", "12345"},
+	"ghish pr comment":     {"pr", "comment", "12345", "--body", "Smoke comment."},
+	"ghish pr create":      {"pr", "create"},
+	"ghish pr edit":        {"pr", "edit", "12345", "--add-hashtag", "smoke"},
+	"ghish pr merge":       {"pr", "merge", "12345"},
+	"ghish pr push":        {"pr", "push"},
+	"ghish pr ready":       {"pr", "ready", "12345"},
+	"ghish pr reopen":      {"pr", "reopen", "12345"},
+	"ghish pr review":      {"pr", "review", "12345", "--approve"},
+	"ghish run rerun":      {"run", "rerun", "12345", "-j", "linux-gn"},
+	"ghish wt close":       {"wt", "close", "smoke"},
+	"ghish wt gc":          {"wt", "gc"},
+	"ghish wt init":        {"wt", "init"},
+	"ghish wt next":        {"wt", "next", "smoke"},
+	"ghish wt park":        {"wt", "park", "smoke"},
+	"ghish wt use":         {"wt", "use", "smoke"},
 }
 
 // kindSmokeSetup lists unmeasured invocations that put state in place before
 // a command's measured invocation, keyed like kindSmokeArgs. Entries starting
 // with "git" run git directly in the fixture repository.
 var kindSmokeSetup = map[string][][]string{
-	"gh-ish hook uninstall": {{"hook", "install", "--git"}},
-	"gh-ish issue reopen":   {{"issue", "close", "345678"}},
+	"ghish hook uninstall": {{"hook", "install", "--git"}},
+	"ghish issue reopen":   {{"issue", "close", "345678"}},
 	// Cherry-pick the change onto main rather than onto itself.
-	"gh-ish pr cherry-pick": {{"git", "checkout", "main"}},
+	"ghish pr cherry-pick": {{"git", "checkout", "main"}},
 	// A commit no Gerrit query finds, so `pr create` creates a change.
-	"gh-ish pr create": {
+	"ghish pr create": {
 		{"git", "checkout", "-b", "fresh", "main"},
 		{"git", "commit", "--allow-empty", "-m", "pw_fresh: Add fresh change\n\nChange-Id: " + pw_ghish.KindSmokeFreshChangeID},
 	},
-	"gh-ish wt audit": {{"wt", "init"}},
-	"gh-ish wt close": {{"wt", "init"}, {"wt", "use", "smoke"}},
-	"gh-ish wt gc":    {{"wt", "init"}},
-	"gh-ish wt list":  {{"wt", "init"}, {"wt", "use", "smoke"}},
-	"gh-ish wt next":  {{"wt", "init"}, {"wt", "use", "smoke"}},
-	"gh-ish wt park":  {{"wt", "init"}, {"wt", "use", "smoke"}},
-	"gh-ish wt use":   {{"wt", "init"}},
+	"ghish wt audit": {{"wt", "init"}},
+	"ghish wt close": {{"wt", "init"}, {"wt", "use", "smoke"}},
+	"ghish wt gc":    {{"wt", "init"}},
+	"ghish wt list":  {{"wt", "init"}, {"wt", "use", "smoke"}},
+	"ghish wt next":  {{"wt", "init"}, {"wt", "use", "smoke"}},
+	"ghish wt park":  {{"wt", "init"}, {"wt", "use", "smoke"}},
+	"ghish wt use":   {{"wt", "init"}},
 }
 
 // kindSmokeSkip lists commands that cannot run hermetically, keyed by command
@@ -137,10 +137,10 @@ var kindSmokeContractGaps = map[string]string{}
 // directory, so the same git call in two different worktrees also counts as
 // a repeat.
 var kindSmokeDuplicateSubprocesses = map[string]map[string]string{
-	"gh-ish wt close": {"git rev-parse --verify origin/main": lostMemo},
+	"ghish wt close": {"git rev-parse --verify origin/main": lostMemo},
 	// ExecGitRunner.AddWorktree prunes before each `worktree add` (once per
 	// new slot: 2 here) and ListWorktrees prunes before listing (once).
-	"gh-ish wt init": {"git worktree prune": "prunes stale worktree entries before each slot's `worktree add` and again before `worktree list`"},
+	"ghish wt init": {"git worktree prune": "prunes stale worktree entries before each slot's `worktree add` and again before `worktree list`"},
 }
 
 // lostMemo is the kindSmokeDuplicateSubprocesses reason for repeats that
@@ -187,21 +187,21 @@ type kindBudgetPin struct {
 // the hot commands). Raise a pin only with a CL description justifying the
 // extra work.
 var kindSmokeBudgetPins = map[string]kindBudgetPin{
-	"gh-ish auth":           {subprocesses: 3, rpcs: 1, why: "resolves branch, shared config prefetch, and git-common-dir probe"},
-	"gh-ish auth status":    {subprocesses: 3, rpcs: 1, why: "resolves branch, shared config prefetch, and git-common-dir probe"},
-	"gh-ish issue list":     {subprocesses: 3, rpcs: 1, why: "resolves branch, shared config prefetch, and HEAD diff-tree for commit context"},
-	"gh-ish issue develop":  {subprocesses: 6, rpcs: 2, why: "resolves default branch, verifies target branch, and creates/switches branch"},
-	"gh-ish pr checkout":    {subprocesses: 6, rpcs: 1, why: "fetches patchset ref and checks out local branch"},
-	"gh-ish pr cherry-pick": {subprocesses: 6, rpcs: 1, why: "fetches patchset ref and cherry-picks onto current branch"},
+	"ghish auth":           {subprocesses: 3, rpcs: 1, why: "resolves branch, shared config prefetch, and git-common-dir probe"},
+	"ghish auth status":    {subprocesses: 3, rpcs: 1, why: "resolves branch, shared config prefetch, and git-common-dir probe"},
+	"ghish issue list":     {subprocesses: 3, rpcs: 1, why: "resolves branch, shared config prefetch, and HEAD diff-tree for commit context"},
+	"ghish issue develop":  {subprocesses: 6, rpcs: 2, why: "resolves default branch, verifies target branch, and creates/switches branch"},
+	"ghish pr checkout":    {subprocesses: 6, rpcs: 1, why: "fetches patchset ref and checks out local branch"},
+	"ghish pr cherry-pick": {subprocesses: 6, rpcs: 1, why: "fetches patchset ref and cherry-picks onto current branch"},
 	// The push pipeline validates the commit stack, resolves the target
 	// branch, and pushes.
-	"gh-ish pr create": {subprocesses: 12, rpcs: 1, why: "push pipeline: stack validation, target branch resolution, existing-change check, push"},
-	"gh-ish pr push":   {subprocesses: 10, rpcs: 1, why: "push pipeline: stack validation and push"},
+	"ghish pr create": {subprocesses: 12, rpcs: 1, why: "push pipeline: stack validation, target branch resolution, existing-change check, push"},
+	"ghish pr push":   {subprocesses: 10, rpcs: 1, why: "push pipeline: stack validation and push"},
 	// Worktree management is git work by definition.
-	"gh-ish wt close": {subprocesses: 7, rpcs: 0, why: "inspects the slot (log, rev-list, status) and detaches it"},
-	"gh-ish wt init":  {subprocesses: 7, rpcs: 0, why: "creates one git worktree per slot and prunes"},
-	"gh-ish wt park":  {subprocesses: 5, rpcs: 0, why: "inspects the slot and detaches it"},
-	"gh-ish wt use":   {subprocesses: 7, rpcs: 0, why: "collision checks, branch creation, worktree bookkeeping"},
+	"ghish wt close": {subprocesses: 7, rpcs: 0, why: "inspects the slot (log, rev-list, status) and detaches it"},
+	"ghish wt init":  {subprocesses: 7, rpcs: 0, why: "creates one git worktree per slot and prunes"},
+	"ghish wt park":  {subprocesses: 5, rpcs: 0, why: "inspects the slot and detaches it"},
+	"ghish wt use":   {subprocesses: 7, rpcs: 0, why: "collision checks, branch creation, worktree bookkeeping"},
 }
 
 // kindSmokeCommand is one command registered at one or more paths (an alias
@@ -482,7 +482,7 @@ func TestKindContract_Commands(t *testing.T) {
 			continue // Reported by TestKindContract_EveryCommandOptsIn.
 		}
 		args := kindSmokeArgs[name]
-		t.Run(strings.TrimPrefix(name, "gh-ish "), func(t *testing.T) {
+		t.Run(strings.TrimPrefix(name, "ghish "), func(t *testing.T) {
 			f := pw_ghish.NewKindSmokeFixture(t)
 			installHermeticWT(t, f, false)
 			for _, s := range kindSmokeSetup[name] {

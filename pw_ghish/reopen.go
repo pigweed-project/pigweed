@@ -31,7 +31,7 @@ var reopenCmd = &cobra.Command{
 			return err
 		}
 
-		_, err = chCtx.Client.RestoreChange(chCtx.Context, chCtx.ChangeID, "Restored via gh-ish")
+		_, err = chCtx.Client.RestoreChange(chCtx.Context, chCtx.ChangeID, "Restored via ghish")
 		if err != nil {
 			return chCtx.FormatError(err, "reopening")
 		}

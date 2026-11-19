@@ -373,7 +373,7 @@ func TestAuthStatus_GerritUnauthenticatedMatrix(t *testing.T) {
 			mode:             "googler",
 			host:             nonGoogleHost,
 			hasSSOCredHelper: true,
-			wantMessage:      fmt.Sprintf("Gerrit host %s is not a Google-hosted Gerrit (*.googlesource.com); gh-ish only sends luci-auth tokens to Google hosts.", nonGoogleHost),
+			wantMessage:      fmt.Sprintf("Gerrit host %s is not a Google-hosted Gerrit (*.googlesource.com); ghish only sends luci-auth tokens to Google hosts.", nonGoogleHost),
 			wantRemediation:  tokenStep,
 		},
 		{

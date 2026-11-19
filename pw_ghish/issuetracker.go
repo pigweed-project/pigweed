@@ -109,7 +109,7 @@ type BuganizerUser struct {
 }
 
 // DefaultCommentFormattingMode is the default Buganizer formatting mode for
-// issue descriptions and comments created by gh-ish.
+// issue descriptions and comments created by ghish.
 const DefaultCommentFormattingMode = "MARKDOWN"
 
 // BuganizerComment represents a comment entry on a Buganizer issue.

@@ -32,14 +32,14 @@ import (
 
 func TestProductionPersistentCacheDir(t *testing.T) {
 	homeFallbackEnv := map[string]string{"HOME": "/home/alice"}
-	homeFallbackWant := filepath.Join("/home/alice", ".cache", "pw_ghish")
+	homeFallbackWant := filepath.Join("/home/alice", ".cache", "ghish")
 	switch runtime.GOOS {
 	case "darwin":
-		homeFallbackWant = filepath.Join("/home/alice", "Library", "Caches", "pw_ghish")
+		homeFallbackWant = filepath.Join("/home/alice", "Library", "Caches", "ghish")
 	case "windows":
 		winHome := filepath.Join("C:", "Users", "alice")
 		homeFallbackEnv = map[string]string{"USERPROFILE": winHome}
-		homeFallbackWant = filepath.Join(winHome, ".cache", "pw_ghish")
+		homeFallbackWant = filepath.Join(winHome, ".cache", "ghish")
 	}
 
 	for _, tc := range []struct {
@@ -65,7 +65,7 @@ func TestProductionPersistentCacheDir(t *testing.T) {
 		{
 			name: "XDG_CACHE_HOME overrides HOME",
 			env:  map[string]string{"XDG_CACHE_HOME": "/xdg", "HOME": "/home/alice"},
-			want: filepath.Join("/xdg", "pw_ghish"),
+			want: filepath.Join("/xdg", "ghish"),
 		},
 		{
 			name: "HOME fallback",
@@ -126,7 +126,7 @@ func TestDefaultRuntimeCacheDir(t *testing.T) {
 		env     map[string]string
 		wantDir string
 	}{
-		{name: "linux XDG_RUNTIME_DIR 0700", goos: "linux", env: map[string]string{"XDG_RUNTIME_DIR": good}, wantDir: filepath.Join(good, "pw_ghish")},
+		{name: "linux XDG_RUNTIME_DIR 0700", goos: "linux", env: map[string]string{"XDG_RUNTIME_DIR": good}, wantDir: filepath.Join(good, "ghish")},
 		{name: "linux unset", goos: "linux", env: map[string]string{"XDG_RUNTIME_DIR": ""}},
 		{name: "linux relative", goos: "linux", env: map[string]string{"XDG_RUNTIME_DIR": "run/user"}},
 		{name: "linux missing", goos: "linux", env: map[string]string{"XDG_RUNTIME_DIR": filepath.Join(good, "missing")}},
@@ -134,7 +134,7 @@ func TestDefaultRuntimeCacheDir(t *testing.T) {
 		{name: "linux symlink rejected", goos: "linux", env: map[string]string{"XDG_RUNTIME_DIR": symlinkBase}},
 		{name: "linux not 0700", goos: "linux", env: map[string]string{"XDG_RUNTIME_DIR": groupReadable}},
 		{name: "linux ignores TMPDIR", goos: "linux", env: map[string]string{"TMPDIR": good}},
-		{name: "darwin TMPDIR 0700 with trailing slash", goos: "darwin", env: map[string]string{"TMPDIR": good + "/"}, wantDir: filepath.Join(good, "pw_ghish")},
+		{name: "darwin TMPDIR 0700 with trailing slash", goos: "darwin", env: map[string]string{"TMPDIR": good + "/"}, wantDir: filepath.Join(good, "ghish")},
 		{name: "darwin TMPDIR not 0700", goos: "darwin", env: map[string]string{"TMPDIR": groupReadable}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

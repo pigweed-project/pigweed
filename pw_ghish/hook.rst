@@ -9,7 +9,7 @@ Hooks (gh hook)
 ``./gh hook`` (also aliased as ``./gh agent``) manages and executes **AI agent
 pre-execution tool guards** (``PreToolUse`` / ``beforeShellExecution``) and
 **Git repository hooks** (``commit-msg`` and ``pre-push``) directly inside the
-compiled ``gh-ish`` Go binary—eliminating external Python or POSIX shell script
+compiled ``ghish`` Go binary—eliminating external Python or POSIX shell script
 dependencies across Linux, macOS, and Windows.
 
 .. code-block:: console
@@ -17,7 +17,7 @@ dependencies across Linux, macOS, and Windows.
    # Inspect installed user-level agent hooks and repository Git hooks:
    $ ./gh hook status
 
-   # Stage the gh-ish binary and install user-level PreToolUse guards:
+   # Stage the ghish binary and install user-level PreToolUse guards:
    $ ./gh hook install --agent
 
    # Install only for a specific harness (jetski, claude, cursor, or all):
@@ -34,13 +34,13 @@ How user-level installation works
 ---------------------------------
 When you run ``./gh hook install --agent``, ``pw_ghish`` performs two steps:
 
-1. **Stages a branch-independent binary**: Copies the compiled ``gh-ish``
-   executable into ``~/.config/pw_ghish/bin/gh-ish`` (or
-   ``%USERPROFILE%\.config\pw_ghish\bin\gh-ish.exe`` on Windows). Because the
+1. **Stages a branch-independent binary**: Copies the compiled ``ghish``
+   executable into ``~/.config/ghish/bin/ghish`` (or
+   ``%USERPROFILE%\.config\ghish\bin\ghish.exe`` on Windows). Because the
    hook points to this staged binary outside the working tree, hooks execute in
    a few milliseconds without invoking Bazel and continue to work when
    switching branches or bisecting older commits.
-2. **Updates user-level harness configurations**: Merges the ``gh-ish hook
+2. **Updates user-level harness configurations**: Merges the ``ghish hook
    pre-tool-use`` command entry into your user-level harness settings while
    preserving existing configuration keys:
 
@@ -116,8 +116,8 @@ gh hook pre-push
 
 When opted in via ``./gh hook install --block-raw-push`` (which sets ``git
 config ghish.blockrawpush true``), blocks direct ``git push`` invocations at
-the Git layer unless invoked via ``./gh`` (``GH_ISH_ACTIVE=1``) or explicitly
-bypassed for manual recovery via ``GH_ISH_ALLOW_RAW_PUSH=1``.
+the Git layer unless invoked via ``./gh`` (``GHISH_ACTIVE=1``) or explicitly
+bypassed for manual recovery via ``GHISH_ALLOW_RAW_PUSH=1``.
 
 .. _module-pw_ghish-hook-comparison:
 

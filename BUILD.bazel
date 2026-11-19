@@ -42,6 +42,13 @@ exports_files(
         # Needed for releasing //pw_bluetooth_sapphire/fuchsia/bt_host.
         "LICENSE",
         "PIGWEED_MODULES",
+        # Needed for //pw_ghish:pw_ghish_test naming/doc consistency checks.
+        ".agents/agents/ghish_security_reviewer.md",
+        ".agents/agents/go_ghish_reviewer.md",
+        ".agents/skills/ghish/SKILL.md",
+        ".agents/skills/manual-cli-test/SKILL.md",
+        ".agents/skills/worktree/SKILL.md",
+        "AGENTS.md",
     ],
     visibility = [":__subpackages__"],
 )

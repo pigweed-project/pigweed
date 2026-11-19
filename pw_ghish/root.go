@@ -12,7 +12,7 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
-// Package pw_ghish implements the gerrit-cli commands.
+// Package pw_ghish implements the ghish CLI commands.
 package pw_ghish
 
 import (
@@ -413,9 +413,9 @@ func isHookCommand(cmd *cobra.Command) bool {
 	return false
 }
 
-// RootCmd is the root command for gh-ish.
+// RootCmd is the root command for ghish.
 var RootCmd = &cobra.Command{
-	Use:          "gh-ish",
+	Use:          "ghish",
 	Short:        "Gerrit CLI - manage Gerrit code reviews",
 	Long:         "",
 	SilenceUsage: true,
@@ -504,9 +504,9 @@ var IssueCmd = &cobra.Command{
 }
 
 func setupRootCmdHelp() {
-	invokedAs := os.Getenv("GH_ISH_INVOKED_AS")
+	invokedAs := Getenv("GHISH_INVOKED_AS")
 	if invokedAs == "" {
-		invokedAs = "gh-ish"
+		invokedAs = "ghish"
 	}
 	RootCmd.Use = invokedAs
 	if RootCmd.Annotations == nil {
@@ -524,7 +524,7 @@ func init() {
 	RootCmd.Version = buildVersion()
 	// Register --version without -v so Cobra does not shadow --verbose (-v).
 	//ghish:flag mode=upstream gh="--version"
-	RootCmd.Flags().Bool("version", false, "Print the gh-ish version")
+	RootCmd.Flags().Bool("version", false, "Print the ghish version")
 	RootCmd.PersistentFlags().StringVar(&HostFlag, "host", "", "Gerrit host to connect to")
 	RootCmd.PersistentFlags().BoolVarP(&VerboseFlag, "verbose", "v", false, "Enable verbose (debug) logging")
 	RootCmd.PersistentFlags().StringVar(&ProfileFlag, "profile", "", "Override auto-detected project profile")
@@ -612,7 +612,7 @@ func setupRootAliases() {
 // rejectUnknownSubcommands gives every group command below parent (one with
 // subcommands but no Run/RunE) a RunE that fails on an unknown subcommand, the
 // way cobra already does at the root. Without it, cobra prints help and exits
-// 0 for `gh-ish pr vew`, which scripts and agents read as success.
+// 0 for `ghish pr vew`, which scripts and agents read as success.
 func rejectUnknownSubcommands(parent *cobra.Command) {
 	for _, group := range parent.Commands() {
 		rejectUnknownSubcommands(group)

@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -340,8 +341,8 @@ func setupFakeGhWrapperRepo(t *testing.T) (repoDir string, hashFile string, binD
 	treeHash := runGit("rev-parse", "HEAD:pw_ghish")
 	lockHash := runGit("rev-parse", "HEAD:MODULE.bazel.lock")
 
-	cachedBin := filepath.Join(repoDir, "out", "gh", "gh-ish")
-	cachedScript := "#!/bin/sh\necho \"CACHED_GH_ISH invoked_as=${GH_ISH_INVOKED_AS:-} args=$*\"\n"
+	cachedBin := filepath.Join(repoDir, "out", "gh", "ghish")
+	cachedScript := "#!/bin/sh\necho \"CACHED_GHISH invoked_as=${GHISH_INVOKED_AS:-} script_dir=${_GHISH_SCRIPT_DIR:-} args=$*\"\n"
 	if err := os.WriteFile(cachedBin, []byte(cachedScript), 0o755); err != nil {
 		t.Fatalf("WriteFile(%s): %v", cachedBin, err)
 	}
@@ -386,6 +387,10 @@ func TestGhWrapper_WarmFastPathAndRebuildDetection(t *testing.T) {
 
 	baseEnv := append(os.Environ(),
 		"PATH="+binDir+":"+os.Getenv("PATH"),
+		"GHISH_FORCE_BUILD=",
+		"GHISH_USE_CIPD=",
+		"GHISH_INVOKED_AS=",
+		// TODO: b/586589869 - Stop clearing legacy PW_GH_* / GH_ISH_* env vars after rollout.
 		"PW_GH_FORCE_BUILD=",
 		"PW_GH_USE_CIPD=",
 		"GH_ISH_INVOKED_AS=",
@@ -399,7 +404,7 @@ func TestGhWrapper_WarmFastPathAndRebuildDetection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("./gh --help on warm fast-path failed: %v\nOutput:\n%s", err, string(out))
 	}
-	if !strings.Contains(string(out), "CACHED_GH_ISH invoked_as=./gh args=--help") {
+	if !strings.Contains(string(out), "CACHED_GHISH invoked_as=./gh script_dir="+repoDir+" args=--help") {
 		t.Errorf("unexpected warm fast-path output: %s", string(out))
 	}
 	if calls := readGitCalls(); len(calls) > 2 {
@@ -420,7 +425,7 @@ func TestGhWrapper_WarmFastPathAndRebuildDetection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("./gh --version after modifying .md/.rst failed: %v\nOutput:\n%s", err, string(outDoc))
 	}
-	if !strings.Contains(string(outDoc), "CACHED_GH_ISH invoked_as=./gh args=--version") {
+	if !strings.Contains(string(outDoc), "CACHED_GHISH invoked_as=./gh script_dir="+repoDir+" args=--version") {
 		t.Errorf("expected cached binary when only .md/.rst changed, got: %s", string(outDoc))
 	}
 	if calls := readGitCalls(); len(calls) > 2 {
@@ -434,12 +439,12 @@ func TestGhWrapper_WarmFastPathAndRebuildDetection(t *testing.T) {
 	}
 
 	fakeBazelisk := `#!/bin/sh
-mkdir -p bazel-bin/pw_ghish/gh-ish_
-cat > bazel-bin/pw_ghish/gh-ish_/gh-ish << 'EOF'
+mkdir -p bazel-bin/pw_ghish/ghish_
+cat > bazel-bin/pw_ghish/ghish_/ghish << 'EOF'
 #!/bin/sh
-echo "REBUILT_GH_ISH args=$*"
+echo "REBUILT_GHISH args=$*"
 EOF
-chmod +x bazel-bin/pw_ghish/gh-ish_/gh-ish
+chmod +x bazel-bin/pw_ghish/ghish_/ghish
 `
 	if err := os.WriteFile(filepath.Join(binDir, "bazelisk"), []byte(fakeBazelisk), 0o755); err != nil {
 		t.Fatalf("WriteFile(fake bazelisk): %v", err)
@@ -452,7 +457,7 @@ chmod +x bazel-bin/pw_ghish/gh-ish_/gh-ish
 	if err != nil {
 		t.Fatalf("./gh after modifying .go file failed: %v\nOutput:\n%s", err, string(outRebuild))
 	}
-	if !strings.Contains(string(outRebuild), "REBUILT_GH_ISH args=pr status") {
+	if !strings.Contains(string(outRebuild), "REBUILT_GHISH args=pr status") {
 		t.Errorf("expected rebuild when tracked .go file is modified, got: %s", string(outRebuild))
 	}
 	if _, err := os.Stat(hashFile); !os.IsNotExist(err) {
@@ -467,7 +472,7 @@ func TestGhWrapper_ExportsNoPwVariables(t *testing.T) {
 	repoDir, _, binDir, _ := setupFakeGhWrapperRepo(t)
 
 	// Replace the cached binary with one that prints its environment.
-	cachedBin := filepath.Join(repoDir, "out", "gh", "gh-ish")
+	cachedBin := filepath.Join(repoDir, "out", "gh", "ghish")
 	if err := os.WriteFile(cachedBin, []byte("#!/bin/sh\nenv\n"), 0o755); err != nil {
 		t.Fatalf("WriteFile(%s): %v", cachedBin, err)
 	}
@@ -493,5 +498,80 @@ func TestGhWrapper_ExportsNoPwVariables(t *testing.T) {
 		if strings.HasPrefix(line, "PW_") {
 			t.Errorf("gh wrapper exported %q to the binary's environment", line)
 		}
+	}
+}
+
+// TODO: b/586589869 - Remove legacy PW_GH_BIN / PW_GH_USE_CIPD wrapper fallback test after rollout.
+func TestGhWrapper_LegacyAndCanonicalBinOverride(t *testing.T) {
+	repoDir, _, binDir, _ := setupFakeGhWrapperRepo(t)
+	canonicalOverride := filepath.Join(t.TempDir(), "canonical-ghish")
+	legacyOverride := filepath.Join(t.TempDir(), "legacy-ghish")
+	for path, marker := range map[string]string{
+		canonicalOverride: "CANONICAL_OVERRIDE",
+		legacyOverride:    "LEGACY_OVERRIDE",
+	} {
+		if err := os.WriteFile(path, []byte("#!/bin/sh\necho \""+marker+" args=$*\"\n"), 0o755); err != nil {
+			t.Fatalf("WriteFile(%s): %v", path, err)
+		}
+	}
+
+	baseEnv := append(os.Environ(),
+		"PATH="+binDir+":"+os.Getenv("PATH"),
+		"GHISH_FORCE_BUILD=",
+		"PW_GH_FORCE_BUILD=",
+	)
+
+	// Legacy PW_GH_USE_CIPD + PW_GH_BIN still works during rollout.
+	cmdLegacy := exec.Command(filepath.Join(repoDir, "gh"), "--version")
+	cmdLegacy.Dir = repoDir
+	cmdLegacy.Env = append(slices.Clone(baseEnv), "GHISH_USE_CIPD=", "GHISH_BIN=", "PW_GH_USE_CIPD=1", "PW_GH_BIN="+legacyOverride)
+	if out, err := cmdLegacy.CombinedOutput(); err != nil || !strings.Contains(string(out), "LEGACY_OVERRIDE args=--version") {
+		t.Errorf("legacy PW_GH_BIN fallback = (%q, %v), want LEGACY_OVERRIDE", string(out), err)
+	}
+
+	// Canonical GHISH_BIN wins over legacy PW_GH_BIN.
+	cmdCanon := exec.Command(filepath.Join(repoDir, "gh"), "--version")
+	cmdCanon.Dir = repoDir
+	cmdCanon.Env = append(slices.Clone(baseEnv), "GHISH_USE_CIPD=1", "GHISH_BIN="+canonicalOverride, "PW_GH_USE_CIPD=1", "PW_GH_BIN="+legacyOverride)
+	if out, err := cmdCanon.CombinedOutput(); err != nil || !strings.Contains(string(out), "CANONICAL_OVERRIDE args=--version") {
+		t.Errorf("canonical GHISH_BIN precedence = (%q, %v), want CANONICAL_OVERRIDE", string(out), err)
+	}
+}
+
+func TestGhWrapper_SkipsExecutableDirectoryNamedGhish(t *testing.T) {
+	repoDir, _, binDir, _ := setupFakeGhWrapperRepo(t)
+	envRoot := t.TempDir()
+
+	// Create a 0755 directory at .../cipd/packages/pigweed/ghish (matching the
+	// CIPD package subdir name) and a real executable file at the next candidate.
+	dirCollision := filepath.Join(envRoot, "cipd", "packages", "pigweed", "ghish")
+	if err := os.MkdirAll(dirCollision, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%s): %v", dirCollision, err)
+	}
+	nextCandidateDir := filepath.Join(envRoot, "cipd", "packages", "ghish")
+	if err := os.MkdirAll(nextCandidateDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%s): %v", nextCandidateDir, err)
+	}
+	nextCandidateBin := filepath.Join(nextCandidateDir, "ghish")
+	if err := os.WriteFile(nextCandidateBin, []byte("#!/bin/sh\necho \"FALLBACK_FILE_BIN args=$*\"\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile(%s): %v", nextCandidateBin, err)
+	}
+
+	cmd := exec.Command(filepath.Join(repoDir, "gh"), "--version")
+	cmd.Dir = repoDir
+	cmd.Env = append(os.Environ(),
+		"PATH="+binDir+":"+os.Getenv("PATH"),
+		"PW_ENVIRONMENT_ROOT="+envRoot,
+		"GHISH_FORCE_BUILD=",
+		"GHISH_BIN=",
+		"GHISH_USE_CIPD=1",
+		// TODO: b/586589869 - Stop clearing legacy PW_GH_* env vars after rollout.
+		"PW_GH_FORCE_BUILD=",
+		"PW_GH_BIN=",
+		"PW_GH_USE_CIPD=",
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "FALLBACK_FILE_BIN args=--version") {
+		t.Fatalf("./gh should skip directory named ghish and exec fallback file, got (%q, %v)", string(out), err)
 	}
 }

@@ -132,7 +132,8 @@ func TestLUCIAuthToken_NeverRunsGcloud(t *testing.T) {
 		},
 	})
 	withLUCIAuthTokenResolvers(t)
-	for _, k := range []string{"PW_ENVIRONMENT_ROOT", "BUILD_WORKSPACE_DIRECTORY", "PW_GH_SCRIPT_DIR"} {
+	// TODO: b/586589869 - Stop clearing _PW_GH_SCRIPT_DIR after rollout.
+	for _, k := range []string{"PW_ENVIRONMENT_ROOT", "BUILD_WORKSPACE_DIRECTORY", "_GHISH_SCRIPT_DIR", "_PW_GH_SCRIPT_DIR"} {
 		t.Setenv(k, "")
 	}
 	t.Chdir(t.TempDir())
@@ -169,7 +170,7 @@ func TestLUCIAuthToken_CacheLifecycle(t *testing.T) {
 			},
 		})
 		withLUCIAuthTokenResolvers(t)
-		t.Setenv("GH_ISH_AUTH_MODE", "googler")
+		t.Setenv("GHISH_AUTH_MODE", "googler")
 
 		// 1. Pre-cancelled context returns context.Canceled (never ExitCodeAuth).
 		preCancelled, preCancel := context.WithCancel(t.Context())
@@ -229,7 +230,7 @@ func TestLUCIAuthToken_CacheLifecycle(t *testing.T) {
 		WithHermeticAuth(t, AuthResolvers{
 			LookPath: func(string) (string, error) { lookups.Add(1); return "", os.ErrNotExist },
 		})
-		t.Setenv("GH_ISH_AUTH_MODE", "googler")
+		t.Setenv("GHISH_AUTH_MODE", "googler")
 		_, err1 := luciAuthToken(t.Context())
 		after1 := lookups.Load()
 		_, err2 := luciAuthToken(t.Context())
@@ -281,7 +282,7 @@ func TestLUCIAuthToken_CacheLifecycle(t *testing.T) {
 			mode    AuthMode
 			wantTok string
 		}{{AuthModeGoogler, "tok-1"}, {AuthModeGoogler, "tok-1"}, {AuthModeCommunity, "tok-2"}, {AuthModeGoogler, "tok-3"}} {
-			t.Setenv("GH_ISH_AUTH_MODE", string(step.mode))
+			t.Setenv("GHISH_AUTH_MODE", string(step.mode))
 			if tok, err := luciAuthToken(t.Context()); err != nil || tok != step.wantTok {
 				t.Errorf("luciAuthToken() in %s mode = (%q, %v), want %q", step.mode, tok, err, step.wantTok)
 			}
@@ -289,14 +290,14 @@ func TestLUCIAuthToken_CacheLifecycle(t *testing.T) {
 		if want := []string{wantGooglerScopes, wantCommunityScopes, wantGooglerScopes}; !slices.Equal(scopes, want) {
 			t.Errorf("luci-auth -scopes = %q, want %q", scopes, want)
 		}
-		t.Setenv("GH_ISH_AUTH_MODE", "bogus")
+		t.Setenv("GHISH_AUTH_MODE", "bogus")
 		if _, err := luciAuthToken(t.Context()); ExitCodeFor(err) != ExitCodeAuth || len(scopes) != 3 {
 			t.Errorf("bogus mode err = %v (runs=%d), want ExitCodeAuth and 3 runs", err, len(scopes))
 		}
-		t.Setenv("GH_ISH_AUTH_MODE", string(AuthModeGoogler))
+		t.Setenv("GHISH_AUTH_MODE", string(AuthModeGoogler))
 		if _, err := luciAuthTokenWithScope(t.Context(), "https://www.googleapis.com/auth/unknown"); err == nil ||
 			!strings.Contains(err.Error(), "does not include the https://www.googleapis.com/auth/unknown scope") ||
-			strings.Contains(err.Error(), "export GH_ISH_AUTH_MODE=googler") {
+			strings.Contains(err.Error(), "export GHISH_AUTH_MODE=googler") {
 			t.Errorf("unrecognized scope in googler mode err = %v, want scope error without googler hint", err)
 		}
 	})
@@ -414,7 +415,7 @@ func TestBearerTokenStrategy_Prepare(t *testing.T) {
 		WithHermeticAuth(t, AuthResolvers{})
 		SetMockGit(t, nil)
 		AuthModeFlag = ""
-		t.Setenv("GH_ISH_AUTH_MODE", "")
+		t.Setenv("GHISH_AUTH_MODE", "")
 
 		var gotCfg *Config
 		var gotMode AuthMode
@@ -572,7 +573,7 @@ func TestTrustedURLsAndLogStreamAuth(t *testing.T) {
 
 	// Verify fetchLogStreamTail wraps googler-mode missing-token errors with
 	// call-site context while preserving ExitCodeAuth.
-	t.Setenv("GH_ISH_AUTH_MODE", "googler")
+	t.Setenv("GHISH_AUTH_MODE", "googler")
 	client.TokenProvider = func(context.Context) (string, error) { return "", errors.New("not logged in") }
 	_, _, authApplyErr := client.fetchLogStreamTail(t.Context(), "https://logs.chromium.org/logs/x", 0)
 	if ExitCodeFor(authApplyErr) != ExitCodeAuth || !strings.Contains(authApplyErr.Error(), "failed to authenticate log request:") || !strings.Contains(authApplyErr.Error(), "LUCI authentication required in googler mode") {
@@ -623,7 +624,7 @@ func TestScopesAndLoginCommandByMode(t *testing.T) {
 				},
 			})
 			withLUCIAuthTokenResolvers(t)
-			t.Setenv("GH_ISH_AUTH_MODE", string(tc.mode))
+			t.Setenv("GHISH_AUTH_MODE", string(tc.mode))
 
 			got := allServiceTokens(t.Context())
 			var gotServices []string
@@ -655,10 +656,10 @@ func TestScopesAndLoginCommandByMode(t *testing.T) {
 							t.Errorf("community mode ran luci-auth %q, want no buganizer or androidbuild.internal scope", args)
 						}
 					}
-					if abErr == nil || !strings.Contains(abErr.Error(), "GH_ISH_AUTH_MODE=googler") {
-						t.Errorf("DefaultAndroidBuildToken() error = %v, want GH_ISH_AUTH_MODE=googler hint", abErr)
+					if abErr == nil || !strings.Contains(abErr.Error(), "GHISH_AUTH_MODE=googler") {
+						t.Errorf("DefaultAndroidBuildToken() error = %v, want GHISH_AUTH_MODE=googler hint", abErr)
 					}
-					wantHint := "(Googlers) export GH_ISH_AUTH_MODE=googler; " + luciAuthLoginCommand(AuthModeGoogler)
+					wantHint := "(Googlers) export GHISH_AUTH_MODE=googler; " + luciAuthLoginCommand(AuthModeGoogler)
 					if issueErr == nil || !strings.Contains(issueErr.Error(), wantHint) {
 						t.Errorf("ResolveIssueTrackerTokenWithSource() error = %v, want substring %q", issueErr, wantHint)
 					}
@@ -696,7 +697,7 @@ func TestScopesAndLoginCommandByMode(t *testing.T) {
 			for _, st := range []ServiceAuthStatus{report.Gerrit, report.LUCI, report.Buganizer} {
 				want := tc.wantLogin
 				if st.Service == "buganizer" && tc.mode == AuthModeCommunity {
-					want = "export GH_ISH_AUTH_MODE=googler"
+					want = "export GHISH_AUTH_MODE=googler"
 				}
 				if !strings.Contains(st.Remediation, want) || strings.Contains(st.Remediation, "gcloud") {
 					t.Errorf("%s remediation = %q, want substring %q and no gcloud", st.Service, st.Remediation, want)
@@ -732,7 +733,7 @@ func TestLUCIAuthToken_ContextModeSkipsAutoDetection(t *testing.T) {
 	t.Cleanup(func() { DefaultGitRunner = prevGit })
 	detections := func() int32 { return detectLookups.Load() + git.calls.Load() }
 
-	t.Setenv("GH_ISH_AUTH_MODE", "googler")
+	t.Setenv("GHISH_AUTH_MODE", "googler")
 	for i := range 2 {
 		if tok, err := luciAuthToken(t.Context()); err != nil || tok != "tok" {
 			t.Fatalf("luciAuthToken() call %d = (%q, %v), want \"tok\"", i, tok, err)
@@ -753,7 +754,7 @@ func TestLUCIAuthToken_ContextModeSkipsAutoDetection(t *testing.T) {
 		t.Errorf("Prepare() = %v, Auth=%q", err, req.Header.Get("Authorization"))
 	}
 
-	t.Setenv("GH_ISH_AUTH_MODE", "")
+	t.Setenv("GHISH_AUTH_MODE", "")
 	cfgCtx := context.WithValue(t.Context(), configKey, &Config{Git: git})
 	if _, err := luciAuthToken(cfgCtx); err != nil || detections() == 0 {
 		t.Errorf("luciAuthToken() in auto mode err=%v, detections=%d (want >0)", err, detections())
@@ -773,7 +774,7 @@ func TestBuildbucketProvider_PropagatesCfgToLUCIAuth(t *testing.T) {
 	origFlag := AuthModeFlag
 	AuthModeFlag = ""
 	t.Cleanup(func() { AuthModeFlag = origFlag })
-	t.Setenv("GH_ISH_AUTH_MODE", "")
+	t.Setenv("GHISH_AUTH_MODE", "")
 
 	cfg := &Config{
 		Host: "pigweed-review.googlesource.com",
@@ -912,7 +913,7 @@ func TestHTTPClients_InvalidateCachedLUCITokenOn401(t *testing.T) {
 				},
 			})
 			withLUCIAuthTokenResolvers(t)
-			t.Setenv("GH_ISH_AUTH_MODE", "googler")
+			t.Setenv("GHISH_AUTH_MODE", "googler")
 			ResetAuthTokenCaches()
 
 			var auths []string

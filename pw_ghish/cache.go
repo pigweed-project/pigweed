@@ -45,12 +45,12 @@ const (
 	// serializes them to disk.
 	CacheInMemory CacheTier = iota + 1
 	// CacheRuntime stores short-lived session state across processes in the
-	// per-user 0700 runtime directory ($XDG_RUNTIME_DIR/pw_ghish on Linux,
-	// $TMPDIR/pw_ghish on macOS), degrading to CacheInMemory when
+	// per-user 0700 runtime directory ($XDG_RUNTIME_DIR/ghish on Linux,
+	// $TMPDIR/ghish on macOS), degrading to CacheInMemory when
 	// unavailable or disabled. Requires MaxTTL > 0.
 	CacheRuntime
 	// CachePersistent stores non-secret metadata in the user cache directory
-	// ($GHISH_CACHE_DIR or $XDG_CACHE_HOME/pw_ghish / os.UserCacheDir),
+	// ($GHISH_CACHE_DIR or $XDG_CACHE_HOME/ghish / os.UserCacheDir),
 	// degrading to in-memory when unavailable or disabled.
 	CachePersistent
 )
@@ -138,11 +138,11 @@ func resetAllCaches() {
 type cacheEnv struct {
 	Now func() time.Time
 	// RuntimeDir returns the root directory for CacheRuntime JSON files
-	// (e.g. $XDG_RUNTIME_DIR/pw_ghish), or "" to keep CacheRuntime entries
+	// (e.g. $XDG_RUNTIME_DIR/ghish), or "" to keep CacheRuntime entries
 	// strictly in memory without touching disk.
 	RuntimeDir func() string
 	// PersistentDir returns the root directory for CachePersistent JSON files
-	// (e.g. ~/.cache/pw_ghish), or "" to keep CachePersistent entries strictly
+	// (e.g. ~/.cache/ghish), or "" to keep CachePersistent entries strictly
 	// in memory without touching disk.
 	PersistentDir func() string
 }
@@ -176,7 +176,7 @@ func setCacheEnv(env cacheEnv) cacheEnv {
 	return *prev
 }
 
-// defaultRuntimeCacheDir returns <runtime_base>/pw_ghish when the platform
+// defaultRuntimeCacheDir returns <runtime_base>/ghish when the platform
 // runtime directory ($XDG_RUNTIME_DIR on Linux, $TMPDIR on macOS) is an
 // absolute regular directory with mode 0700, or "" when CacheRuntime entries
 // must stay in memory.
@@ -214,7 +214,7 @@ func defaultRuntimeCacheDir() string {
 		slog.Debug("runtime cache disabled: runtime directory is not mode 0700", "dir", cleanBase, "perm", perm)
 		return ""
 	}
-	return filepath.Join(cleanBase, "pw_ghish")
+	return filepath.Join(cleanBase, "ghish")
 }
 
 func productionPersistentCacheDir() string {
@@ -225,13 +225,13 @@ func productionPersistentCacheDir() string {
 		return dir
 	}
 	if xdg := strings.TrimSpace(os.Getenv("XDG_CACHE_HOME")); xdg != "" {
-		return filepath.Join(xdg, "pw_ghish")
+		return filepath.Join(xdg, "ghish")
 	}
 	if ucd, err := os.UserCacheDir(); err == nil && ucd != "" {
-		return filepath.Join(ucd, "pw_ghish")
+		return filepath.Join(ucd, "ghish")
 	}
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return filepath.Join(home, ".cache", "pw_ghish")
+		return filepath.Join(home, ".cache", "ghish")
 	}
 	return ""
 }

@@ -86,7 +86,7 @@ func TestNormalizeBugChain(t *testing.T) {
 	}
 }
 
-// TestNormalizeTrailer pins the canonical spelling gh-ish writes when it
+// TestNormalizeTrailer pins the canonical spelling ghish writes when it
 // authors a bug trailer itself.
 //
 // The canonical fix key is `Fixed:`, not `Fixes:`. Gerrit accepts fix, fixes,

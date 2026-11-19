@@ -73,8 +73,8 @@ manipulated**:
    Build the target once in your primary feature worktree and copy the compiled
    executable to `/tmp`:
    ```bash
-   bazelisk build --noshow_progress --noshow_loading_progress //pw_ghish:gh-ish
-   cp -f bazel-bin/pw_ghish/gh-ish_/gh-ish /tmp/gh-under-test
+   bazelisk build --noshow_progress --noshow_loading_progress //pw_ghish:ghish
+   cp -f bazel-bin/pw_ghish/ghish_/ghish /tmp/gh-under-test
    chmod +x /tmp/gh-under-test
    ```
    *(Whenever you edit code during the fix loop, re-run this one-liner to
@@ -169,7 +169,7 @@ four orthogonal axes:
   defaults, and examples accurate?
 - **Output Modes**: Default human/LLM compact output vs. `--json` vs. `--status`.
 - **Scope Flags & Env Vars**: Test flags like `--fleet` / `--all` and
-  environment overrides (e.g. `GH_ISH_ONCALL_FILE=/tmp/mock-oncall.cfg`).
+  environment overrides (e.g. `GHISH_ONCALL_FILE=/tmp/mock-oncall.cfg`).
 
 ### Axis 4: Mutating Flags, Safety Gates & Idempotency
 - **Blocked Safety Gates**: Run mutating flags (e.g. `--prepare <target>`) while

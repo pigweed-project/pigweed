@@ -39,7 +39,7 @@ var (
 	// Overridable in hermetic tests.
 	HookUserHomeDir = os.UserHomeDir
 
-	// HookExecutablePath returns the path to the currently running gh-ish binary.
+	// HookExecutablePath returns the path to the currently running ghish binary.
 	// Overridable in hermetic tests.
 	HookExecutablePath = os.Executable
 )
@@ -125,7 +125,7 @@ var hookPrePushCmd = &cobra.Command{
 	Args:         cobra.ArbitraryArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if os.Getenv("GH_ISH_ACTIVE") == "1" || os.Getenv("GH_ISH_ALLOW_RAW_PUSH") == "1" {
+		if Getenv("GHISH_ACTIVE") == "1" || Getenv("GHISH_ALLOW_RAW_PUSH") == "1" {
 			return nil
 		}
 		cfg := GetConfig(cmd)
@@ -141,7 +141,7 @@ var hookPrePushCmd = &cobra.Command{
 			"Remedies:\n" +
 			"  1. Create a new Gerrit CL:          ./gh pr create [--cq] [--draft]\n" +
 			"  2. Upload a new patchset to a CL:   ./gh pr push [--cq]\n" +
-			"  3. Bypass once for manual recovery: GH_ISH_ALLOW_RAW_PUSH=1 git push ...\n" +
+			"  3. Bypass once for manual recovery: GHISH_ALLOW_RAW_PUSH=1 git push ...\n" +
 			"  4. Disable this guard permanently:  ./gh hook uninstall --git\n" +
 			"  5. Inspect active branch status:    ./gh pr status")
 	},
@@ -861,20 +861,27 @@ func parseAgentTargets(raw string) ([]string, error) {
 	}
 }
 
-func stagedHookBinaryPath(homeDir string) string {
-	binName := "gh-ish"
+func stagedHookBinaryPath(homeDir string, migrate bool) string {
+	binName := "ghish"
 	if runtime.GOOS == "windows" {
-		binName = "gh-ish.exe"
+		binName = "ghish.exe"
 	}
-	return filepath.Join(homeDir, ".config", "pw_ghish", "bin", binName)
+	configDir := ResolveUserConfigDir(homeDir, migrate)
+	if configDir == "" {
+		return ""
+	}
+	return filepath.Join(configDir, "bin", binName)
 }
 
 func stageHookBinary(homeDir string) (string, error) {
 	srcPath, err := HookExecutablePath()
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve current gh-ish executable path: %w", err)
+		return "", fmt.Errorf("failed to resolve current ghish executable path: %w", err)
 	}
-	dstPath := stagedHookBinaryPath(homeDir)
+	dstPath := stagedHookBinaryPath(homeDir, true)
+	if dstPath == "" {
+		return "", fmt.Errorf("failed to resolve user config directory for home %q", homeDir)
+	}
 	if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
 		return "", fmt.Errorf("failed to create directory %s: %w", filepath.Dir(dstPath), err)
 	}
@@ -924,8 +931,8 @@ func isGhishHookCommand(cmd string) bool {
 	return strings.Contains(cmd, "pre-tool-use") || strings.Contains(cmd, "ghish_tool_guard")
 }
 
-// removeGhishFromHookList removes any gh-ish hook entries from an agent hook slice,
-// preserving all non-gh-ish hooks (both sibling entries and sibling commands within
+// removeGhishFromHookList removes any ghish hook entries from an agent hook slice,
+// preserving all non-ghish hooks (both sibling entries and sibling commands within
 // a shared matcher's "hooks" array).
 func removeGhishFromHookList(list []any) ([]any, bool) {
 	var remaining []any
@@ -1097,7 +1104,7 @@ func isAgentHookInstalled(homeDir, target string) bool {
 
 func commitMsgHookScript(stagedBin string) string {
 	var b strings.Builder
-	b.WriteString("#!/bin/sh\n# Standard Gerrit Change-Id commit-msg hook managed by gh-ish\n")
+	b.WriteString("#!/bin/sh\n# Standard Gerrit Change-Id commit-msg hook managed by ghish\n")
 	if stagedBin != "" {
 		fmt.Fprintf(&b, "if [ -x %q ]; then\n  exec %q hook commit-msg \"$1\"\nfi\n", stagedBin, stagedBin)
 	}
@@ -1160,7 +1167,7 @@ func (c *defaultGitClient) EnsureCommitMsgHook(ctx context.Context) (bool, error
 	}
 	var stagedBin string
 	if homeDir, homeErr := HookUserHomeDir(); homeErr == nil {
-		stagedBin = filepath.ToSlash(stagedHookBinaryPath(homeDir))
+		stagedBin = filepath.ToSlash(stagedHookBinaryPath(homeDir, false))
 	}
 	if _, err := writeCommitMsgHook(hooksDir, stagedBin); err != nil {
 		return false, err
@@ -1189,7 +1196,7 @@ func runHookInstall(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	out := cmd.OutOrStdout()
-	_, _ = fmt.Fprintf(out, "Staged gh-ish hook binary: %s\n", stagedBin)
+	_, _ = fmt.Fprintf(out, "Staged ghish hook binary: %s\n", stagedBin)
 
 	if hookInstallAgentFlag != "" {
 		targets, err := parseAgentTargets(hookInstallAgentFlag)
@@ -1243,7 +1250,7 @@ func runHookInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	PrintReceipt(out, Receipt{
-		Summary: "Installed gh-ish hooks",
+		Summary: "Installed ghish hooks",
 		Next:    "gh hook status",
 	})
 	return nil
@@ -1302,7 +1309,7 @@ func runHookUninstall(cmd *cobra.Command, args []string) error {
 	}
 
 	PrintReceipt(out, Receipt{
-		Summary: "Uninstalled gh-ish hooks",
+		Summary: "Uninstalled ghish hooks",
 		Next:    "gh hook status",
 	})
 	return nil
@@ -1314,7 +1321,7 @@ func runHookStatus(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to determine user home directory: %w", err)
 	}
 	out := cmd.OutOrStdout()
-	stagedBin := stagedHookBinaryPath(homeDir)
+	stagedBin := stagedHookBinaryPath(homeDir, false)
 	binStatus := "not staged"
 	if _, err := os.Stat(stagedBin); err == nil {
 		binStatus = "installed"

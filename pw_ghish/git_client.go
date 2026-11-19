@@ -99,7 +99,8 @@ func (r *RealGitRunner) buildEnv(ctx context.Context, args []string) []string {
 	if scrubLocal {
 		baseEnv = scrubRepoLocalGitEnv(baseEnv)
 	}
-	extraEnv := []string{"GH_ISH_ACTIVE=1"}
+	// TODO: b/586589869 - Stop exporting GH_ISH_ACTIVE once staged pre-push hooks are updated.
+	extraEnv := []string{"GHISH_ACTIVE=1", "GH_ISH_ACTIVE=1"}
 	if isReadOnlyGitQuery(args) {
 		extraEnv = append(extraEnv, "GIT_CONFIG_NOSYSTEM=1", "GIT_OPTIONAL_LOCKS=0")
 	}

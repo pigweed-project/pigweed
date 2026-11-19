@@ -18,7 +18,7 @@ system.
   (``install``, ``uninstall``, ``status``, ``pre-tool-use``, ``commit-msg``,
   and ``pre-push``).
 * :ref:`module-pw_ghish-project-setup`: For repository maintainers
-  adopting ``gh-ish`` and configuring ``ProjectProfile`` in a Gerrit/LUCI repo.
+  adopting ``ghish`` and configuring ``ProjectProfile`` in a Gerrit/LUCI repo.
 * :ref:`module-pw_ghish-agent-workflows`: Day-to-day pair-programming workflows
   (private draft steering, staged review replies, and automated CI triage).
 
@@ -28,7 +28,7 @@ The four levers of agent integration
 ``pw_ghish`` layers its agent support from default CLI behavior to opt-in
 execution guards:
 
-1. **The ./gh CLI (//pw_ghish:gh-ish) — GitHub CLI syntax**:
+1. **The ./gh CLI (//pw_ghish:ghish) — GitHub CLI syntax**:
    Exposes Gerrit (``./gh pr``), LUCI Buildbucket (``./gh pr checks``,
    ``./gh run``), Buganizer (``./gh issue``), and worktrees (``./gh wt``) using
    GitHub CLI (``gh``) syntax that models already know from pre-training, paired
@@ -54,7 +54,7 @@ execution guards:
 ---------------------------------
 Installing the optional tool hook
 ---------------------------------
-To stage the ``gh-ish`` binary in your user config directory and register the
+To stage the ``ghish`` binary in your user config directory and register the
 pre-execution guard across your local coding agents (**Antigravity/Jetski**,
 **Claude Code**, and **Cursor**):
 

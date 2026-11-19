@@ -346,7 +346,7 @@ func TestLUCIClient_PerRequestAuthAndCrossHostRedirectStripping(t *testing.T) {
 			if source == "flag" {
 				AuthModeFlag = "googler"
 			} else {
-				t.Setenv("GH_ISH_AUTH_MODE", "googler")
+				t.Setenv("GHISH_AUTH_MODE", "googler")
 			}
 
 			var gotAuthHeader string
@@ -368,8 +368,8 @@ func TestLUCIClient_PerRequestAuthAndCrossHostRedirectStripping(t *testing.T) {
 			if ExitCodeFor(err) != ExitCodeAuth {
 				t.Fatalf("ExitCodeFor(err) = %d, want %d (err=%v)", ExitCodeFor(err), ExitCodeAuth, err)
 			}
-			if source == "env" && !strings.Contains(err.Error(), "GH_ISH_AUTH_MODE=googler") {
-				t.Errorf("error = %v, want GH_ISH_AUTH_MODE=googler reason", err)
+			if source == "env" && !strings.Contains(err.Error(), "GHISH_AUTH_MODE=googler") {
+				t.Errorf("error = %v, want GHISH_AUTH_MODE=googler reason", err)
 			}
 			if requests != 0 {
 				t.Errorf("requests sent = %d, want 0", requests)

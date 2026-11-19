@@ -626,7 +626,7 @@ func TestManager_UnmanagedWorktreeBranchCollisionAutoSuffixes(t *testing.T) {
 	mgr, mockGit, _, tmpDir := setupTestManager(t, 3)
 
 	// Simulate unmanaged worktrees outside ~/wrk/slots/ holding branches checked out
-	unmanagedGhishPath := filepath.Join(tmpDir, "pw-ghish")
+	unmanagedGhishPath := filepath.Join(tmpDir, "pigweed-alt")
 	mockGit.Branches[unmanagedGhishPath] = "ghish"
 
 	// `gh wt init` should detect and report the unmanaged worktree holding a branch
@@ -636,12 +636,12 @@ func TestManager_UnmanagedWorktreeBranchCollisionAutoSuffixes(t *testing.T) {
 	}
 	foundUnmanagedItem := false
 	for _, item := range items {
-		if item.Category == "Unmanaged Git Worktrees" && strings.Contains(item.Summary, "pw-ghish [ghish]") {
+		if item.Category == "Unmanaged Git Worktrees" && strings.Contains(item.Summary, "pigweed-alt [ghish]") {
 			foundUnmanagedItem = true
 		}
 	}
 	if !foundUnmanagedItem {
-		t.Errorf("expected Init checklist to report unmanaged worktree pw-ghish [ghish], got: %+v", items)
+		t.Errorf("expected Init checklist to report unmanaged worktree pigweed-alt [ghish], got: %+v", items)
 	}
 
 	// `gh wt use ghish` must succeed in one shot without detaching unmanagedGhishPath!

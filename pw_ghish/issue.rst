@@ -425,12 +425,12 @@ Authentication
    :ref:`module-pw_ghish-auth`).
 
 In ``community`` mode, set ``GHISH_ISSUE_TOKEN`` or ``BUGANIZER_TOKEN`` (or set
-``GH_ISH_AUTH_MODE=googler`` if you are a Googler). Run ``gcert`` on Corp
+``GHISH_AUTH_MODE=googler`` if you are a Googler). Run ``gcert`` on Corp
 Linux, or ``./gh auth status`` elsewhere to see the login command when needed.
 
 API quota project configuration
 ===============================
-Buganizer requests made with ``gh-ish``'s luci-auth credentials do not need a
+Buganizer requests made with ``ghish``'s luci-auth credentials do not need a
 Google Cloud quota project. If you supply your own token
 (``GHISH_ISSUE_TOKEN`` or ``BUGANIZER_TOKEN``) and Issue Tracker rejects it
 with ``SERVICE_DISABLED`` or ``USER_PROJECT_DENIED``, or your team wants its
@@ -444,12 +444,12 @@ own rate-limit bucket, set a quota project explicitly. It is sent as
    # 1. Enable the Google Issue Tracker API on your GCP project:
    $ gcloud services enable issuetracker.corp.googleapis.com --project=<gcp-project-id>
 
-   # 2. Configure gh-ish to use that project for rate-limit quota:
+   # 2. Configure ghish to use that project for rate-limit quota:
    $ git config --global ghish.issue.quotaProject <gcp-project-id>
 
 .. note::
 
-   Older versions of ``gh-ish`` wrote ``ghish.quotaproject`` to your git
+   Older versions of ``ghish`` wrote ``ghish.quotaproject`` to your git
    config automatically. That key is now ignored. Remove any stale value with:
 
    .. code-block:: console

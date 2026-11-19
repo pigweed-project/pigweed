@@ -10,7 +10,7 @@ specifications, see [`pw_ghish/agent_eval.rst`](../../../pw_ghish/agent_eval.rst
 
 ## 1. Automated Verification (Pre-Flight Checks)
 
-Before running interactive agent prompts, verify that the `gh-ish` tool and skill
+Before running interactive agent prompts, verify that the `ghish` tool and skill
 definitions are healthy:
 
 ```bash

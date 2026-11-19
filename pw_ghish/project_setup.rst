@@ -17,7 +17,7 @@ Project setup
    decouple project policies.
 
 This page documents the build targets, repository wrapper pattern, and
-``ProjectProfile`` architecture used to configure ``gh-ish`` for Gerrit and
+``ProjectProfile`` architecture used to configure ``ghish`` for Gerrit and
 LUCI repositories.
 
 .. note::
@@ -26,10 +26,10 @@ LUCI repositories.
    Claude Code, Codex, Cursor, or OpenCode) or install local pre-run tool
    hooks? See :ref:`module-pw_ghish-agent-setup`.
 
---------------------------------
-Building and distributing gh-ish
---------------------------------
-``gh-ish`` is written in standard Go without external C library dependencies.
+-------------------------------
+Building and distributing ghish
+-------------------------------
+``ghish`` is written in standard Go without external C library dependencies.
 It can be built and distributed using Bazel, Go toolchains, or pre-built binary
 packages.
 
@@ -39,25 +39,25 @@ If your project uses Bazel, compile the binary target directly:
 
 .. code-block:: console
 
-   $ bazelisk build //pw_ghish:gh-ish
+   $ bazelisk build //pw_ghish:ghish
 
-The compiled executable is placed in ``bazel-bin/pw_ghish/gh-ish_/gh-ish``.
+The compiled executable is placed in ``bazel-bin/pw_ghish/ghish_/ghish``.
 
 Building with standard Go
 =========================
-You can compile and install ``gh-ish`` using the Go toolchain:
+You can compile and install ``ghish`` using the Go toolchain:
 
 .. code-block:: console
 
    # Compile binary from source:
-   $ go build -o gh-ish ./pw_ghish/cmd/main.go
+   $ go build -o ghish ./pw_ghish/cmd/main.go
 
    # Or install directly into $GOPATH/bin:
    $ go install pigweed.dev/pw_ghish/cmd@latest
 
 Distributing via CIPD (``pw_env_setup``)
 ========================================
-Pigweed publishes pre-built ``gh-ish`` binaries to CIPD under
+Pigweed publishes pre-built ``ghish`` binaries to CIPD under
 `pigweed/ghish/${platform} <https://chrome-infra-packages.appspot.com/p/pigweed/ghish>`_
 (currently ``linux-amd64`` and ``mac-arm64``) and includes the package in
 ``pw_env_setup/py/pw_env_setup/cipd_setup/pigweed.json`` (which is included by
@@ -65,7 +65,7 @@ Pigweed publishes pre-built ``gh-ish`` binaries to CIPD under
 
 For downstream projects using ``pw_env_setup`` (such as GN or CMake projects
 that run ``source bootstrap.sh``), the CIPD pre-built binary is automatically
-downloaded into ``environment/cipd/packages/pigweed/gh-ish`` and updated
+downloaded into ``environment/cipd/packages/pigweed/ghish`` and updated
 whenever the Pigweed submodule rolls. Projects with custom CIPD manifests can
 also add the package directly:
 
@@ -148,23 +148,23 @@ and falls back to ``pigweed/gh``:
    export BUILD_WORKSPACE_DIRECTORY="${BUILD_WORKSPACE_DIRECTORY:-${_REPO_ROOT}}"
    export BUILD_WORKING_DIRECTORY="${PWD}"
 
-   if [ -z "${PW_GH_FORCE_BUILD:-}" ]; then
+   if [ -z "${GHISH_FORCE_BUILD:-}" ]; then
      for _CANDIDATE in \
-       "${PW_GH_BIN:-}" \
-       "${PW_ENVIRONMENT_ROOT:-}/cipd/packages/pigweed/gh-ish" \
-       "${_REPO_ROOT}/environment/cipd/packages/pigweed/gh-ish" \
-       "$(command -v gh-ish 2>/dev/null || true)"; do
-       if [ -n "$_CANDIDATE" ] && [ -x "$_CANDIDATE" ]; then
+       "${GHISH_BIN:-}" \
+       "${PW_ENVIRONMENT_ROOT:-}/cipd/packages/pigweed/ghish" \
+       "${_REPO_ROOT}/environment/cipd/packages/pigweed/ghish" \
+       "$(command -v ghish 2>/dev/null || true)"; do
+       if [ -n "$_CANDIDATE" ] && [ -f "$_CANDIDATE" ] && [ -x "$_CANDIDATE" ]; then
          exec "$_CANDIDATE" "$@"
        fi
      done
    fi
 
-   if [ -x "${_REPO_ROOT}/pigweed/gh" ]; then
+   if [ -f "${_REPO_ROOT}/pigweed/gh" ] && [ -x "${_REPO_ROOT}/pigweed/gh" ]; then
      exec "${_REPO_ROOT}/pigweed/gh" "$@"
    fi
 
-   echo "Error: gh-ish binary not found. Run 'source bootstrap.sh' first." >&2
+   echo "Error: ghish binary not found. Run 'source bootstrap.sh' first." >&2
    exit 1
 
 Option C: Copying ``pigweed/gh`` (no Pigweed checkout or environment)
@@ -181,10 +181,10 @@ source (because there are no Pigweed Bazel build files next to it or
 package is re-resolved at most once a day, and the cached binary is used if
 CIPD is unreachable. The following environment variables control this:
 
-* ``PW_GH_CIPD_VERSION``: CIPD version to fetch (a ref such as ``latest``, or
+* ``GHISH_CIPD_VERSION``: CIPD version to fetch (a ref such as ``latest``, or
   a tag such as ``git_revision:<sha>``). Defaults to ``latest``.
-* ``PW_GH_CIPD_ROOT``: Cache directory. Defaults to
-  ``${XDG_CACHE_HOME:-~/.cache}/pigweed/gh/cipd``.
+* ``GHISH_CIPD_ROOT``: Cache directory. Defaults to
+  ``${XDG_CACHE_HOME:-~/.cache}/ghish/cipd``.
 
 ------------------------------------------------
 Sharing Agent Skills & Hooks in Downstream Repos
@@ -728,7 +728,7 @@ Configures warm Git worktree slot naming and build cache warmup behavior for
      - ``"bazel"``, ``"none"`` *(or* ``"gn"`` *)*
      - ``ghish.worktree.warmupDriver``
      - Build cache driver for ``gh wt init`` and ``gh wt gc``. ``"bazel"``
-       configures ``~/.config/pw_ghish/bazelrc.worktrees`` (shared 80 GB
+       configures ``~/.config/ghish/bazelrc.worktrees`` (shared 80 GB
        auto-GC disk cache + hardlinked repo cache) and GCs orphaned
        ``_bazel_$USER`` output bases; ``"none"`` (or ``"gn"``) skips Bazel
        hooks and output base GC.
@@ -1003,8 +1003,8 @@ You can force a specific profile on any command using the ``--profile`` flag:
 
 .. code-block:: console
 
-   $ gh-ish pr list --profile fuchsia
-   $ gh-ish pr status --profile pigweed
+   $ ghish pr list --profile fuchsia
+   $ ghish pr status --profile pigweed
 
 Profile names are strictly validated. Passing an invalid profile name halts with
 an error listing all available profiles.
@@ -1052,7 +1052,7 @@ public builders required) and ``community`` (public builders + ``luci-auth``
 or anonymous reads) authentication modes.
 
 For full details on authentication modes, credential lookup order, and
-environment variables (``GH_ISH_AUTH_MODE``, ``GERRIT_TOKEN``,
+environment variables (``GHISH_AUTH_MODE``, ``GERRIT_TOKEN``,
 ``GHISH_LUCI_TOKEN``, ``LUCI_TOKEN``, ``GHISH_ISSUE_TOKEN``,
 ``BUGANIZER_TOKEN``, ``GHISH_ANDROID_BUILD_TOKEN``), see
 :ref:`module-pw_ghish-auth`.
@@ -1065,34 +1065,34 @@ Buildbucket integration for check inspection and reruns:
 
 pRPC checks querying
 ====================
-``pw_ghish pr checks`` queries ``cr-buildbucket.appspot.com`` via pRPC to fetch
+``ghish pr checks`` queries ``cr-buildbucket.appspot.com`` via pRPC to fetch
 builder statuses, durations, and build URLs.
 
 Terminal log inspection
 =======================
-``gh-ish run view --log-failed`` queries Buildbucket step summaries and step
+``ghish run view --log-failed`` queries Buildbucket step summaries and step
 log URLs to retrieve the tail of failed build steps in the terminal:
 
 .. code-block:: console
 
    # Inspect step execution tree for a specific builder:
-   $ gh-ish run view -j myproject-linux-dbg
+   $ ghish run view -j myproject-linux-dbg
 
    # Print failure summaries and step log snippets for failed builders:
-   $ gh-ish run view --log-failed
+   $ ghish run view --log-failed
 
 Builder reruns
 ==============
-``gh-ish run rerun`` automatically constructs and executes ``bb add`` commands
+``ghish run rerun`` automatically constructs and executes ``bb add`` commands
 targeting your profile's try bucket:
 
 .. code-block:: console
 
    # Rerun all failed builders on the current change:
-   $ gh-ish run rerun --failed
+   $ ghish run rerun --failed
 
    # Rerun a specific builder:
-   $ gh-ish run rerun -j myproject-linux-dbg
+   $ ghish run rerun -j myproject-linux-dbg
 
    # Preview the generated bb command without executing:
-   $ gh-ish run rerun --failed --dry-run
+   $ ghish run rerun --failed --dry-run

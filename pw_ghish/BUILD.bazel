@@ -91,7 +91,7 @@ go_library(
 )
 
 go_binary(
-    name = "gh-ish",
+    name = "ghish",
     srcs = ["cmd/main.go"],
     target_compatible_with = incompatible_with_mcu(),
     deps = [
@@ -100,13 +100,29 @@ go_binary(
     ],
 )
 
-# Stages the gh-ish binary and its CIPD package definition side-by-side in
-# bazel-bin/pw_ghish/cipd/. rules_go emits the binary at gh-ish_/gh-ish, so the
+# TODO: b/586589869 - Remove legacy gh-ish target alias after rollout.
+alias(
+    name = "gh-ish",
+    actual = ":ghish",
+)
+
+# Stages the ghish binary and its CIPD package definition side-by-side in
+# bazel-bin/pw_ghish/cipd/. rules_go emits the binary at ghish_/ghish, so the
 # files have to be copied into a common directory for the relative `file:`
 # path in cipd.yaml to resolve.
 copy_file(
+    name = "cipd_ghish",
+    src = ":ghish",
+    out = "cipd/ghish",
+    allow_symlink = False,
+    is_executable = True,
+    target_compatible_with = incompatible_with_mcu(),
+)
+
+# TODO: b/586589869 - Stop shipping legacy gh-ish binary in CIPD after rollout.
+copy_file(
     name = "cipd_gh_ish",
-    src = ":gh-ish",
+    src = ":ghish",
     out = "cipd/gh-ish",
     allow_symlink = False,
     is_executable = True,
@@ -127,6 +143,7 @@ filegroup(
     name = "cipd_package",
     srcs = [
         ":cipd_gh_ish",
+        ":cipd_ghish",
         ":cipd_yaml",
     ],
     target_compatible_with = incompatible_with_mcu(),
@@ -209,10 +226,17 @@ go_test(
     ],
     data = glob([
         "*.go",
+        "*.md",
         "*.rst",
         "cmd/*.go",
         "testdata/golden/*.expected",
     ]) + [
+        "//:.agents/agents/ghish_security_reviewer.md",
+        "//:.agents/agents/go_ghish_reviewer.md",
+        "//:.agents/skills/ghish/SKILL.md",
+        "//:.agents/skills/manual-cli-test/SKILL.md",
+        "//:.agents/skills/worktree/SKILL.md",
+        "//:AGENTS.md",
         "//pw_ghish/worktree:srcs",
     ],
     embed = [":pw_ghish"],

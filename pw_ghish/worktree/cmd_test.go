@@ -41,7 +41,7 @@ func TestWTCommands_EndToEndCLIAndJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wt init --check failed: %v\nOutput: %s", err, outInit)
 	}
-	if !strings.Contains(outInit, "Inspecting gh-ish Worktree Environment") {
+	if !strings.Contains(outInit, "Inspecting ghish Worktree Environment") {
 		t.Errorf("expected init banner in output, got:\n%s", outInit)
 	}
 	if strings.Contains(outInit, "===") || strings.Contains(outInit, "[✓]") || strings.Contains(outInit, "[!]") {
@@ -55,7 +55,7 @@ func TestWTCommands_EndToEndCLIAndJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wt audit failed: %v\nOutput: %s", err, outAudit)
 	}
-	if !strings.Contains(outAudit, "Inspecting gh-ish Worktree Environment (Read-Only Check)...") {
+	if !strings.Contains(outAudit, "Inspecting ghish Worktree Environment (Read-Only Check)...") {
 		t.Errorf("expected wt audit to run in read-only check mode, got:\n%s", outAudit)
 	}
 	if strings.Contains(outAudit, "===") || strings.Contains(outAudit, "[✓]") {

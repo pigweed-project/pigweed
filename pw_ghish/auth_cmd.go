@@ -233,7 +233,7 @@ func CheckAuthStatus(ctx context.Context, cmd *cobra.Command) (*AuthStatusReport
 		buganizerStatus.Authenticated = false
 		buganizerStatus.Method = "none"
 		buganizerStatus.Message = fmt.Sprintf("Google Issue Tracker CLI requires Google Corp access (%s)", issueHost)
-		buganizerStatus.Remediation = fmt.Sprintf("View or file issues on the web at %s. Googlers misdetected as community: export GH_ISH_AUTH_MODE=googler", webURL)
+		buganizerStatus.Remediation = fmt.Sprintf("View or file issues on the web at %s. Googlers misdetected as community: export GHISH_AUTH_MODE=googler", webURL)
 	} else {
 		tok, src, tokErr := IssueTrackerTokenResolver(cfgCtx)
 		gossoPath := findGossoBinary()

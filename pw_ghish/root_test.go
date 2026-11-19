@@ -119,7 +119,7 @@ func TestNewGerritClient_MemoizesAuthMode(t *testing.T) {
 	oldModeFlag := AuthModeFlag
 	AuthModeFlag = ""
 	t.Cleanup(func() { AuthModeFlag = oldModeFlag })
-	t.Setenv("GH_ISH_AUTH_MODE", "")
+	t.Setenv("GHISH_AUTH_MODE", "")
 	t.Setenv("GERRIT_TOKEN", "test-token")
 
 	mockGit := NewMockGit(t).OnCommand("config --get-regexp ^ghish\\.", "ghish.authmode googler\n")
@@ -242,9 +242,9 @@ func runMainHelpForTest(t *testing.T) int {
 
 func TestExecute_InvokedAs(t *testing.T) {
 	preserveRootCmdState(t)
-	t.Setenv("GH_ISH_INVOKED_AS", "pw gh")
+	t.Setenv("GHISH_INVOKED_AS", "pw gh")
 	if code := runMainHelpForTest(t); code != ExitCodeOK {
-		t.Fatalf("runMain(--help) with GH_ISH_INVOKED_AS=%q exited %d", "pw gh", code)
+		t.Fatalf("runMain(--help) with GHISH_INVOKED_AS=%q exited %d", "pw gh", code)
 	}
 
 	if RootCmd.Use != "pw gh" {
@@ -266,27 +266,29 @@ func TestExecute_InvokedAs(t *testing.T) {
 
 func TestExecute_InvokedAs_Fallback(t *testing.T) {
 	preserveRootCmdState(t)
+	t.Setenv("GHISH_INVOKED_AS", "")
+	// TODO: b/586589869 - Stop clearing legacy GH_ISH_INVOKED_AS after rollout.
 	t.Setenv("GH_ISH_INVOKED_AS", "")
 	RootCmd.Annotations = nil
 
 	if code := runMainHelpForTest(t); code != ExitCodeOK {
-		t.Fatalf("runMain(--help) with empty GH_ISH_INVOKED_AS exited %d", code)
+		t.Fatalf("runMain(--help) with empty GHISH_INVOKED_AS exited %d", code)
 	}
 
-	if RootCmd.Use != "gh-ish" {
-		t.Errorf("runMain() set RootCmd.Use = %q, want %q", RootCmd.Use, "gh-ish")
+	if RootCmd.Use != "ghish" {
+		t.Errorf("runMain() set RootCmd.Use = %q, want %q", RootCmd.Use, "ghish")
 	}
 
-	if got := RootCmd.Annotations[cobra.CommandDisplayNameAnnotation]; got != "gh-ish" {
-		t.Errorf("runMain() set CommandDisplayNameAnnotation = %q, want %q", got, "gh-ish")
+	if got := RootCmd.Annotations[cobra.CommandDisplayNameAnnotation]; got != "ghish" {
+		t.Errorf("runMain() set CommandDisplayNameAnnotation = %q, want %q", got, "ghish")
 	}
 
-	if got := RootCmd.CommandPath(); got != "gh-ish" {
-		t.Errorf("RootCmd.CommandPath() = %q, want %q", got, "gh-ish")
+	if got := RootCmd.CommandPath(); got != "ghish" {
+		t.Errorf("RootCmd.CommandPath() = %q, want %q", got, "ghish")
 	}
 
-	if !strings.Contains(RootCmd.Long, "gh-ish pr list") {
-		t.Errorf("runMain() set RootCmd.Long = %s, want substring %q", RootCmd.Long, "gh-ish pr list")
+	if !strings.Contains(RootCmd.Long, "ghish pr list") {
+		t.Errorf("runMain() set RootCmd.Long = %s, want substring %q", RootCmd.Long, "ghish pr list")
 	}
 }
 
@@ -443,7 +445,7 @@ func TestGetConfig_NilSafety(t *testing.T) {
 
 func TestNewGerritClient_FallbackConfig(t *testing.T) {
 	WithHermeticAuth(t, AuthResolvers{})
-	t.Setenv("GH_ISH_AUTH_MODE", "community")
+	t.Setenv("GHISH_AUTH_MODE", "community")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -474,7 +476,7 @@ func TestNewGerritClient_FallbackConfig(t *testing.T) {
 
 func TestNewGerritClient_GooglerModeWithoutCredentials(t *testing.T) {
 	WithHermeticAuth(t, AuthResolvers{})
-	t.Setenv("GH_ISH_AUTH_MODE", "googler")
+	t.Setenv("GHISH_AUTH_MODE", "googler")
 
 	oldHost := HostFlag
 	t.Cleanup(func() { HostFlag = oldHost })
@@ -615,7 +617,7 @@ func TestRejectUnknownSubcommands(t *testing.T) {
 	}{
 		{[]string{"pr"}, ""},
 		{[]string{"pr", "help"}, ""},
-		{[]string{"pr", "vew"}, "Did you mean this?\n\tview\n\nRun 'gh-ish pr --help' for usage."},
+		{[]string{"pr", "vew"}, "Did you mean this?\n\tview\n\nRun 'ghish pr --help' for usage."},
 	} {
 		_, err := executeCommand(RootCmd, tc.args...)
 		if (tc.wantErr == "" && err != nil) || (tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr))) {
@@ -814,6 +816,7 @@ func TestBuildWorkingDirectory(t *testing.T) {
 	}
 }
 
+// TODO: b/586589869 - Remove TestPersistentPreRunE_RemovedAuthMethodEnv when checkRemovedAuthMethodEnv is deleted.
 func TestPersistentPreRunE_RemovedAuthMethodEnv(t *testing.T) {
 	t.Setenv("GH_ISH_AUTH_METHOD", "cookie")
 

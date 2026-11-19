@@ -69,7 +69,7 @@ Pass ``--json`` to output specific fields for scripts or tools:
 Authentication modes
 --------------------
 ``pw_ghish`` supports four authentication modes via ``--auth-mode`` or
-``GH_ISH_AUTH_MODE``:
+``GHISH_AUTH_MODE``:
 
 .. list-table::
    :header-rows: 1
@@ -101,7 +101,7 @@ Configuration precedence
 The active authentication mode is resolved in the following order:
 
 1. **CLI flag**: ``--auth-mode <auto|googler|community|none>``
-2. **Environment variable**: ``GH_ISH_AUTH_MODE=<auto|googler|community|none>``
+2. **Environment variable**: ``GHISH_AUTH_MODE=<auto|googler|community|none>``
 3. **Git configuration**: ``git config ghish.authmode <auto|googler|community|none>``
 4. **Default**: ``auto``
 
@@ -130,7 +130,7 @@ To log in:
 
 If you are a Googler on a machine detected as ``community`` (for example,
 without Corp tools on ``PATH`` and with a non-``@google.com`` ``user.email``),
-set ``GH_ISH_AUTH_MODE=googler`` or
+set ``GHISH_AUTH_MODE=googler`` or
 ``git config --global ghish.authmode googler`` before logging in.
 
 Gerrit Code Review & Git Push
@@ -166,12 +166,14 @@ votes over OAuth2 on changes with an applicable ``Review-Enforcement`` submit
 requirement, exiting with code ``4`` instead of casting a vote Gerrit would
 ignore (see :ref:`module-pw_ghish-pr`).
 
+.. TODO: b/586589869 - Remove note when checkRemovedAuthMethodEnv is deleted.
+
 .. note::
 
    ``GH_ISH_AUTH_METHOD`` has been removed. If it is set, commands (except
    ``./gh hook``) exit with code ``4`` and print replacement credential steps.
    To disable authentication, use ``--auth-mode=none`` or
-   ``GH_ISH_AUTH_MODE=none``.
+   ``GHISH_AUTH_MODE=none``.
 
 Community contributor onboarding
 --------------------------------

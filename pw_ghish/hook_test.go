@@ -349,7 +349,7 @@ func (f *hookFakeGitRunner) Run(ctx context.Context, stdout, stderr io.Writer, a
 func TestHookInstallStatusUninstallAndPrePush(t *testing.T) {
 	tmpHome := t.TempDir()
 	tmpRepo := t.TempDir()
-	fakeBin := filepath.Join(t.TempDir(), "gh-ish-fake")
+	fakeBin := filepath.Join(t.TempDir(), "ghish-fake")
 	if err := os.WriteFile(fakeBin, []byte("#!/bin/sh\n"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -402,7 +402,7 @@ func TestHookInstallStatusUninstallAndPrePush(t *testing.T) {
 	if err := RootCmd.Execute(); err != nil {
 		t.Fatalf("hook install failed: %v", err)
 	}
-	if !strings.Contains(outBuf.String(), "Installed gh-ish hooks") || !strings.Contains(outBuf.String(), "Next:   gh hook status") {
+	if !strings.Contains(outBuf.String(), "Installed ghish hooks") || !strings.Contains(outBuf.String(), "Next:   gh hook status") {
 		t.Errorf("expected hook install receipt in output, got:\n%s", outBuf.String())
 	}
 	for _, target := range []string{"jetski", "claude", "cursor"} {
@@ -418,30 +418,41 @@ func TestHookInstallStatusUninstallAndPrePush(t *testing.T) {
 		t.Errorf("expected custom hook to be preserved after install, got:\n%s", string(claudeAfterInstall))
 	}
 
-	// 4. Verify pre-push blocks when GH_ISH_ACTIVE is unset, and allows when GH_ISH_ACTIVE=1 or GH_ISH_ALLOW_RAW_PUSH=1.
+	// 4. Verify pre-push blocks when GHISH_ACTIVE is unset, and allows when GHISH_ACTIVE=1 or GHISH_ALLOW_RAW_PUSH=1.
+	t.Setenv("GHISH_ACTIVE", "")
+	t.Setenv("GHISH_ALLOW_RAW_PUSH", "")
 	t.Setenv("GH_ISH_ACTIVE", "")
 	t.Setenv("GH_ISH_ALLOW_RAW_PUSH", "")
 	errBuf.Reset()
 	RootCmd.SetArgs([]string{"hook", "pre-push"})
 	if err := RootCmd.Execute(); err == nil {
-		t.Fatalf("expected 'hook pre-push' to block when ghish.blockrawpush=true and GH_ISH_ACTIVE is unset")
+		t.Fatalf("expected 'hook pre-push' to block when ghish.blockrawpush=true and GHISH_ACTIVE is unset")
 	}
 	if !strings.Contains(errBuf.String(), "./gh pr create") {
 		t.Errorf("expected pre-push stderr to suggest ./gh pr create, got:\n%s", errBuf.String())
 	}
 
+	t.Setenv("GHISH_ACTIVE", "1")
+	RootCmd.SetArgs([]string{"hook", "pre-push"})
+	if err := RootCmd.Execute(); err != nil {
+		t.Fatalf("expected 'hook pre-push' to succeed when GHISH_ACTIVE=1, got: %v", err)
+	}
+
+	t.Setenv("GHISH_ACTIVE", "")
+	t.Setenv("GHISH_ALLOW_RAW_PUSH", "1")
+	RootCmd.SetArgs([]string{"hook", "pre-push"})
+	if err := RootCmd.Execute(); err != nil {
+		t.Fatalf("expected 'hook pre-push' to succeed when GHISH_ALLOW_RAW_PUSH=1, got: %v", err)
+	}
+
+	// TODO: b/586589869 - Remove legacy GH_ISH_ACTIVE / GH_ISH_ALLOW_RAW_PUSH fallback check after rollout.
+	t.Setenv("GHISH_ALLOW_RAW_PUSH", "")
 	t.Setenv("GH_ISH_ACTIVE", "1")
 	RootCmd.SetArgs([]string{"hook", "pre-push"})
 	if err := RootCmd.Execute(); err != nil {
-		t.Fatalf("expected 'hook pre-push' to succeed when GH_ISH_ACTIVE=1, got: %v", err)
+		t.Fatalf("expected 'hook pre-push' to succeed when legacy GH_ISH_ACTIVE=1, got: %v", err)
 	}
-
 	t.Setenv("GH_ISH_ACTIVE", "")
-	t.Setenv("GH_ISH_ALLOW_RAW_PUSH", "1")
-	RootCmd.SetArgs([]string{"hook", "pre-push"})
-	if err := RootCmd.Execute(); err != nil {
-		t.Fatalf("expected 'hook pre-push' to succeed when GH_ISH_ALLOW_RAW_PUSH=1, got: %v", err)
-	}
 
 	// 5. Status output check
 	outBuf.Reset()
@@ -460,7 +471,7 @@ func TestHookInstallStatusUninstallAndPrePush(t *testing.T) {
 	if err := RootCmd.Execute(); err != nil {
 		t.Fatalf("hook uninstall failed: %v", err)
 	}
-	if !strings.Contains(outBuf.String(), "Uninstalled gh-ish hooks") || !strings.Contains(outBuf.String(), "Next:   gh hook status") {
+	if !strings.Contains(outBuf.String(), "Uninstalled ghish hooks") || !strings.Contains(outBuf.String(), "Next:   gh hook status") {
 		t.Errorf("expected hook uninstall receipt in output, got:\n%s", outBuf.String())
 	}
 	for _, target := range []string{"jetski", "claude", "cursor"} {

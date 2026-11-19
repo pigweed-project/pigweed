@@ -79,15 +79,15 @@ configure your shared Bazel cache snippet:
 .. code-block:: console
 
    $ ./gh wt init
-   Inspecting & Converging gh-ish Worktree Environment...
-   ======================================================
+   Inspecting & Converging ghish Worktree Environment...
+   =====================================================
 
    [✓] Git Primary Repo:        /home/user/wrk/pigweed
    [✓] Gerrit commit-msg Hook:  Checked in primary repository
    [+] Worktree Slot Pool:      Created 10/10 slots in /home/user/wrk/slots
    [✓] Project Symlinks Dir:    /home/user/wrk/projects
    [✓] Antigravity UI Sync:     Ready (using default v2 permission schema template)
-   [+] Bazel Config Snippet:    Active at ~/.config/pw_ghish/bazelrc.worktrees
+   [+] Bazel Config Snippet:    Active at ~/.config/ghish/bazelrc.worktrees
    [+] User ~/.bazelrc Hook:    Added try-import to ~/.bazelrc
    [✓] Bazel Output Bases:      0 orphaned output bases found
 
@@ -219,7 +219,7 @@ Coexisting with Unmanaged Git Worktrees
 Git forbids checking out the same local branch ``refs/heads/<branch>`` in more
 than one worktree at a time. ``./gh wt`` directly supports **unmanaged
 worktrees** (worktrees created outside the ``./gh wt`` slot pool, such as
-``~/wrk/pigweed`` or ``~/wrk/pw-ghish``):
+``~/wrk/pigweed`` or ``~/wrk/pigweed-alt``):
 
 * **Non-destructive branch suffixing**: Running ``./gh wt use <project>`` never
   detaches or modifies your unmanaged worktrees. If branch ``<project>`` is
@@ -408,7 +408,7 @@ agent harnesses.
   directory is present on your host, the IDE driver automatically operates as a
   no-op. If you prefer to manage IDE workspaces manually on an Antigravity host,
   you can disable IDE synchronization explicitly by setting the environment
-  variable ``GH_ISH_IDE_SYNC=0``.
+  variable ``GHISH_IDE_SYNC=0``.
 
 .. _module-pw_ghish-worktree-comparison:
 
@@ -517,7 +517,7 @@ example, juggling 8 concurrent projects across 5 physical slots). When you run
 Shared Bazel Cache Configuration
 ================================
 ``./gh wt init`` writes a shared Bazel configuration file to
-``~/.config/pw_ghish/bazelrc.worktrees`` and adds a conditional ``try-import``
+``~/.config/ghish/bazelrc.worktrees`` and adds a conditional ``try-import``
 to ``~/.bazelrc``:
 
 .. code-block:: ini

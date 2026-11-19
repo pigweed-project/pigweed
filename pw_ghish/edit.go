@@ -114,7 +114,7 @@ func (opts *editOptions) runE() func(*cobra.Command, []string) error {
 
 			review := &ReviewInput{
 				AddToAttentionSet: []AttentionSetInput{
-					{User: assignee, Reason: "Assigned via gh-ish"},
+					{User: assignee, Reason: "Assigned via ghish"},
 				},
 			}
 			if err := chCtx.SetReviewRevision("current", review); err != nil {
@@ -269,7 +269,7 @@ func parseLabelVotes(rawLabels []string) (map[string]int, error) {
 // attentionSetReason is recorded by Gerrit alongside each attention set
 // update and shown in the change's history. Gerrit requires a reason when
 // adding a user.
-const attentionSetReason = "Updated via gh-ish"
+const attentionSetReason = "Updated via ghish"
 
 // normalizeAttentionAccounts validates the accounts given to flag and maps
 // GitHub-style "me" / "@me" to Gerrit's "self".

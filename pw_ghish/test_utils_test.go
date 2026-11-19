@@ -677,6 +677,8 @@ func SetAuthResolvers(r AuthResolvers) {
 // select an auth mode. Hermetic tests clear them so the developer's
 // environment can't leak into a test.
 var hermeticAuthEnvVars = []string{
+	"GHISH_AUTH_MODE",
+	// TODO: b/586589869 - Remove legacy GH_ISH_* auth env vars after rollout.
 	"GH_ISH_AUTH_MODE",
 	// Removed variable; cleared so a stale export doesn't fail every test.
 	"GH_ISH_AUTH_METHOD",
@@ -697,6 +699,14 @@ var hermeticAuthEnvVars = []string{
 	"GHISH_CORP_SSO",
 	"GHISH_SSO_SESSION_CACHE",
 	"XDG_RUNTIME_DIR",
+	"XDG_CONFIG_HOME",
+	"GHISH_INVOKED_AS",
+	"GHISH_ONCALL_FILE",
+	"_GHISH_SCRIPT_DIR",
+	// TODO: b/586589869 - Remove legacy env vars after rollout.
+	"GH_ISH_INVOKED_AS",
+	"GH_ISH_ONCALL_FILE",
+	"_PW_GH_SCRIPT_DIR",
 }
 
 func hermeticCacheEnv() cacheEnv {
