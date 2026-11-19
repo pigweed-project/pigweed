@@ -22,6 +22,8 @@ pw_add_library(pw_result INTERFACE
     public
   PUBLIC_DEPS
     pw_assert
+    pw_containers._special_members
+    pw_containers._tag
     pw_polyfill
     pw_preprocessor
     pw_status

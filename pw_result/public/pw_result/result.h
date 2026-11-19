@@ -817,7 +817,7 @@ class PW_ATTRIBUTE_PREFERRED_NAME(Optional<T>) [[nodiscard]] Result final
   template <typename... Args,
             std::enable_if_t<std::is_constructible_v<T, Args...>, int> = 0>
   constexpr T& emplace(Args&&... args) noexcept {
-    this->Clear();
+    this->Destroy();
     this->MakeValue(std::forward<Args>(args)...);
     Base::status = status_type();
     return this->data();
@@ -831,7 +831,7 @@ class PW_ATTRIBUTE_PREFERRED_NAME(Optional<T>) [[nodiscard]] Result final
                 int> = 0>
   constexpr T& emplace(std::initializer_list<U> ilist,
                        Args&&... args) noexcept {
-    this->Clear();
+    this->Destroy();
     this->MakeValue(ilist, std::forward<Args>(args)...);
     Base::status = status_type();
     return this->data();
@@ -853,7 +853,7 @@ class PW_ATTRIBUTE_PREFERRED_NAME(Optional<T>) [[nodiscard]] Result final
       swap(Base::status, other.Base::status);
     } else if (ok() && !other.ok()) {
       other.MakeValue(std::move(this->data()));
-      this->Clear();
+      this->Destroy();
       swap(Base::status, other.Base::status);
     } else if (!ok() && other.ok()) {
       other.swap(*this);

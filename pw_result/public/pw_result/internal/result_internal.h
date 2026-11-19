@@ -21,6 +21,8 @@
 
 #include "lib/stdcompat/functional.h"
 #include "pw_assert/assert.h"
+#include "pw_containers/internal/special_members.h"
+#include "pw_containers/internal/tag.h"
 #include "pw_polyfill/language_feature_macros.h"
 #include "pw_preprocessor/compiler.h"
 #include "pw_status/status.h"
@@ -197,83 +199,44 @@ union Storage<StoredT, false> {
   Storage& operator=(Storage&&) = delete;
 };
 
-// Holds `storage` and `status` and provides the constructors shared by both
-// `ResultBase` specializations.
+// Holds `storage` and `status` and provides shared storage constructors,
+// destruction, and mutation helpers for `SelectConstexprSpecialMembers`.
 template <typename T, typename StatusType>
-struct ResultMembers {
+struct ResultStorageBase {
   using status_type = StatusType;
 
   Storage<StoredType<T>> storage;
   status_type status;
 
-  ResultMembers() = delete;
+  ResultStorageBase() = delete;
 
-  constexpr ResultMembers(EmptyTag, status_type initial_status) noexcept
+  explicit constexpr ResultStorageBase(
+      containers::internal::UninitializedTag) noexcept
+      : storage(), status() {}
+
+  constexpr ResultStorageBase(EmptyTag, status_type initial_status) noexcept
       : storage(), status(std::move(initial_status)) {}
 
-  explicit constexpr ResultMembers(status_type error_status)
+  explicit constexpr ResultStorageBase(status_type error_status)
       : storage(), status(std::move(error_status)) {
     AssertErrorStatus(this->status.ok());
   }
 
   template <typename... Args>
-  explicit constexpr ResultMembers(std::in_place_t, Args&&... args) noexcept
+  explicit constexpr ResultStorageBase(std::in_place_t, Args&&... args) noexcept
       : storage(std::in_place, std::forward<Args>(args)...), status() {}
 
   template <typename Fn, typename... Args>
-  explicit constexpr ResultMembers(InvokeTag, Fn&& fn, Args&&... args) noexcept
+  explicit constexpr ResultStorageBase(InvokeTag,
+                                       Fn&& fn,
+                                       Args&&... args) noexcept
       : storage(kInvokeTag, std::forward<Fn>(fn), std::forward<Args>(args)...),
         status() {}
 
-  // Destroys the value, if any, without updating the status.
-  constexpr void Clear() noexcept {
-    if constexpr (!std::is_trivially_destructible_v<StoredType<T>>) {
-      if (this->status.ok()) {
-        this->storage.data.~T();
-      }
-    }
-  }
-};
-
-// Provides a trivial destructor if `T` and `StatusType` are trivially
-// destructible, or a C++20-constexpr destructor that destroys the value.
-template <typename T,
-          typename StatusType,
-          bool = std::is_trivially_destructible_v<T> &&
-                 std::is_trivially_destructible_v<StatusType>>
-struct ResultBase : ResultMembers<T, StatusType> {
-  using ResultMembers<T, StatusType>::ResultMembers;
-};
-
-template <typename T, typename StatusType>
-struct ResultBase<T, StatusType, false> : ResultMembers<T, StatusType> {
-  using ResultMembers<T, StatusType>::ResultMembers;
-
-  ResultBase(const ResultBase&) = delete;
-  ResultBase(ResultBase&&) = delete;
-  ResultBase& operator=(const ResultBase&) = delete;
-  ResultBase& operator=(ResultBase&&) = delete;
-
-  PW_CONSTEXPR_CPP20 ~ResultBase() noexcept { this->Clear(); }
-};
-
-// Shared mutation helpers and cross-type converting constructors/assignments.
-template <typename T, typename StatusType>
-struct ResultStorageBase : ResultBase<T, StatusType> {
-  using Base = ResultBase<T, StatusType>;
-  using status_type = StatusType;
-  using Base::Base;
-
-  ResultStorageBase() = delete;
-
-  constexpr T& data() noexcept { return this->storage.data; }
-  constexpr const T& data() const noexcept { return this->storage.data; }
-
-  // Copies, moves, or converts from another `Result`'s storage. Implements the
-  // non-trivial copy and move constructors and the converting constructors.
+  // Copies, moves, or converts from another `Result`'s storage.
   template <typename Other>
   explicit constexpr ResultStorageBase(FromResultTag, Other&& other) noexcept
-      : Base(kEmptyTag, CopyOrMove<Other>(other.status)) {
+      : storage(), status(CopyOrMove<Other>(other.status)) {
     if (this->status.ok()) {
       MakeValue(CopyOrMove<Other>(other.data()));
     }
@@ -282,11 +245,31 @@ struct ResultStorageBase : ResultBase<T, StatusType> {
   template <typename Other>
   explicit constexpr ResultStorageBase(FromStdOptionalTag,
                                        Other&& other) noexcept
-      : Base(kEmptyTag,
-             status_type(other.has_value() ? HasValueCode::kHasValue
-                                           : HasValueCode::kEmpty)) {
+      : storage(),
+        status(other.has_value() ? HasValueCode::kHasValue
+                                 : HasValueCode::kEmpty) {
     if (other.has_value()) {
       MakeValue(*std::forward<Other>(other));
+    }
+  }
+
+  constexpr T& data() noexcept { return this->storage.data; }
+  constexpr const T& data() const noexcept { return this->storage.data; }
+
+  // Destroys the value, if any, without updating the status.
+  constexpr void Destroy() noexcept {
+    if constexpr (!std::is_trivially_destructible_v<StoredType<T>>) {
+      if (this->status.ok()) {
+        this->storage.data.~T();
+      }
+    }
+  }
+
+  template <typename Other>
+  constexpr void ConstructFrom(Other&& other) noexcept {
+    this->status = CopyOrMove<Other>(other.status);
+    if (this->status.ok()) {
+      MakeValue(CopyOrMove<Other>(other.data()));
     }
   }
 
@@ -318,7 +301,7 @@ struct ResultStorageBase : ResultBase<T, StatusType> {
       Assign(CopyOrMove<Other>(other.data()));
     } else {
       status_type error_status = CopyOrMove<Other>(other.status);
-      this->Clear();
+      this->Destroy();
       this->status = std::move(error_status);
     }
   }
@@ -328,13 +311,13 @@ struct ResultStorageBase : ResultBase<T, StatusType> {
     if (other.has_value()) {
       Assign(*std::forward<Other>(other));
     } else {
-      this->Clear();
+      this->Destroy();
       this->status = status_type(HasValueCode::kEmpty);
     }
   }
 
   constexpr void AssignStatus(status_type error_status) {
-    this->Clear();
+    this->Destroy();
     this->status = std::move(error_status);
     AssertErrorStatus(this->status.ok());
   }
@@ -343,231 +326,16 @@ struct ResultStorageBase : ResultBase<T, StatusType> {
   constexpr void AssignStatus() noexcept {
     static_assert(!status_type(kCode).ok(),
                   "Cannot set status to an OK status; set the value instead");
-    this->Clear();
+    this->Destroy();
     this->status = status_type(kCode);
   }
 };
 
-enum class SpecialMember {
-  kTrivial,
-  kNonTrivial,
-  kDeleted,
-};
-
-template <bool kSupported, bool kTrivial>
-inline constexpr SpecialMember kSpecialMember =
-    kSupported
-        ? (kTrivial ? SpecialMember::kTrivial : SpecialMember::kNonTrivial)
-        : SpecialMember::kDeleted;
-
 template <typename T, typename StatusType>
-inline constexpr SpecialMember kCopyCtorKind =
-    kSpecialMember<std::is_copy_constructible_v<T> &&
-                       std::is_copy_constructible_v<StatusType>,
-                   std::is_trivially_copy_constructible_v<T> &&
-                       std::is_trivially_copy_constructible_v<StatusType>>;
-
-template <typename T, typename StatusType>
-inline constexpr SpecialMember kMoveCtorKind =
-    kSpecialMember<std::is_move_constructible_v<T> &&
-                       std::is_move_constructible_v<StatusType>,
-                   std::is_trivially_move_constructible_v<T> &&
-                       std::is_trivially_move_constructible_v<StatusType>>;
-
-template <typename T, typename StatusType>
-inline constexpr SpecialMember kCopyAssignKind =
-    kSpecialMember<std::is_copy_constructible_v<T> &&
-                       std::is_copy_assignable_v<T> &&
-                       std::is_copy_constructible_v<StatusType> &&
-                       std::is_copy_assignable_v<StatusType>,
-                   std::is_trivially_destructible_v<T> &&
-                       std::is_trivially_copy_constructible_v<T> &&
-                       std::is_trivially_copy_assignable_v<T> &&
-                       std::is_trivially_destructible_v<StatusType> &&
-                       std::is_trivially_copy_constructible_v<StatusType> &&
-                       std::is_trivially_copy_assignable_v<StatusType>>;
-
-template <typename T, typename StatusType>
-inline constexpr SpecialMember kMoveAssignKind =
-    kSpecialMember<std::is_move_constructible_v<T> &&
-                       std::is_move_assignable_v<T> &&
-                       std::is_move_constructible_v<StatusType> &&
-                       std::is_move_assignable_v<StatusType>,
-                   std::is_trivially_destructible_v<T> &&
-                       std::is_trivially_move_constructible_v<T> &&
-                       std::is_trivially_move_assignable_v<T> &&
-                       std::is_trivially_destructible_v<StatusType> &&
-                       std::is_trivially_move_constructible_v<StatusType> &&
-                       std::is_trivially_move_assignable_v<StatusType>>;
-
-// Copy bases precede move bases so non-const copy signatures on `T` (e.g.
-// `T(T&) = delete`) are normalized to `const` before derived classes `=
-// default` copy operations in C++17.
-template <typename T,
-          typename StatusType,
-          SpecialMember = kCopyCtorKind<T, StatusType>>
-struct ResultCopyCtorBase : ResultStorageBase<T, StatusType> {
-  using Base = ResultStorageBase<T, StatusType>;
-  using Base::Base;
-
-  ResultCopyCtorBase() = delete;
-};
-
-template <typename T, typename StatusType>
-struct ResultCopyCtorBase<T, StatusType, SpecialMember::kNonTrivial>
-    : ResultStorageBase<T, StatusType> {
-  using Base = ResultStorageBase<T, StatusType>;
-  using Base::Base;
-
-  ResultCopyCtorBase() = delete;
-
-  constexpr ResultCopyCtorBase(const ResultCopyCtorBase& other) noexcept
-      : Base(kFromResultTag, other) {}
-
-  ResultCopyCtorBase(ResultCopyCtorBase&&) = default;
-  ResultCopyCtorBase& operator=(ResultCopyCtorBase&&) = default;
-};
-
-template <typename T, typename StatusType>
-struct ResultCopyCtorBase<T, StatusType, SpecialMember::kDeleted>
-    : ResultStorageBase<T, StatusType> {
-  using Base = ResultStorageBase<T, StatusType>;
-  using Base::Base;
-
-  ResultCopyCtorBase() = delete;
-  ResultCopyCtorBase(const ResultCopyCtorBase&) = delete;
-  ResultCopyCtorBase(ResultCopyCtorBase&&) = default;
-  ResultCopyCtorBase& operator=(ResultCopyCtorBase&&) = default;
-};
-
-template <typename T,
-          typename StatusType,
-          SpecialMember = kCopyAssignKind<T, StatusType>>
-struct ResultCopyAssignBase : ResultCopyCtorBase<T, StatusType> {
-  using Base = ResultCopyCtorBase<T, StatusType>;
-  using Base::Base;
-
-  ResultCopyAssignBase() = delete;
-};
-
-template <typename T, typename StatusType>
-struct ResultCopyAssignBase<T, StatusType, SpecialMember::kNonTrivial>
-    : ResultCopyCtorBase<T, StatusType> {
-  using Base = ResultCopyCtorBase<T, StatusType>;
-  using Base::Base;
-
-  ResultCopyAssignBase() = delete;
-  ResultCopyAssignBase(const ResultCopyAssignBase&) = default;
-  ResultCopyAssignBase(ResultCopyAssignBase&&) = default;
-
-  constexpr ResultCopyAssignBase& operator=(
-      const ResultCopyAssignBase& other) noexcept {
-    if (this != &other) {
-      this->AssignFrom(other);
-    }
-    return *this;
-  }
-
-  ResultCopyAssignBase& operator=(ResultCopyAssignBase&&) = default;
-};
-
-template <typename T, typename StatusType>
-struct ResultCopyAssignBase<T, StatusType, SpecialMember::kDeleted>
-    : ResultCopyCtorBase<T, StatusType> {
-  using Base = ResultCopyCtorBase<T, StatusType>;
-  using Base::Base;
-
-  ResultCopyAssignBase() = delete;
-  ResultCopyAssignBase(const ResultCopyAssignBase&) = default;
-  ResultCopyAssignBase(ResultCopyAssignBase&&) = default;
-  ResultCopyAssignBase& operator=(const ResultCopyAssignBase&) = delete;
-  ResultCopyAssignBase& operator=(ResultCopyAssignBase&&) = default;
-};
-
-template <typename T,
-          typename StatusType,
-          SpecialMember = kMoveCtorKind<T, StatusType>>
-struct ResultMoveCtorBase : ResultCopyAssignBase<T, StatusType> {
-  using Base = ResultCopyAssignBase<T, StatusType>;
-  using Base::Base;
-
-  ResultMoveCtorBase() = delete;
-};
-
-template <typename T, typename StatusType>
-struct ResultMoveCtorBase<T, StatusType, SpecialMember::kNonTrivial>
-    : ResultCopyAssignBase<T, StatusType> {
-  using Base = ResultCopyAssignBase<T, StatusType>;
-  using Base::Base;
-
-  ResultMoveCtorBase() = delete;
-  ResultMoveCtorBase(const ResultMoveCtorBase&) = default;
-
-  constexpr ResultMoveCtorBase(ResultMoveCtorBase&& other) noexcept
-      : Base(kFromResultTag, std::move(other)) {}
-
-  ResultMoveCtorBase& operator=(const ResultMoveCtorBase&) = default;
-  ResultMoveCtorBase& operator=(ResultMoveCtorBase&&) = default;
-};
-
-template <typename T, typename StatusType>
-struct ResultMoveCtorBase<T, StatusType, SpecialMember::kDeleted>
-    : ResultCopyAssignBase<T, StatusType> {
-  using Base = ResultCopyAssignBase<T, StatusType>;
-  using Base::Base;
-
-  ResultMoveCtorBase() = delete;
-  ResultMoveCtorBase(const ResultMoveCtorBase&) = default;
-  ResultMoveCtorBase(ResultMoveCtorBase&&) = delete;
-  ResultMoveCtorBase& operator=(const ResultMoveCtorBase&) = default;
-  ResultMoveCtorBase& operator=(ResultMoveCtorBase&&) = default;
-};
-
-template <typename T,
-          typename StatusType,
-          SpecialMember = kMoveAssignKind<T, StatusType>>
-struct ResultMoveAssignBase : ResultMoveCtorBase<T, StatusType> {
-  using Base = ResultMoveCtorBase<T, StatusType>;
-  using Base::Base;
-
-  ResultMoveAssignBase() = delete;
-};
-
-template <typename T, typename StatusType>
-struct ResultMoveAssignBase<T, StatusType, SpecialMember::kNonTrivial>
-    : ResultMoveCtorBase<T, StatusType> {
-  using Base = ResultMoveCtorBase<T, StatusType>;
-  using Base::Base;
-
-  ResultMoveAssignBase() = delete;
-  ResultMoveAssignBase(const ResultMoveAssignBase&) = default;
-  ResultMoveAssignBase(ResultMoveAssignBase&&) = default;
-  ResultMoveAssignBase& operator=(const ResultMoveAssignBase&) = default;
-
-  constexpr ResultMoveAssignBase& operator=(
-      ResultMoveAssignBase&& other) noexcept {
-    if (this != &other) {
-      this->AssignFrom(std::move(other));
-    }
-    return *this;
-  }
-};
-
-template <typename T, typename StatusType>
-struct ResultMoveAssignBase<T, StatusType, SpecialMember::kDeleted>
-    : ResultMoveCtorBase<T, StatusType> {
-  using Base = ResultMoveCtorBase<T, StatusType>;
-  using Base::Base;
-
-  ResultMoveAssignBase() = delete;
-  ResultMoveAssignBase(const ResultMoveAssignBase&) = default;
-  ResultMoveAssignBase(ResultMoveAssignBase&&) = default;
-  ResultMoveAssignBase& operator=(const ResultMoveAssignBase&) = default;
-  ResultMoveAssignBase& operator=(ResultMoveAssignBase&&) = delete;
-};
-
-template <typename T, typename StatusType>
-using ResultData = ResultMoveAssignBase<T, StatusType>;
+using ResultData = containers::internal::SelectConstexprSpecialMembers<
+    ResultStorageBase<T, StatusType>,
+    T,
+    StatusType>;
 
 // Detects whether `U` has conversion operator to `Result<T, StatusType>`, i.e.
 // `operator Result<T, StatusType>()`.
