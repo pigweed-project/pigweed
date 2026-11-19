@@ -809,12 +809,16 @@ Status Connection::Writer::SendResponseMessage(StreamId stream_id,
                  stream_id,
                  stream->send_window,
                  state->connection_send_window());
-    stream->is_waiting_for_window = true;
+    WindowWaiter waiter;
+    stream->window_waiters.push_back(waiter);
 
     connection_.UnlockState(std::move(state));
-    stream->window_notification.acquire();
+    waiter.notification.acquire();
 
-    // Check if connection closed or stream reset
+    // The waker removed `waiter` from the list with the lock held. Take the
+    // lock again so `waiter` outlives the waker's release() call. `waiter`
+    // must stay declared after `state` so that it is destroyed while the lock
+    // is held.
     state = connection_.LockState();
     if (state->connection_closed()) {
       return Status::Unavailable();

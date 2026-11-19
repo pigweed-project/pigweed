@@ -25,6 +25,7 @@
 #include "pw_bytes/byte_builder.h"
 #include "pw_bytes/span.h"
 #include "pw_containers/dynamic_queue.h"
+#include "pw_containers/intrusive_list.h"
 #include "pw_containers/vector.h"
 #include "pw_function/function.h"
 #include "pw_grpc/default_send_queue.h"
@@ -251,6 +252,10 @@ class Connection {
     UniquePtr<std::byte[]> bytes_;
   };
 
+  struct WindowWaiter : public IntrusiveList<WindowWaiter>::Item {
+    pw::sync::ThreadNotification notification;
+  };
+
   // From RFC 9113 §5.1, we use only the following states:
   // * idle, which have `id > last_stream_id_`
   // * open, which are in `streams_` with `half_closed = false`
@@ -289,13 +294,18 @@ class Connection {
         uint32_t received;
       } message;
     } assembly{};
-    pw::sync::ThreadNotification window_notification;
-    bool is_waiting_for_window = false;
+    // Threads blocked in SendResponseMessage() waiting for send window. Each
+    // waiter lives on the stack of its thread.
+    IntrusiveList<WindowWaiter> window_waiters;
 
+    // Wakes all waiters. Called with the state lock held. Each waiter is
+    // removed before it is woken, so it is never in the list after its
+    // thread returns from acquire().
     void SignalWindowAvailable() {
-      if (is_waiting_for_window) {
-        is_waiting_for_window = false;
-        window_notification.release();
+      while (!window_waiters.empty()) {
+        WindowWaiter& waiter = window_waiters.front();
+        window_waiters.pop_front();
+        waiter.notification.release();
       }
     }
 

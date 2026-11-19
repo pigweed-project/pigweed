@@ -1154,5 +1154,73 @@ TEST_F(ConnectionTest,
   EXPECT_EQ(conn_frames.size(), 3U);
 }
 
+TEST_F(ConnectionTest, ZeroSendWindowWakesAllWritersOnStream) {
+  StartConnectionWithWindow(/*initial_window=*/0);
+
+  constexpr auto kPayload = bytes::Array<0x31, 0x32, 0x33>();
+  constexpr uint32_t kFramedBytes =
+      static_cast<uint32_t>(kLengthPrefixedMessageHdrSize + kPayload.size());
+
+  // Two writers block on the same stream. One WINDOW_UPDATE with room for both
+  // messages must wake both of them.
+  constexpr StreamId kStreamId = 1;
+  OpenStream(kStreamId);
+
+  ResponseWriter writer_a(harness().connection, kStreamId, kPayload);
+  ResponseWriter writer_b(harness().connection, kStreamId, kPayload);
+  writer_a.WaitUntilStarted();
+  writer_b.WaitUntilStarted();
+
+  harness().reader.PushWindowUpdate(kStreamId, /*increment=*/2 * kFramedBytes);
+  EXPECT_EQ(writer_a.Join(), OkStatus());
+  EXPECT_EQ(writer_b.Join(), OkStatus());
+  ASSERT_EQ(harness().connection.SendResponseComplete(kStreamId, OkStatus()),
+            OkStatus());
+
+  // Response HEADERS, two DATA frames, and END_STREAM trailers.
+  Vector<RecordedFrame, kMaxStreamFrames> sent;
+  harness().send_queue.TakeStreamFrames(kStreamId, sent);
+  EXPECT_EQ(sent.size(), 4U);
+}
+
+TEST_F(ConnectionTest, ResetStreamSlotReuseKeepsWriterWakeups) {
+  StartConnectionWithWindow(/*initial_window=*/0);
+
+  constexpr auto kPayload = bytes::Array<0x41, 0x42>();
+  constexpr uint32_t kFramedBytes =
+      static_cast<uint32_t>(kLengthPrefixedMessageHdrSize + kPayload.size());
+
+  // A writer blocks on stream 1. RST_STREAM wakes it, and stream 3 reuses the
+  // freed stream slot before the old writer runs. A writer on stream 3 must
+  // not take the old writer's wakeup, and must wait for its own window.
+  constexpr StreamId kResetStream = 1;
+  constexpr StreamId kNewStream = 3;
+  OpenStream(kResetStream);
+
+  ResponseWriter old_writer(harness().connection, kResetStream, kPayload);
+  old_writer.WaitUntilStarted();
+
+  harness().reader.PushRstStream(kResetStream, kHttp2ErrorCancel);
+  harness().reader.PushRequestHeaders(kNewStream);
+  harness().reader.WaitUntilIdle();
+
+  ResponseWriter new_writer(harness().connection, kNewStream, kPayload);
+  new_writer.WaitUntilStarted();
+
+  const Status old_status = old_writer.Join();
+  EXPECT_TRUE(old_status.IsUnavailable() || old_status.IsNotFound());
+  EXPECT_TRUE(harness().callbacks.WasCanceled(kResetStream));
+  Vector<RecordedFrame, kMaxStreamFrames> early_frames;
+  harness().send_queue.TakeStreamFrames(kNewStream, early_frames);
+  EXPECT_TRUE(early_frames.empty());
+
+  harness().reader.PushWindowUpdate(kNewStream, /*increment=*/kFramedBytes);
+  EXPECT_EQ(new_writer.Join(), OkStatus());
+
+  Vector<RecordedFrame, kMaxStreamFrames> sent;
+  harness().send_queue.TakeStreamFrames(kNewStream, sent);
+  EXPECT_EQ(sent.size(), 2U);
+}
+
 }  // namespace
 }  // namespace pw::grpc

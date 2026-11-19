@@ -84,6 +84,7 @@ cc_library(
         "//pw_bytes",
         "//pw_chrono:system_clock",
         "//pw_containers:dynamic_queue",
+        "//pw_containers:intrusive_list",
         "//pw_containers:vector",
         "//pw_function",
         "//pw_log",
