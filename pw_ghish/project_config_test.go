@@ -171,6 +171,18 @@ func TestParseProjectConfigTOML_StrictErrors(t *testing.T) {
 			wantMsg:     "forbid_topics",
 		},
 		{
+			name:        "remote that is a URL, not a remote name",
+			toml:        "[gerrit]\nremote = \"https://example.com/repo\"\n",
+			wantFileStr: "/test/.ghish.toml:",
+			wantMsg:     "gerrit.remote",
+		},
+		{
+			name:        "remote that git would read as an option",
+			toml:        "[gerrit]\nremote = \"--receive-pack=evil\"\n",
+			wantFileStr: "/test/.ghish.toml:",
+			wantMsg:     "gerrit.remote",
+		},
+		{
 			name:        "invalid integer",
 			toml:        "[issue]\ndefault_component = \"abc\"\n",
 			wantFileStr: "/test/.ghish.toml:",
@@ -460,6 +472,15 @@ submodule_policy = "require-pushed"
 	}
 	if cfg.Gerrit.Remote != "partner" {
 		t.Errorf("Gerrit.Remote after git config override = %q, want %q", cfg.Gerrit.Remote, "partner")
+	}
+	if err := applyGitConfigOverrides("ghish.gerrit.remote --upload-pack=evil\n", cfg); err == nil || !strings.Contains(err.Error(), "ghish.gerrit.remote") {
+		t.Errorf("applyGitConfigOverrides with an option-like remote = %v, want an invalid-remote error", err)
+	}
+
+	// An empty remote means unset, not invalid.
+	empty := DefaultProjectConfig()
+	if err := ParseProjectConfigTOML("/repo/.ghish.toml", "[gerrit]\nremote = \"\"\n", empty); err != nil {
+		t.Errorf("ParseProjectConfigTOML with an empty remote: %v", err)
 	}
 }
 

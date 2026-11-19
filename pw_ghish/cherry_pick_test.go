@@ -52,7 +52,7 @@ func TestCherryPickIntegration(t *testing.T) {
 		t.Fatalf("Expected at least 2 git calls. Got: %v", mockGit.Calls)
 	}
 
-	if !strings.Contains(mockGit.Calls[0], "fetch origin refs/changes/45/12345/1") {
+	if !strings.Contains(mockGit.Calls[0], "fetch -- origin refs/changes/45/12345/1") {
 		t.Errorf("Expected fetch call. Got: %s", mockGit.Calls[0])
 	}
 
@@ -148,7 +148,7 @@ func TestCherryPick_NonOriginRemote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
 	}
-	if !mockGit.HasCall("fetch goog refs/changes/45/12345/1") {
+	if !mockGit.HasCall("fetch -- goog refs/changes/45/12345/1") {
 		t.Errorf("Expected fetch goog call, got calls: %v", mockGit.Calls)
 	}
 }

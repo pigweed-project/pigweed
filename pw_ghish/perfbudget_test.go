@@ -266,7 +266,9 @@ var perfBudgetPins = []commandBudget{
 	// Prefetch, current branch, symbolic-ref, one `git log` for HEAD's
 	// SHA/time/message, one for-each-ref default-branch probe, rev-list,
 	// status, worktree list.
-	{name: "sense", args: []string{"sense"}, subprocesses: 9, requests: 6},
+	// sense fetches the base branch so its Rebase: verdict isn't computed
+	// against a stale origin/main.
+	{name: "sense", args: []string{"sense"}, subprocesses: 10, requests: 6},
 }
 
 // TestPerfBudget_Commands runs perfBudgetPins against a real git repo and

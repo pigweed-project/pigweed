@@ -1154,3 +1154,61 @@ func TestSense_UnauthenticatedSkipsSelfAccountAndDrafts(t *testing.T) {
 		}
 	}
 }
+
+func TestFetchSenseBaseRef(t *testing.T) {
+	meta := senseProjectMeta{remote: "origin", defaultBranch: "main", baseRef: "origin/main"}
+
+	t.Run("fetches the base branch", func(t *testing.T) {
+		runner := NewMockGit(t)
+		warnings := &senseWarnCollector{}
+		fetchSenseBaseRef(t.Context(), NewGitClient(runner), meta, warnings)
+		if !runner.HasCall("fetch --no-write-fetch-head -- origin main") {
+			t.Errorf("git calls = %v, want a fetch of origin main that leaves FETCH_HEAD alone", runner.Calls)
+		}
+		if got := warnings.items(); len(got) != 0 {
+			t.Errorf("warnings = %v, want none", got)
+		}
+	})
+
+	t.Run("failed fetch warns that the base ref may be stale", func(t *testing.T) {
+		runner := NewMockGit(t).OnError("fetch", errors.New("could not read from remote"))
+		warnings := &senseWarnCollector{}
+		fetchSenseBaseRef(t.Context(), NewGitClient(runner), meta, warnings)
+		got := warnings.items()
+		if len(got) != 1 || !strings.Contains(got[0], "origin/main, which may be stale") {
+			t.Errorf("warnings = %v, want one stale-base-ref warning", got)
+		}
+	})
+
+	t.Run("no remote skips the fetch", func(t *testing.T) {
+		runner := NewMockGit(t)
+		fetchSenseBaseRef(t.Context(), NewGitClient(runner), senseProjectMeta{}, &senseWarnCollector{})
+		if runner.HasCall("fetch") {
+			t.Errorf("git calls = %v, want no fetch", runner.Calls)
+		}
+	})
+}
+
+// The local git state compares HEAD with the base branch, so it must be read
+// only after the base-branch fetch that runs in parallel with other sensing.
+func TestBuildSenseReport_GitStateWaitsForBaseFetch(t *testing.T) {
+	SetTestProfile(t, "generic")
+	NewMockGerritServer(t)
+	runner := NewMockGit(t).WithBranch("feature").
+		OnCommand("rev-list --left-right --count origin/main...HEAD", "0\t1\n")
+	if _, err := BuildSenseReport(t.Context(), nil, "", false); err != nil {
+		t.Fatalf("BuildSenseReport: %v", err)
+	}
+	fetchAt, revListAt := -1, -1
+	for i, call := range runner.Calls {
+		if fetchAt < 0 && strings.HasPrefix(call, "fetch --no-write-fetch-head -- ") {
+			fetchAt = i
+		}
+		if revListAt < 0 && strings.HasPrefix(call, "rev-list --left-right") {
+			revListAt = i
+		}
+	}
+	if fetchAt < 0 || revListAt < 0 || fetchAt > revListAt {
+		t.Errorf("fetch at call %d, rev-list at call %d in %v; want the fetch first", fetchAt, revListAt, runner.Calls)
+	}
+}

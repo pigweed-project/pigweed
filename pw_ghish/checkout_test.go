@@ -50,7 +50,7 @@ func TestCheckoutIntegration(t *testing.T) {
 		t.Fatalf("Expected at least 2 git calls. Got: %v", mockGit.Calls)
 	}
 
-	if !strings.Contains(mockGit.Calls[0], "fetch origin refs/changes/45/12345/1") {
+	if !strings.Contains(mockGit.Calls[0], "fetch -- origin refs/changes/45/12345/1") {
 		t.Errorf("Expected fetch call. Got: %s", mockGit.Calls[0])
 	}
 
@@ -108,7 +108,7 @@ func TestCheckout_SpecificPatchset(t *testing.T) {
 		t.Fatalf("Expected at least 2 git calls. Got: %v", mockGit.Calls)
 	}
 
-	if !strings.Contains(mockGit.Calls[0], "fetch origin refs/changes/45/12345/1") {
+	if !strings.Contains(mockGit.Calls[0], "fetch -- origin refs/changes/45/12345/1") {
 		t.Errorf("Expected fetch call for patchset 1. Got: %s", mockGit.Calls[0])
 	}
 }
@@ -142,7 +142,7 @@ func TestCheckout_URL(t *testing.T) {
 		t.Fatalf("Expected at least 2 git calls. Got: %v", mockGit.Calls)
 	}
 
-	if !strings.Contains(mockGit.Calls[0], "fetch origin refs/changes/45/12345/2") {
+	if !strings.Contains(mockGit.Calls[0], "fetch -- origin refs/changes/45/12345/2") {
 		t.Errorf("Expected fetch call for patchset 2. Got: %s", mockGit.Calls[0])
 	}
 }
@@ -185,7 +185,7 @@ func TestCheckout_DefaultActivePR(t *testing.T) {
 
 	fetchFound := false
 	for _, call := range mockGit.Calls {
-		if strings.Contains(call, "fetch origin refs/changes/45/12345/1") {
+		if strings.Contains(call, "fetch -- origin refs/changes/45/12345/1") {
 			fetchFound = true
 			break
 		}
@@ -339,7 +339,7 @@ func TestCheckout_NonOriginRemote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Command failed: %v\nOutput: %s", err, output)
 	}
-	if !mockGit.HasCall("fetch goog refs/changes/45/12345/1") {
+	if !mockGit.HasCall("fetch -- goog refs/changes/45/12345/1") {
 		t.Errorf("Expected fetch goog call, got calls: %v", mockGit.Calls)
 	}
 }

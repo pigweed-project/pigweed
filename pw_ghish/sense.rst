@@ -147,6 +147,11 @@ concise status briefing on your current branch or a remote target:
    # Safely fetch the target branch and prepare a clean branch for a task:
    $ ./gh sense --prepare b/315378787
 
+``./gh sense`` fetches the base branch (for example ``origin/main``) before
+comparing your branch against it, so its rebase advice and conflict check use
+the current branch. If the fetch fails, for example when offline, it warns and
+uses the local copy.
+
 Safe branch preparation with ``--prepare``
 ==========================================
 When starting a new bug or checking out a Gerrit change, ``./gh sense

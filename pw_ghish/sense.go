@@ -625,7 +625,12 @@ func BuildSenseReportWithOptions(ctx context.Context, cmd *cobra.Command, target
 	meta := resolveSenseProjectMeta(ctx, cfg, projCfg)
 	warnings := &senseWarnCollector{}
 
-	gitState, gitWTs := senseGitAndWorktrees(ctx, cfg, cwd, meta, warnings)
+	var baseFetch sync.WaitGroup
+	baseFetch.Add(1)
+	go func() {
+		defer baseFetch.Done()
+		fetchSenseBaseRef(ctx, cfg.GitClient(), meta, warnings)
+	}()
 
 	var (
 		targetType   string
@@ -687,7 +692,19 @@ func BuildSenseReportWithOptions(ctx context.Context, cmd *cobra.Command, target
 		}
 	}()
 
-	// 2. Active CL sensing (only when HEAD has a Change-Id and CommitsAhead > 0)
+	// 2. Optional oncall schedule sensing
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		oncallSt = senseOncall(ctx, cfg, projCfg, warnings)
+	}()
+
+	// Local git state compares HEAD with the base branch, so it waits for the
+	// fetch, which ran in parallel with the sensing above.
+	baseFetch.Wait()
+	gitState, gitWTs := senseGitAndWorktrees(ctx, cfg, cwd, meta, warnings)
+
+	// 3. Active CL sensing (only when HEAD has a Change-Id and CommitsAhead > 0)
 	if gitState.ChangeID != "" && gitState.CommitsAhead > 0 {
 		wg.Add(1)
 		go func() {
@@ -700,7 +717,7 @@ func BuildSenseReportWithOptions(ctx context.Context, cmd *cobra.Command, target
 		}()
 	}
 
-	// 3. Target sensing (when an explicit <target> argument was provided)
+	// 4. Target sensing (when an explicit <target> argument was provided)
 	if targetArg != "" {
 		wg.Add(1)
 		go func() {
@@ -747,13 +764,6 @@ func BuildSenseReportWithOptions(ctx context.Context, cmd *cobra.Command, target
 			targetSt = st
 		}()
 	}
-
-	// 4. Optional oncall schedule sensing
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		oncallSt = senseOncall(ctx, cfg, projCfg, warnings)
-	}()
 
 	// 5. Candidate issues pre-fetch when worktree is clean/idle and no target arg was passed
 	if targetArg == "" && !gitState.IsDirty && !gitState.RebaseInProgress && gitState.CommitsAhead == 0 {
@@ -1130,17 +1140,14 @@ func executeSafePrepare(
 			}
 			prep.ActionTaken = fmt.Sprintf("switched to existing local branch %s (preserving existing commits)", branchName)
 		} else {
-			fCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
-			if fErr := git.Fetch(fCtx, meta.remote, meta.defaultBranch, io.Discard, io.Discard); fErr != nil {
-				warnings.addf("git fetch %s %s failed (creating branch from local %s): %v", meta.remote, meta.defaultBranch, meta.baseRef, fErr)
-			}
-			cancel()
+			// The base branch was already fetched at the start of sense (see
+			// fetchSenseBaseRef).
 			if err := git.Run(ctx, io.Discard, io.Discard, "checkout", "-b", branchName, meta.baseRef); err != nil {
 				prep.Status = "BLOCKED"
 				prep.BlockedReason = fmt.Sprintf("git checkout -b %s %s failed: %v", branchName, meta.baseRef, err)
 				return prep
 			}
-			prep.ActionTaken = fmt.Sprintf("fetched %s and created new branch %s", meta.baseRef, branchName)
+			prep.ActionTaken = fmt.Sprintf("created new branch %s from %s", branchName, meta.baseRef)
 		}
 	} else if target.TargetType == "cl" {
 		if branchExists {
@@ -1293,6 +1300,29 @@ func parseSenseHeadCommit(raw string) senseHeadCommit {
 		h.message = strings.TrimSpace(parts[2])
 	}
 	return h
+}
+
+// senseFetchTimeout bounds the base-branch fetch so that an unreachable remote
+// cannot stall sense for long. It still leaves room for a checkout that has
+// fallen behind to catch up: git discards a fetch killed mid-download, so too
+// short a limit would make every later fetch time out the same way.
+const senseFetchTimeout = 15 * time.Second
+
+// fetchSenseBaseRef fetches the target branch (for example origin/main) before
+// sense compares HEAD against it. The Rebase: verdict and the merge-tree
+// conflict check use the local base ref, so without a fetch a CL that
+// conflicts with the current branch can show as UP_TO_DATE. The fetch leaves
+// FETCH_HEAD alone, and a failed fetch is a warning: sense continues with the
+// local ref.
+func fetchSenseBaseRef(ctx context.Context, git GitClient, meta senseProjectMeta, warnings *senseWarnCollector) {
+	if meta.remote == "" || meta.defaultBranch == "" {
+		return
+	}
+	fetchCtx, cancel := context.WithTimeout(ctx, senseFetchTimeout)
+	defer cancel()
+	if err := git.UpdateRemoteRef(fetchCtx, meta.remote, meta.defaultBranch); err != nil {
+		warnings.addf("git fetch %s %s failed, so Rebase: uses the local %s, which may be stale: %v", meta.remote, meta.defaultBranch, meta.baseRef, err)
+	}
 }
 
 func senseGitAndWorktrees(ctx context.Context, cfg *Config, cwd string, meta senseProjectMeta, warnings *senseWarnCollector) (SenseGitState, []SenseGitWorktreeEntry) {

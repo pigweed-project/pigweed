@@ -244,6 +244,10 @@ type GitClient interface {
 	CountCommitsAhead(ctx context.Context, branch string) (int, error)
 	StackCommits(ctx context.Context, branch string) ([]StackCommit, error)
 	Fetch(ctx context.Context, remote, ref string, stdout, stderr io.Writer) error
+	// UpdateRemoteRef fetches ref from remote into its remote-tracking ref
+	// without writing FETCH_HEAD, so a FETCH_HEAD the user fetched for a
+	// checkout or cherry-pick is kept.
+	UpdateRemoteRef(ctx context.Context, remote, ref string) error
 	Checkout(ctx context.Context, ref string, stdout, stderr io.Writer) error
 	CherryPick(ctx context.Context, ref string, stdout, stderr io.Writer) error
 	// HasStagedChanges reports whether the Git index differs from HEAD.
@@ -731,13 +735,27 @@ func (c *defaultGitClient) runLocked(ctx context.Context, stdout, stderr io.Writ
 	}
 	readOnly := isReadOnlyGitQuery(args)
 	if !readOnly {
-		c.invalidateCacheLocked()
+		c.invalidateForLocked(args)
 	}
 	err := c.runner.Run(ctx, stdout, stderr, args...)
 	if !readOnly {
-		c.invalidateCacheLocked()
+		c.invalidateForLocked(args)
 	}
 	return err
+}
+
+// invalidateForLocked drops the cache entries that a non-read-only git
+// command can make stale. A fetch only adds or moves remote-tracking refs and
+// FETCH_HEAD, so config, the current branch, and the resolved remote stay
+// valid; only the cached remote-ref probe is dropped. Any other write drops
+// the whole cache.
+func (c *defaultGitClient) invalidateForLocked(args []string) {
+	if sub, _ := splitGitSubcommand(args); sub == "fetch" {
+		c.defaultBranchProbe = ""
+		c.defaultBranchProbeKnown = false
+		return
+	}
+	c.invalidateCacheLocked()
 }
 
 func (c *defaultGitClient) Run(ctx context.Context, stdout, stderr io.Writer, args ...string) error {
@@ -749,11 +767,15 @@ func (c *defaultGitClient) Run(ctx context.Context, stdout, stderr io.Writer, ar
 	}
 	readOnly := isReadOnlyGitQuery(args)
 	if !readOnly {
-		c.invalidateCache()
+		c.mu.Lock()
+		c.invalidateForLocked(args)
+		c.mu.Unlock()
 	}
 	err := c.runner.Run(ctx, stdout, stderr, args...)
 	if !readOnly {
-		c.invalidateCache()
+		c.mu.Lock()
+		c.invalidateForLocked(args)
+		c.mu.Unlock()
 	}
 	return err
 }
@@ -798,9 +820,13 @@ func (c *defaultGitClient) runOutput(ctx context.Context, args ...string) (strin
 	return strings.TrimSpace(stdout.String()), nil
 }
 
+// isValidRemoteName reports whether s looks like a git remote name rather than
+// a URL, a path, or an option. Remote names can come from a committed
+// .ghish.toml and are passed to git (for example `git push <remote>`), so a
+// leading "-" is rejected to keep them from being read as options.
 func isValidRemoteName(s string) bool {
 	s = strings.TrimSpace(s)
-	if s == "" || s == "." {
+	if s == "" || s == "." || strings.HasPrefix(s, "-") {
 		return false
 	}
 	return !strings.Contains(s, "://") && !strings.Contains(s, "/") && !strings.ContainsAny(s, " \t\r\n")
@@ -1333,8 +1359,11 @@ func (c *defaultGitClient) stackCommitsFrom(ctx context.Context, baseRef string)
 	return commits, nil
 }
 
-func (c *defaultGitClient) fetch(ctx context.Context, cfg *Config, remote string, refspecs []string, stdout, stderr io.Writer) error {
-	outBuf, errBuf, err := runGitWithAuthFallback(ctx, c, cfg, remote, append([]string{"fetch", remote}, refspecs...), stderr)
+func (c *defaultGitClient) fetch(ctx context.Context, cfg *Config, flags []string, remote string, refspecs []string, stdout, stderr io.Writer) error {
+	// The remote and refspecs can come from a repository's committed
+	// .ghish.toml, so "--" stops git from reading them as options.
+	args := append(append([]string{"fetch"}, flags...), "--", remote)
+	outBuf, errBuf, err := runGitWithAuthFallback(ctx, c, cfg, remote, append(args, refspecs...), stderr)
 	if stdout != nil && outBuf.Len() > 0 {
 		_, _ = stdout.Write(outBuf.Bytes())
 	}
@@ -1342,6 +1371,19 @@ func (c *defaultGitClient) fetch(ctx context.Context, cfg *Config, remote string
 		_, _ = stderr.Write(errBuf.Bytes())
 	}
 	return err
+}
+
+// fetchConfig returns the Config carried by ctx, or one built from the
+// client's runner, for the Gerrit transport fallback in fetch.
+func (c *defaultGitClient) fetchConfig(ctx context.Context) *Config {
+	if cfg, _ := ctx.Value(configKey).(*Config); cfg != nil {
+		return cfg
+	}
+	var dir string
+	if r, ok := c.runner.(*RealGitRunner); ok && r != nil {
+		dir = r.Dir
+	}
+	return &Config{Git: c.runner, CWD: dir}
 }
 
 func (c *defaultGitClient) Fetch(ctx context.Context, remote, ref string, stdout, stderr io.Writer) error {
@@ -1353,15 +1395,19 @@ func (c *defaultGitClient) Fetch(ctx context.Context, remote, ref string, stdout
 	if ref == "" {
 		return fmt.Errorf("git fetch requires a ref")
 	}
-	cfg, _ := ctx.Value(configKey).(*Config)
-	if cfg == nil {
-		var dir string
-		if r, ok := c.runner.(*RealGitRunner); ok && r != nil {
-			dir = r.Dir
-		}
-		cfg = &Config{Git: c.runner, CWD: dir}
+	return c.fetch(ctx, c.fetchConfig(ctx), nil, remote, []string{ref}, stdout, stderr)
+}
+
+func (c *defaultGitClient) UpdateRemoteRef(ctx context.Context, remote, ref string) error {
+	remote = strings.TrimSpace(remote)
+	if remote == "" {
+		return fmt.Errorf("git fetch requires a remote")
 	}
-	return c.fetch(ctx, cfg, remote, []string{ref}, stdout, stderr)
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return fmt.Errorf("git fetch requires a ref")
+	}
+	return c.fetch(ctx, c.fetchConfig(ctx), []string{"--no-write-fetch-head"}, remote, []string{ref}, io.Discard, io.Discard)
 }
 
 // FetchInDir executes `git fetch <remote> [refspecs...]` inside dir using the
@@ -1378,7 +1424,7 @@ func FetchInDir(ctx context.Context, dir, remote string, refspecs ...string) err
 	}
 	gc := NewGitClientInDir(dir).(*defaultGitClient)
 	var stdout, stderr bytes.Buffer
-	err := gc.fetch(ctx, &Config{Git: gc.runner, CWD: dir}, remote, refspecs, &stdout, &stderr)
+	err := gc.fetch(ctx, &Config{Git: gc.runner, CWD: dir}, nil, remote, refspecs, &stdout, &stderr)
 	if err == nil {
 		return nil
 	}

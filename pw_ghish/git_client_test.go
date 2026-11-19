@@ -212,7 +212,7 @@ func TestGitClient_Fetch_Checkout_CherryPick(t *testing.T) {
 	}
 
 	expectedCalls := []string{
-		"fetch origin refs/changes/12/1234/1",
+		"fetch -- origin refs/changes/12/1234/1",
 		"checkout FETCH_HEAD",
 		"cherry-pick FETCH_HEAD",
 	}
@@ -372,6 +372,15 @@ func TestGitClient_ValidationErrors(t *testing.T) {
 		}
 		if err := client.Fetch(ctx, "origin", "", io.Discard, io.Discard); err == nil {
 			t.Fatal("expected error for Fetch with empty ref")
+		}
+		// Values from a committed .ghish.toml must not be read as git options,
+		// so the remote and ref follow "--".
+		runner := &MockGitRunner{}
+		if err := NewGitClient(runner).Fetch(ctx, "--upload-pack=touch /tmp/pwned", "main", io.Discard, io.Discard); err != nil {
+			t.Fatalf("Fetch: %v", err)
+		}
+		if !runner.HasCall("fetch -- --upload-pack=touch /tmp/pwned main") {
+			t.Errorf("git calls = %v, want the remote after \"--\"", runner.Calls)
 		}
 		if err := client.Checkout(ctx, "", io.Discard, io.Discard); err == nil {
 			t.Fatal("expected error for Checkout with empty ref")

@@ -610,6 +610,10 @@ func ParseProjectConfigTOML(filePath, content string, dst *ProjectConfig) error 
 		dst.Gerrit.Project = *raw.Gerrit.Project
 	}
 	if raw.Gerrit.Remote != nil {
+		// An empty remote means unset.
+		if r := strings.TrimSpace(*raw.Gerrit.Remote); r != "" && !isValidRemoteName(r) {
+			return fmt.Errorf("%s: invalid value for gerrit.remote: must be a git remote name, got %q", filePath, *raw.Gerrit.Remote)
+		}
 		dst.Gerrit.Remote = *raw.Gerrit.Remote
 	}
 	if raw.Gerrit.DefaultBranch != nil {
@@ -812,6 +816,9 @@ func applyGitConfigEntries(entries []gitConfigEntry, dst *ProjectConfig) error {
 			case "project":
 				dst.Gerrit.Project = val
 			case "remote":
+				if r := strings.TrimSpace(val); r != "" && !isValidRemoteName(r) {
+					return fmt.Errorf("invalid git config %s=%q: must be a git remote name", key, val)
+				}
 				dst.Gerrit.Remote = val
 			case "defaultbranch":
 				dst.Gerrit.DefaultBranch = val
