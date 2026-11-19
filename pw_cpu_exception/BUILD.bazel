@@ -88,12 +88,16 @@ constraint_value(
     constraint_setting = "//pw_cpu_exception:handler_constraint_setting",
 )
 
-# TODO: https://github.com/bazelbuild/bazel/issues/23003 - this shouldn't be
-# needed, as it should be possible to have a config_setting as to whether
-# the entry_backend is "//pw_build:unspecified_backend" or not, but that doesn't
-# work currently due to the referenced bug.
+# Deprecated: pw_system now checks :entry_backend directly. Keep this no-op
+# constraint until downstream projects remove references to :enabled.
 boolean_constraint_value(
     name = "enabled",
+    deprecation = "Do not use; pw_system checks //pw_cpu_exception:entry_backend directly.",
+)
+
+config_setting(
+    name = "entry_backend_unspecified",
+    flag_values = {":entry_backend": "//pw_build:unspecified_backend"},
 )
 
 cc_library(

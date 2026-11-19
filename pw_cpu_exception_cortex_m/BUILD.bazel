@@ -25,23 +25,6 @@ package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])
 
-# The crash facade provides architecture-independent APIs that may be helpful
-# for analysing the CPU state delegating the reporting and crashing to the
-# backend.
-constraint_setting(
-    name = "crash_constraint_setting",
-)
-
-constraint_value(
-    name = "entry_backend",
-    constraint_setting = "//pw_cpu_exception:entry_constraint_setting",
-)
-
-constraint_value(
-    name = "support_backend",
-    constraint_setting = "//pw_cpu_exception:support_constraint_setting",
-)
-
 cc_library(
     name = "config",
     hdrs = ["pw_cpu_exception_cortex_m_private/config.h"],

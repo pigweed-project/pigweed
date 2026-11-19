@@ -22,6 +22,7 @@ RP2_SYSTEM_FLAGS = FREERTOS_FLAGS | {
     "@bazel_tools//tools/cpp:link_extra_libs": str(Label("@pigweed//targets/rp2040:extra_platform_libs")),
     "@freertos//:freertos_config": str(Label("//targets/rp2040:freertos_config")),
     "@pico-sdk//bazel/config:PICO_CLIB": "llvm_libc",
+    "@pico-sdk//bazel/config:PICO_DEFAULT_LINKER_SCRIPT": str(Label("//targets/rp2040:rp2040_linker_script")),
     "@pico-sdk//bazel/config:PICO_STDIO_UART": True,
     "@pico-sdk//bazel/config:PICO_STDIO_USB": True,
     "@pico-sdk//bazel/config:PICO_TOOLCHAIN": "clang",
