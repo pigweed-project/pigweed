@@ -15,6 +15,7 @@
 #include "pw_bluetooth_proxy/internal/l2cap_channel_manager.h"
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <mutex>
 #include <optional>
@@ -30,6 +31,10 @@
 #include "pw_log/log.h"
 #include "pw_status/status.h"
 #include "pw_status/try.h"
+#include "pw_sync/lock_annotations.h"
+#include "pw_sync/mutex.h"
+#include "pw_sync/thread_notification.h"
+#include "pw_thread/id.h"
 
 namespace pw::bluetooth::proxy {
 
@@ -45,11 +50,206 @@ TargetVariant variant_cast(SourceVariant&& source) {
       std::forward<SourceVariant>(source));
 }
 
+struct ActiveRelease {
+  thread::Id thread_id{};
+  ActiveRelease* prev = nullptr;
+  ActiveRelease* next = nullptr;
+};
+
 }  // namespace
+
+namespace internal {
+
+struct PacketReleaseContext {
+  L2capChannelManager* manager = nullptr;
+  Allocator* allocator = nullptr;
+  size_t outstanding_packets = 0;
+  ActiveRelease* active_releases = nullptr;
+  sync::ThreadNotification* destroy_notification = nullptr;
+  bool drain_enabled = false;
+  bool alive = false;
+};
+
+class PacketReleaseRegistry {
+ public:
+  PacketReleaseContext* AcquireContext(L2capChannelManager* manager,
+                                       Allocator& allocator)
+      PW_LOCKS_EXCLUDED(mutex_) {
+    std::lock_guard lock(mutex_);
+    for (PacketReleaseContext& context : contexts_) {
+      if (context.alive && context.manager == manager) {
+        ++context.outstanding_packets;
+        return &context;
+      }
+    }
+    for (PacketReleaseContext& context : contexts_) {
+      if (IsContextSlotFree(context)) {
+        context.manager = manager;
+        context.allocator = &allocator;
+        context.outstanding_packets = 1;
+        context.active_releases = nullptr;
+        context.destroy_notification = nullptr;
+        context.drain_enabled = !manager->packet_release_stopped_;
+        context.alive = true;
+        return &context;
+      }
+    }
+    return nullptr;
+  }
+
+  void StopDrain(L2capChannelManager* manager) PW_LOCKS_EXCLUDED(mutex_) {
+    std::lock_guard lock(mutex_);
+    manager->packet_release_stopped_ = true;
+    for (PacketReleaseContext& context : contexts_) {
+      if (context.alive && context.manager == manager) {
+        context.drain_enabled = false;
+        WaitForActiveReleases(context);
+        return;
+      }
+    }
+  }
+
+  void InvalidateContext(L2capChannelManager* manager)
+      PW_LOCKS_EXCLUDED(mutex_) {
+    std::lock_guard lock(mutex_);
+    manager->packet_release_stopped_ = true;
+    for (PacketReleaseContext& context : contexts_) {
+      if (context.alive && context.manager == manager) {
+        context.drain_enabled = false;
+        WaitForActiveReleases(context);
+        context.alive = false;
+        context.manager = nullptr;
+        ReclaimContextSlotIfUnused(context);
+        return;
+      }
+    }
+  }
+
+  void ReleasePacketBuffer(PacketReleaseContext* context, const uint8_t* buffer)
+      PW_LOCKS_EXCLUDED(mutex_) {
+    ActiveRelease active_release{this_thread::get_id()};
+    Allocator* allocator = nullptr;
+    L2capChannelManager* manager_to_drain = nullptr;
+    {
+      std::lock_guard lock(mutex_);
+      allocator = context->allocator;
+      PW_DCHECK(allocator != nullptr);
+      PW_DCHECK_UINT_GT(context->outstanding_packets, 0);
+      active_release.next = context->active_releases;
+      if (active_release.next != nullptr) {
+        active_release.next->prev = &active_release;
+      }
+      context->active_releases = &active_release;
+      if (context->drain_enabled) {
+        PW_DCHECK(context->alive);
+        manager_to_drain = context->manager;
+      }
+    }
+
+    // This const_cast is needed to avoid changing the function signature and
+    // breaking downstream users.
+    allocator->Deallocate(const_cast<uint8_t*>(buffer));
+    // TODO: https://pwbug.dev/421249712 - Only report if we were previously out
+    // of buffers.
+    if (manager_to_drain != nullptr) {
+      manager_to_drain->ForceDrainChannelQueues();
+    }
+
+    {
+      std::lock_guard lock(mutex_);
+      PW_DCHECK_UINT_GT(context->outstanding_packets, 0);
+      --context->outstanding_packets;
+      if (active_release.prev != nullptr) {
+        active_release.prev->next = active_release.next;
+      } else {
+        context->active_releases = active_release.next;
+      }
+      if (active_release.next != nullptr) {
+        active_release.next->prev = active_release.prev;
+      }
+      if (context->destroy_notification != nullptr) {
+        context->destroy_notification->release();
+      }
+      ReclaimContextSlotIfUnused(*context);
+    }
+  }
+
+ private:
+  static constexpr size_t kMaxPacketReleaseContexts = 32;
+
+  bool IsContextSlotFree(const PacketReleaseContext& context)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
+    return context.allocator == nullptr;
+  }
+
+  void ReclaimContextSlotIfUnused(PacketReleaseContext& context)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
+    if (!context.alive && context.outstanding_packets == 0 &&
+        context.active_releases == nullptr &&
+        context.destroy_notification == nullptr) {
+      context = PacketReleaseContext{};
+    }
+  }
+
+  bool HasActiveReleaseOnOtherThread(const PacketReleaseContext& context)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
+    const thread::Id current_thread = this_thread::get_id();
+    for (const ActiveRelease* release = context.active_releases;
+         release != nullptr;
+         release = release->next) {
+      if (release->thread_id != current_thread) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void WaitForActiveReleases(PacketReleaseContext& context)
+      PW_EXCLUSIVE_LOCKS_REQUIRED(mutex_) {
+    if (!HasActiveReleaseOnOtherThread(context)) {
+      return;
+    }
+    PW_DCHECK(context.destroy_notification == nullptr);
+    sync::ThreadNotification destroy_notification;
+    context.destroy_notification = &destroy_notification;
+    while (HasActiveReleaseOnOtherThread(context)) {
+      mutex_.unlock();
+      destroy_notification.acquire();
+      mutex_.lock();
+    }
+    context.destroy_notification = nullptr;
+  }
+
+  sync::Mutex mutex_;
+  std::array<PacketReleaseContext, kMaxPacketReleaseContexts> contexts_
+      PW_GUARDED_BY(mutex_){};
+};
+
+namespace {
+
+PacketReleaseRegistry packet_release_registry;
+
+}  // namespace
+
+}  // namespace internal
+
+internal::PacketReleaseContext*
+L2capChannelManager::AcquirePacketReleaseContext(Allocator& allocator) {
+  return internal::packet_release_registry.AcquireContext(this, allocator);
+}
+
+void L2capChannelManager::StopPacketReleaseDrain() {
+  internal::packet_release_registry.StopDrain(this);
+}
+
+void L2capChannelManager::InvalidatePacketReleaseContext() {
+  internal::packet_release_registry.InvalidateContext(this);
+}
 
 internal::Mutex internal::L2capChannelManagerImpl::channels_mutex_;
 
 L2capChannelManager::~L2capChannelManager() {
+  InvalidatePacketReleaseContext();
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   state_update_callback_ = nullptr;
 #endif  // PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
@@ -420,18 +620,19 @@ Result<H4PacketWithH4> L2capChannelManager::GetAclH4Packet(uint16_t size) {
     PW_LOG_WARN("Could not allocate H4 buffer of size %hu", size);
     return Status::Unavailable();
   }
+  internal::PacketReleaseContext* context =
+      AcquirePacketReleaseContext(impl_.allocator());
+  if (context == nullptr) {
+    impl_.allocator().Deallocate(allocation);
+    PW_LOG_WARN("Could not acquire H4 packet release context");
+    return Status::Unavailable();
+  }
   span<uint8_t> h4_buff(static_cast<uint8_t*>(allocation), size);
 
   H4PacketWithH4 h4_packet(
       h4_buff,
-      /*release_fn=*/[this](const uint8_t* buffer) {
-        // This const_cast is needed to avoid changing the
-        // function signature and breaking downstream
-        // users.
-        impl_.allocator().Deallocate(const_cast<uint8_t*>(buffer));
-        // TODO: https://pwbug.dev/421249712 - Only report
-        // if we were previously out of buffers.
-        ForceDrainChannelQueues();
+      /*release_fn=*/[context](const uint8_t* buffer) {
+        internal::packet_release_registry.ReleasePacketBuffer(context, buffer);
       });
   h4_packet.SetH4Type(emboss::H4PacketType::ACL_DATA);
   std::memset(h4_packet.GetHciSpan().data(),
@@ -440,6 +641,8 @@ Result<H4PacketWithH4> L2capChannelManager::GetAclH4Packet(uint16_t size) {
 
   return h4_packet;
 }
+
+void L2capChannelManager::StopPacketRelease() { StopPacketReleaseDrain(); }
 
 void L2capChannelManager::ForceDrainChannelQueues() {
   ReportNewTxPacketsOrCredits();

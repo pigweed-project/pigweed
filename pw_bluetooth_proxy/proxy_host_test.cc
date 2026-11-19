@@ -54,6 +54,7 @@
 #include "pw_thread/sleep.h"
 #include "pw_thread/test_thread_context.h"
 #include "pw_thread/thread.h"
+#include "pw_thread/yield.h"
 #include "pw_unit_test/framework.h"
 #include "pw_unit_test/status_macros.h"
 
@@ -6358,6 +6359,267 @@ TEST_F(ProxyHostTest, ClientProvidedAllocatorUsedForH4) {
   proxy.Reset();
   EXPECT_EQ(allocator.GetAllocatedBytes().value(), initial.value());
 }
+
+TEST_F(ProxyHostTest, H4PacketOutlivesProxyHost) {
+  std::array<uint8_t, 100> payload = {};
+  pw::allocator::test::AllocatorForTest<4096> allocator;
+
+  struct {
+    int sends_called = 0;
+    pw::Vector<H4PacketWithH4, 5> sent_packets;
+  } capture;
+
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      [&capture](H4PacketWithH4&& packet) {
+        ++capture.sends_called;
+        capture.sent_packets.emplace_back(std::move(packet));
+      });
+
+  auto proxy = std::make_unique<ProxyHost>(std::move(send_to_host_fn),
+                                           std::move(send_to_controller_fn),
+                                           /*le_acl_credits_to_reserve=*/10,
+                                           /*br_edr_acl_credits_to_reserve=*/0,
+                                           &allocator);
+  StartDispatcherOnCurrentThread(*proxy);
+
+  PW_TEST_EXPECT_OK(SendLeReadBufferResponseFromController(*proxy, 10));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      *proxy, kConnectionHandle, emboss::StatusCode::SUCCESS));
+
+  {
+    GattNotifyChannel channel =
+        BuildGattNotifyChannel(*proxy, {.handle = kConnectionHandle});
+    PW_TEST_EXPECT_OK(channel.Write(MultiBufFromArray(payload)).status);
+    RunDispatcher();
+    EXPECT_EQ(capture.sends_called, 1);
+  }
+
+  // Destroy ProxyHost (and its L2capChannelManager) while the emitted
+  // H4PacketWithH4 is still alive in `capture.sent_packets`.
+  proxy.reset();
+  EXPECT_GT(allocator.GetAllocated(), 0u);
+
+  // Destroying the packet after ProxyHost is gone must deallocate its buffer
+  // back to `allocator` without dereferencing the freed L2capChannelManager.
+  capture.sent_packets.clear();
+  EXPECT_EQ(allocator.GetAllocated(), 0u);
+}
+
+#if PW_THREAD_JOINING_ENABLED
+class BlockingDeallocateAllocator final
+    : public allocator::ForwardingAllocator {
+ public:
+  explicit BlockingDeallocateAllocator(Allocator& inner)
+      : allocator::ForwardingAllocator(inner) {}
+
+  void FailAllocations(bool fail) { fail_allocations_.store(fail); }
+
+  void ArmAllocateBarrier() { allocate_barrier_armed_.store(true); }
+  void WaitUntilAllocateEntered() { allocate_entered_.acquire(); }
+  void AllowAllocateToProceed() { allow_allocate_proceed_.release(); }
+
+  void ArmBarrier() { barrier_armed_.store(true); }
+  void WaitUntilDeallocateEntered() { deallocate_entered_.acquire(); }
+  void AllowDeallocateToProceed() { allow_proceed_.release(); }
+
+  void SetProxyDestroyed(bool destroyed) { proxy_destroyed_.store(destroyed); }
+  bool WasProxyDestroyedDuringDeallocate() const {
+    return observed_proxy_destroyed_.load();
+  }
+
+ private:
+  void* DoAllocate(allocator::Layout layout) override {
+    if (fail_allocations_.load()) {
+      return nullptr;
+    }
+    void* ptr = allocator::ForwardingAllocator::DoAllocate(layout);
+    if (ptr != nullptr && allocate_barrier_armed_.exchange(false)) {
+      allocate_entered_.release();
+      allow_allocate_proceed_.acquire();
+      for (int i = 0; i < 1000; ++i) {
+        this_thread::yield();
+      }
+    }
+    return ptr;
+  }
+
+  void DoDeallocate(void* ptr) override {
+    allocator::ForwardingAllocator::DoDeallocate(ptr);
+    if (barrier_armed_.exchange(false)) {
+      deallocate_entered_.release();
+      allow_proceed_.acquire();
+      for (int i = 0; i < 1000; ++i) {
+        this_thread::yield();
+      }
+      observed_proxy_destroyed_.store(proxy_destroyed_.load());
+    }
+  }
+
+  std::atomic<bool> fail_allocations_{false};
+  std::atomic<bool> allocate_barrier_armed_{false};
+  std::atomic<bool> barrier_armed_{false};
+  std::atomic<bool> proxy_destroyed_{false};
+  std::atomic<bool> observed_proxy_destroyed_{false};
+  sync::ThreadNotification allocate_entered_;
+  sync::ThreadNotification allow_allocate_proceed_;
+  sync::ThreadNotification deallocate_entered_;
+  sync::ThreadNotification allow_proceed_;
+};
+
+TEST_F(ProxyHostTest, ConcurrentH4PacketReleaseDuringProxyHostDestruction) {
+  std::array<uint8_t, 32> payload = {};
+  pw::allocator::test::AllocatorForTest<8192> test_allocator;
+  pw::allocator::SynchronizedAllocator<sync::Mutex> sync_allocator(
+      test_allocator);
+  BlockingDeallocateAllocator blocking_allocator(sync_allocator);
+
+  struct {
+    std::optional<H4PacketWithH4> packet;
+    sync::ThreadNotification start_release;
+  } capture;
+
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      [&capture](H4PacketWithH4&& packet) {
+        capture.packet.emplace(std::move(packet));
+      });
+
+  auto proxy = std::make_unique<ProxyHost>(std::move(send_to_host_fn),
+                                           std::move(send_to_controller_fn),
+                                           /*le_acl_credits_to_reserve=*/10,
+                                           /*br_edr_acl_credits_to_reserve=*/0,
+                                           &blocking_allocator);
+  StartDispatcherOnCurrentThread(*proxy);
+
+  PW_TEST_EXPECT_OK(SendLeReadBufferResponseFromController(*proxy, 10));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      *proxy, kConnectionHandle, emboss::StatusCode::SUCCESS));
+
+  {
+    GattNotifyChannel channel =
+        BuildGattNotifyChannel(*proxy, {.handle = kConnectionHandle});
+    PW_TEST_EXPECT_OK(channel.Write(MultiBufFromArray(payload)).status);
+    RunDispatcher();
+    ASSERT_TRUE(capture.packet.has_value());
+  }
+
+  blocking_allocator.ArmBarrier();
+
+  thread::test::TestThreadContext context;
+  Thread release_thread(context.options(), [&capture]() {
+    capture.start_release.acquire();
+    capture.packet.reset();
+  });
+
+  capture.start_release.release();
+  blocking_allocator.WaitUntilDeallocateEntered();
+  // Unblock `DoDeallocate()` before calling `proxy.reset()` because
+  // `~ProxyHost()` blocks synchronously until the in-flight `release_fn` on
+  // `release_thread` finishes; `DoDeallocate()` yields to keep `release_fn` in
+  // flight while `proxy.reset()` enters destruction.
+  blocking_allocator.AllowDeallocateToProceed();
+
+  // Destroy ProxyHost while `release_thread` is in the middle of `release_fn`
+  // (between `allocator->Deallocate()` and `ForceDrainChannelQueues()`).
+  // `~ProxyHost()` must wait for the in-flight `release_fn` to finish before
+  // resetting `AclDataChannel` and destroying `L2capChannelManager`.
+  proxy.reset();
+  blocking_allocator.SetProxyDestroyed(true);
+
+  release_thread.join();
+  EXPECT_FALSE(blocking_allocator.WasProxyDestroyedDuringDeallocate());
+  EXPECT_EQ(test_allocator.GetAllocated(), 0u);
+}
+
+#if PW_BLUETOOTH_PROXY_ASYNC == 0
+TEST_F(ProxyHostTest,
+       ConcurrentH4PacketReleaseDrainingQueuesDuringProxyHostDestruction) {
+  std::array<uint8_t, 32> payload = {};
+  pw::allocator::test::AllocatorForTest<8192> test_allocator;
+  pw::allocator::SynchronizedAllocator<sync::Mutex> sync_allocator(
+      test_allocator);
+  BlockingDeallocateAllocator blocking_allocator(sync_allocator);
+
+  struct {
+    std::atomic<int> sends_called{0};
+    std::optional<H4PacketWithH4> first_packet;
+    std::optional<H4PacketWithH4> second_packet;
+    sync::ThreadNotification start_release;
+  } capture;
+
+  pw::Function<void(H4PacketWithHci && packet)> send_to_host_fn(
+      []([[maybe_unused]] H4PacketWithHci&& packet) {});
+  pw::Function<void(H4PacketWithH4 && packet)> send_to_controller_fn(
+      [&capture](H4PacketWithH4&& packet) {
+        const int send_index = capture.sends_called.fetch_add(1);
+        if (send_index == 0) {
+          capture.first_packet.emplace(std::move(packet));
+        } else {
+          capture.second_packet.emplace(std::move(packet));
+        }
+      });
+
+  auto proxy = std::make_unique<ProxyHost>(std::move(send_to_host_fn),
+                                           std::move(send_to_controller_fn),
+                                           /*le_acl_credits_to_reserve=*/2,
+                                           /*br_edr_acl_credits_to_reserve=*/0,
+                                           &blocking_allocator);
+  StartDispatcherOnCurrentThread(*proxy);
+
+  PW_TEST_EXPECT_OK(SendLeReadBufferResponseFromController(*proxy, 2));
+  PW_TEST_ASSERT_OK(SendLeConnectionCompleteEvent(
+      *proxy, kConnectionHandle, emboss::StatusCode::SUCCESS));
+
+  std::optional<GattNotifyChannel> channel =
+      BuildGattNotifyChannel(*proxy, {.handle = kConnectionHandle});
+
+  // Send the first packet so `capture.first_packet` holds an active H4 packet
+  // release callback, leaving 1 send credit still available.
+  PW_TEST_EXPECT_OK(channel->Write(MultiBufFromArray(payload)).status);
+  ASSERT_EQ(capture.sends_called.load(), 1);
+  ASSERT_TRUE(capture.first_packet.has_value());
+
+  // Temporarily fail H4 buffer allocations so the second write stays queued in
+  // `channel` while an ACL send credit remains available.
+  blocking_allocator.FailAllocations(true);
+  PW_TEST_EXPECT_OK(channel->Write(MultiBufFromArray(payload)).status);
+  ASSERT_EQ(capture.sends_called.load(), 1);
+
+  // Re-enable allocations and pause inside `GetAclH4Packet()` when
+  // `first_packet`'s `release_fn` runs `ForceDrainChannelQueues()`.
+  blocking_allocator.FailAllocations(false);
+  blocking_allocator.ArmAllocateBarrier();
+
+  thread::test::TestThreadContext context;
+  Thread release_thread(context.options(), [&capture]() {
+    capture.start_release.acquire();
+    capture.first_packet.reset();
+  });
+
+  capture.start_release.release();
+  blocking_allocator.WaitUntilAllocateEntered();
+  // Unblock `DoAllocate()` before `proxy.reset()` because `~ProxyHost()` waits
+  // for the in-flight `release_fn` before resetting `AclDataChannel`. Without
+  // stopping and draining packet release callbacks before
+  // `acl_data_channel_.Reset()`, `acl_connections_` would be cleared before
+  // `DrainChannelQueuesIfNewTx()` calls `PW_CHECK_OK(SendAcl(...))`.
+  blocking_allocator.AllowAllocateToProceed();
+
+  proxy.reset();
+  release_thread.join();
+
+  EXPECT_EQ(capture.sends_called.load(), 2);
+  ASSERT_TRUE(capture.second_packet.has_value());
+
+  channel.reset();
+  capture.second_packet.reset();
+  EXPECT_EQ(test_allocator.GetAllocated(), 0u);
+}
+#endif  // PW_BLUETOOTH_PROXY_ASYNC == 0
+#endif  // PW_THREAD_JOINING_ENABLED
 
 TEST_F(ProxyHostTest, NotEnoughMemoryToAllocateConnection) {
   // Allocator is too small to hold connection state.

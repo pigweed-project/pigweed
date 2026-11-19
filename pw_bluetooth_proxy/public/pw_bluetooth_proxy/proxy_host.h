@@ -98,7 +98,8 @@ class ProxyHost : public L2capChannelManagerInterface {
   /// to the controller side.
   /// @param[in] allocator - General purpose allocator to use for internal
   /// packet buffers and objects. On multi-threaded systems this should be a
-  /// SynchronizedAllocator.
+  /// SynchronizedAllocator. Must outlive `ProxyHost` and any `H4PacketWithH4`
+  /// packets emitted by it.
   ProxyHost(pw::Function<void(H4PacketWithHci&& packet)>&& send_to_host_fn,
             pw::Function<void(H4PacketWithH4&& packet)>&& send_to_controller_fn,
             pw::Allocator& allocator,
@@ -119,7 +120,8 @@ class ProxyHost : public L2capChannelManagerInterface {
   /// the proxy out of any BR/EDR ACL buffers received from controller.
   /// @param[in] allocator - General purpose allocator to use for internal
   /// packet buffers and objects. On multi-threaded systems this should be a
-  /// SynchronizedAllocator. Must not be null.
+  /// SynchronizedAllocator. Must outlive `ProxyHost` and any `H4PacketWithH4`
+  /// packets emitted by it. Must not be null.
   ProxyHost(pw::Function<void(H4PacketWithHci&& packet)>&& send_to_host_fn,
             pw::Function<void(H4PacketWithH4&& packet)>&& send_to_controller_fn,
             uint16_t le_acl_credits_to_reserve,

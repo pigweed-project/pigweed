@@ -83,6 +83,11 @@ ProxyHost::ProxyHost(
 
 ProxyHost::~ProxyHost() {
   PW_LOG_INFO("btproxy: ProxyHost dtor");
+  // Stop H4 packet release callbacks from draining channel queues and wait for
+  // any in-flight release callbacks before resetting `acl_data_channel_`, so a
+  // concurrent `ForceDrainChannelQueues()` cannot call `SendAcl()` after
+  // `acl_connections_` is cleared.
+  l2cap_channel_manager_.StopPacketRelease();
   acl_data_channel_.Reset();
   l2cap_channel_manager_.DeregisterAndCloseChannels(
       L2capChannelEvent::kChannelClosedByOther);

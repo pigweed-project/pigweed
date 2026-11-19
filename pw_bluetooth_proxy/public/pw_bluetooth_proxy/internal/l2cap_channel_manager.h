@@ -48,6 +48,13 @@
 
 namespace pw::bluetooth::proxy {
 
+namespace internal {
+
+struct PacketReleaseContext;
+class PacketReleaseRegistry;
+
+}  // namespace internal
+
 // `L2capChannelManager` mediates between `ProxyHost` and the L2CAP-based
 // channels held by clients of `ProxyHost`, such as L2CAP connection-oriented
 // channels, GATT Notify channels, and RFCOMM channels.
@@ -113,6 +120,10 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
   //
   // Returns PW_STATUS_UNAVAILABLE if a buffer could not be allocated.
   pw::Result<H4PacketWithH4> GetAclH4Packet(uint16_t size);
+
+  // Prevent `H4PacketWithH4` release callbacks from draining channel queues and
+  // wait for any in-flight packet release callbacks on other threads to finish.
+  void StopPacketRelease();
 
   // Report that new tx packets have been queued or new tx credits have been
   // received since the last DrainChannelQueuesIfNewTx.
@@ -253,6 +264,11 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
   }
 
  private:
+  internal::PacketReleaseContext* AcquirePacketReleaseContext(
+      Allocator& allocator);
+  void StopPacketReleaseDrain();
+  void InvalidatePacketReleaseContext();
+
   using L2capChannelMap = internal::L2capChannelManagerImpl::L2capChannelMap;
   using L2capChannelRefMap =
       internal::L2capChannelManagerImpl::L2capChannelRefMap;
@@ -340,6 +356,7 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
 
   // Implementation-specific details that may vary between sync and async modes.
   friend class internal::L2capChannelManagerImpl;
+  friend class internal::PacketReleaseRegistry;
   internal::L2capChannelManagerImpl impl_;
 
   // Channel connection status tracker and delegate holder.
@@ -355,6 +372,9 @@ class L2capChannelManager final : public L2capChannelManagerInterface {
       allocator_buffer_;
   multibuf::SimpleAllocator multibuf_allocator_{allocator_buffer_,
                                                 impl_.allocator()};
+
+  // Guarded by `PacketReleaseRegistry::mutex_` in `l2cap_channel_manager.cc`.
+  bool packet_release_stopped_ = false;
 
 #if PW_BLUETOOTH_PROXY_CONFIG_ENABLE_RECOVERY
   // If a snapshot is stored, applies snapshot state to a credit-based flow
