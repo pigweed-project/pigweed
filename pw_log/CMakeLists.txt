@@ -149,4 +149,18 @@ if(NOT "${pw_log_BACKEND}" STREQUAL "")
       modules
       pw_log
   )
+
+  pw_add_test(pw_log.log_enum_test
+    SOURCES
+      log_enum_test.cc
+    PRIVATE_DEPS
+      pw_enum
+      pw_log
+      pw_log.args
+      pw_tokenizer
+      pw_unit_test.constexpr
+    GROUPS
+      modules
+      pw_log
+  )
 endif()

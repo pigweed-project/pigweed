@@ -191,3 +191,16 @@ pw_add_test(pw_log_tokenized.fields_test
     modules
     pw_log_tokenized
 )
+
+pw_add_test(pw_log_tokenized.tokenized_args_test
+  SOURCES
+    tokenized_args_test.cc
+  PRIVATE_DEPS
+    pw_log.args
+    pw_log_tokenized.tokenized_backend_indicator
+    pw_tokenizer
+    pw_unit_test.constexpr
+  GROUPS
+    modules
+    pw_log_tokenized
+)

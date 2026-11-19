@@ -207,9 +207,10 @@ pw_cc_test(
         "tokenized_args_test.cc",
     ],
     deps = [
-        ":headers",
+        ":tokenized_backend_indicator",
         "//pw_log:args",
         "//pw_tokenizer",
+        "//pw_unit_test:constexpr",
     ],
 )
 

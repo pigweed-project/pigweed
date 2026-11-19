@@ -146,6 +146,17 @@ PW_CONSTEXPR_TEST(TokenizedArgs, LogTokenOrString_NonTokenizingBackend, {
   PW_TEST_EXPECT_STREQ("kAlpha", nested_token);
 });
 
+PW_CONSTEXPR_TEST(TokenizedArgs, LogTokenEnumFmt2_NonTokenizingBackend, {
+  constexpr pw::log::Token nested_token =
+      PW_LOG_ENUM_FMT(::this_is_a_test::Thing2);
+  PW_TEST_EXPECT_STREQ("%s", nested_token);
+});
+
+PW_CONSTEXPR_TEST(TokenizedArgs, LogTokenOrString2_NonTokenizingBackend, {
+  constexpr pw::log::Token nested_token = PW_LOG_ENUM(kDelta);
+  PW_TEST_EXPECT_STREQ("DELTA", nested_token);
+});
+
 PW_CONSTEXPR_TEST(TokenizedArgs, NestedTokenFmt1_NonTokenizingBackend, {
   constexpr char nested_token[] = PW_LOG_NESTED_TOKEN_FMT();
   PW_TEST_EXPECT_STREQ("%s::%s", nested_token);
@@ -172,7 +183,7 @@ PW_CONSTEXPR_TEST(TokenizedArgs, LogEnumVersioned_NonTokenizingBackend, {
   PW_TEST_EXPECT_STREQ("kItem1", scoped);
 });
 
-#endif  //__has_include("log_backend/log_backend_uses_pw_tokenizer.h")
+#endif  // __has_include("pw_log_backend/log_backend_uses_pw_tokenizer.h")
 
 }  // namespace
 }  // namespace this_is_a_test
