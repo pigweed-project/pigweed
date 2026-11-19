@@ -82,7 +82,6 @@ class BucketTest : public ::testing::Test {
  private:
   BucketType bucket_;
   std::array<std::byte, kCapacity> bytes_;
-  std::array<BlockType*, kMaxBlocks> blocks_;
   BlockType* available_ = nullptr;
 };
 
