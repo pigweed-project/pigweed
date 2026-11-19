@@ -154,6 +154,9 @@ cc_library(
         ":connection",
         "//pw_bytes",
         "//pw_rpc",
+        "//pw_sync:lock_annotations",
+        "//pw_sync:mutex",
+        "//pw_sync:thread_notification",
     ],
 )
 
@@ -219,12 +222,14 @@ pw_cc_test(
     target_compatible_with = [":enabled"],
     deps = [
         ":connection",
+        ":grpc_channel_output",
         ":send_queue",
         "//pw_allocator:best_fit",
         "//pw_allocator:synchronized_allocator",
         "//pw_bytes",
         "//pw_containers:inline_deque",
         "//pw_containers:vector",
+        "//pw_rpc",
         "//pw_status",
         "//pw_stream",
         "//pw_string:string",

@@ -391,8 +391,16 @@ Status Connection::Reader::ProcessFrame() {
   if (!received_connection_preface_) {
     return Status::FailedPrecondition();
   }
+  if (connection_.LockState()->connection_closed()) {
+    return Status::Unavailable();
+  }
 
   PW_TRY_ASSIGN(auto frame, ReadFrameHeader(reader_));
+  // Stop reading once CloseStreams() has closed the connection, even though the
+  // transport is still open.
+  if (connection_.LockState()->connection_closed()) {
+    return Status::Unavailable();
+  }
   switch (frame.type) {
     // Frames that we handle.
     case FrameType::DATA:
@@ -437,6 +445,9 @@ Status Connection::Reader::ProcessFrame() {
 
 pw::Status Connection::SharedState::CreateStream(StreamId id,
                                                  int32_t initial_send_window) {
+  if (connection_closed_) {
+    return Status::Unavailable();
+  }
   for (size_t i = 0; i < streams_.size(); i++) {
     if (streams_[i].id != 0) {
       continue;
@@ -765,6 +776,9 @@ Status Connection::Writer::SendResponseMessage(StreamId stream_id,
 
   while (true) {
     auto state = connection_.LockState();
+    if (state->connection_closed()) {
+      return Status::Unavailable();
+    }
     auto stream = state->LookupStream(stream_id);
     if (!stream || stream->end_stream_latched) {
       return Status::NotFound();
@@ -881,6 +895,9 @@ Status Connection::Writer::SendResponseComplete(StreamId stream_id,
     return Status::InvalidArgument();
   }
   auto state = connection_.LockState();
+  if (state->connection_closed()) {
+    return Status::Unavailable();
+  }
   auto stream = state->LookupStream(stream_id);
   if (!stream || stream->end_stream_latched) {
     return Status::NotFound();
@@ -995,6 +1012,9 @@ Status Connection::Reader::ProcessConnectionPreface() {
 
   {
     auto state = connection_.LockState();
+    if (state->connection_closed()) {
+      return Status::Unavailable();
+    }
     PW_TRY(state->SendBytes(ObjectAsBytes(server_frame)));
 
     // We must ack the client's SETTINGS frame *after* sending our SETTINGS.
@@ -1376,7 +1396,12 @@ Status Connection::Reader::ProcessHeadersFrame(const FrameHeader& frame) {
   PW_TRY_ASSIGN(auto method_name, HpackParseRequestHeaders(payload));
   {
     auto state = connection_.LockState();
-    if (!state->CreateStream(frame.stream_id, initial_send_window_).ok()) {
+    if (const Status status =
+            state->CreateStream(frame.stream_id, initial_send_window_);
+        !status.ok()) {
+      if (status.IsUnavailable()) {
+        return status;
+      }
       PW_LOG_WARN("Too many streams, rejecting id=%" PRIu32, frame.stream_id);
       return state->SendRstStream(frame.stream_id, Http2Error::REFUSED_STREAM);
     }
@@ -1388,6 +1413,9 @@ Status Connection::Reader::ProcessHeadersFrame(const FrameHeader& frame) {
       auto s = connection_.writer_.SendResponseComplete(
           frame.stream_id, pw::Status::Unimplemented());
       if (s.IsUnavailable()) {
+        if (connection_.LockState()->connection_closed()) {
+          return Status::Unavailable();
+        }
         return OkStatus();
       }
       return s;

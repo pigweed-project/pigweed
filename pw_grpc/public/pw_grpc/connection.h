@@ -216,6 +216,17 @@ class Connection {
   }
 
  private:
+  // GrpcChannelOutput calls CloseStreams() from clear_connection().
+  friend class GrpcChannelOutput;
+
+  // Marks the connection closed and resets all streams. Threads blocked in
+  // SendResponseMessage() wake up and return UNAVAILABLE. Later sends return
+  // UNAVAILABLE, and the reader stops at the next frame. Does not close the
+  // transport; CloseConnection() does that.
+  //
+  // Safe to call multiple times and from any thread.
+  void CloseStreams() { LockState()->Close(); }
+
   Connection(stream::Reader& reader,
              SendQueue& send_queue,
              RequestCallbacks& callbacks,

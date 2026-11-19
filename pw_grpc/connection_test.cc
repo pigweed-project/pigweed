@@ -32,7 +32,9 @@
 #include "pw_bytes/span.h"
 #include "pw_containers/inline_deque.h"
 #include "pw_containers/vector.h"
+#include "pw_grpc/grpc_channel_output.h"
 #include "pw_grpc/send_queue.h"
+#include "pw_rpc/internal/packet.h"
 #include "pw_status/status.h"
 #include "pw_stream/stream.h"
 #include "pw_string/string.h"
@@ -611,6 +613,75 @@ class ResponseWriter final : public thread::ThreadCore {
   thread::Thread thread_;
 };
 
+// Answers GrpcChannelOutput lookups as a server streaming call and records
+// when SendPacket() starts and finishes using the connection.
+class RecordingRpcHandler : public GrpcChannelOutput::PwRpcHandlerInterface {
+ public:
+  void OnClose(StreamId) override {
+    closed_.store(true, std::memory_order_release);
+  }
+
+  Result<rpc::MethodType> LookupMethodType(uint32_t) override {
+    entered_.release();
+    return rpc::MethodType::kServerStreaming;
+  }
+
+  // Blocks until SendPacket() is running inside GrpcChannelOutput.
+  void WaitUntilEntered() { entered_.acquire(); }
+
+  // True once SendPacket() has finished with the stream.
+  bool closed() const { return closed_.load(std::memory_order_acquire); }
+
+ private:
+  sync::ThreadNotification entered_;
+  std::atomic<bool> closed_{false};
+};
+
+// Calls GrpcChannelOutput::SendPacket() with one RESPONSE packet on a
+// dedicated thread.
+class PacketWriter final : public thread::ThreadCore {
+ public:
+  PacketWriter(GrpcChannelOutput& output,
+               StreamId stream_id,
+               ConstByteSpan payload)
+      : output_(output),
+        stream_id_(stream_id),
+        payload_(payload),
+        thread_(context_.options(), *this) {}
+
+  ~PacketWriter() override { static_cast<void>(Join()); }
+
+  PacketWriter(const PacketWriter&) = delete;
+  PacketWriter& operator=(const PacketWriter&) = delete;
+  PacketWriter(PacketWriter&&) = delete;
+  PacketWriter& operator=(PacketWriter&&) = delete;
+
+  Status Join() {
+    if (thread_.joinable()) {
+      thread_.join();
+    }
+    return status_;
+  }
+
+ private:
+  void Run() override {
+    status_ = output_.SendPacket(
+        rpc::internal::Packet(rpc::internal::pwpb::PacketType::kResponse,
+                              /*channel_id=*/1,
+                              /*service_id=*/1,
+                              /*method_id=*/1,
+                              stream_id_,
+                              payload_));
+  }
+
+  GrpcChannelOutput& output_;
+  StreamId stream_id_;
+  ConstByteSpan payload_;
+  Status status_ = Status::Unknown();
+  thread::test::TestThreadContext context_;
+  thread::Thread thread_;
+};
+
 struct ConnectionHarness {
   std::array<std::byte, kSendAllocatorPoolSize> send_pool{};
   std::array<std::byte, internal::kMaxGrpcMessageSize> drain_scratch{};
@@ -930,9 +1001,10 @@ TEST_F(ConnectionTest, ZeroConnectionWindowUpdateSendsGoAwayWithoutDeadlock) {
 
   EXPECT_EQ(harness().callbacks.canceled_stream_count(), 1U);
   EXPECT_TRUE(harness().callbacks.WasCanceled(kStreamId));
-  EXPECT_EQ(harness().callbacks.on_cancel_reentry_status(), Status::NotFound());
+  EXPECT_EQ(harness().callbacks.on_cancel_reentry_status(),
+            Status::Unavailable());
   EXPECT_EQ(harness().close_connection_calls.load(), 1U);
-  EXPECT_EQ(harness().close_callback_reentry_status(), Status::NotFound());
+  EXPECT_EQ(harness().close_callback_reentry_status(), Status::Unavailable());
 
   Vector<RecordedFrame, kMaxStreamFrames> control_frames;
   harness().send_queue.TakeStreamFrames(/*stream_id=*/0, control_frames);
@@ -956,9 +1028,10 @@ TEST_F(ConnectionTest,
 
   EXPECT_EQ(harness().callbacks.canceled_stream_count(), 1U);
   EXPECT_TRUE(harness().callbacks.WasCanceled(kStreamId));
-  EXPECT_EQ(harness().callbacks.on_cancel_reentry_status(), Status::NotFound());
+  EXPECT_EQ(harness().callbacks.on_cancel_reentry_status(),
+            Status::Unavailable());
   EXPECT_EQ(harness().close_connection_calls.load(), 1U);
-  EXPECT_EQ(harness().close_callback_reentry_status(), Status::NotFound());
+  EXPECT_EQ(harness().close_callback_reentry_status(), Status::Unavailable());
 
   Vector<RecordedFrame, kMaxStreamFrames> control_frames;
   harness().send_queue.TakeStreamFrames(/*stream_id=*/0, control_frames);
@@ -1003,9 +1076,10 @@ TEST_F(ConnectionTest,
   EXPECT_EQ(harness().callbacks.canceled_stream_count(), 2U);
   EXPECT_TRUE(harness().callbacks.WasCanceled(kBlockedStream));
   EXPECT_TRUE(harness().callbacks.WasCanceled(kRaisedStream));
-  EXPECT_EQ(harness().callbacks.on_cancel_reentry_status(), Status::NotFound());
+  EXPECT_EQ(harness().callbacks.on_cancel_reentry_status(),
+            Status::Unavailable());
   EXPECT_EQ(harness().close_connection_calls.load(), 1U);
-  EXPECT_EQ(harness().close_callback_reentry_status(), Status::NotFound());
+  EXPECT_EQ(harness().close_callback_reentry_status(), Status::Unavailable());
 
   Vector<RecordedFrame, kMaxStreamFrames> control_frames;
   harness().send_queue.TakeStreamFrames(/*stream_id=*/0, control_frames);
@@ -1220,6 +1294,99 @@ TEST_F(ConnectionTest, ResetStreamSlotReuseKeepsWriterWakeups) {
   Vector<RecordedFrame, kMaxStreamFrames> sent;
   harness().send_queue.TakeStreamFrames(kNewStream, sent);
   EXPECT_EQ(sent.size(), 2U);
+}
+
+TEST_F(ConnectionTest, ClearConnectionRejectsSendsAndStopsReader) {
+  StartConnection();
+  harness().send_queue.ClearStreamFrames(/*stream_id=*/0);
+
+  constexpr auto kPayload = bytes::Array<0x71, 0x72>();
+  constexpr StreamId kStreamId = 1;
+  OpenStream(kStreamId);
+
+  RecordingRpcHandler handler;
+  GrpcChannelOutput output;
+  output.set_callbacks(handler);
+  output.set_connection(harness().connection);
+  output.clear_connection();
+
+  EXPECT_EQ(harness().connection.SendResponseMessage(kStreamId, kPayload),
+            Status::Unavailable());
+  EXPECT_EQ(harness().connection.SendResponseComplete(kStreamId, OkStatus()),
+            Status::Unavailable());
+
+  // The transport is still open, but the reader must stop at the next frame
+  // instead of processing it. A PING would otherwise get a PING ACK.
+  constexpr auto kPingPayload =
+      bytes::Array<0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08>();
+  harness().reader.PushPing(kPingPayload);
+  StopReader();
+  Vector<RecordedFrame, kMaxStreamFrames> control_frames;
+  harness().send_queue.TakeStreamFrames(/*stream_id=*/0, control_frames);
+  EXPECT_TRUE(control_frames.empty());
+  Vector<RecordedFrame, kMaxStreamFrames> stream_frames;
+  harness().send_queue.TakeStreamFrames(kStreamId, stream_frames);
+  EXPECT_TRUE(stream_frames.empty());
+}
+
+TEST_F(ConnectionTest, ClearConnectionWaitsForBlockedSendPacket) {
+  StartConnectionWithWindow(/*initial_window=*/0);
+
+  constexpr auto kPayload = bytes::Array<0x51, 0x52>();
+  constexpr StreamId kStreamId = 1;
+  OpenStream(kStreamId);
+
+  RecordingRpcHandler handler;
+  GrpcChannelOutput output;
+  output.set_callbacks(handler);
+  output.set_connection(harness().connection);
+
+  // SendPacket() blocks on the zero send window. clear_connection() must wake
+  // it and wait until it is done with the connection, so the caller can
+  // destroy the connection right after.
+  PacketWriter writer(output, kStreamId, kPayload);
+  handler.WaitUntilEntered();
+
+  output.clear_connection();
+  EXPECT_TRUE(handler.closed());
+
+  // Reader EOF closes the connection, which wakes the writer if
+  // clear_connection() did not.
+  StopReader();
+  EXPECT_EQ(writer.Join(), Status::Unavailable());
+
+  EXPECT_EQ(output.SendPacket(rpc::internal::Packet(
+                rpc::internal::pwpb::PacketType::kServerStream,
+                /*channel_id=*/1,
+                /*service_id=*/1,
+                /*method_id=*/1,
+                kStreamId)),
+            Status::FailedPrecondition());
+}
+
+TEST_F(ConnectionTest, DestroyConnectionAfterClearConnection) {
+  StartConnectionWithWindow(/*initial_window=*/0);
+
+  constexpr auto kPayload = bytes::Array<0x61, 0x62>();
+  constexpr StreamId kStreamId = 1;
+  OpenStream(kStreamId);
+
+  RecordingRpcHandler handler;
+  GrpcChannelOutput output;
+  output.set_callbacks(handler);
+  output.set_connection(harness().connection);
+
+  PacketWriter writer(output, kStreamId, kPayload);
+  handler.WaitUntilEntered();
+
+  // Server teardown order: reader EOF closes the connection and wakes the
+  // writer, then the server clears and destroys the connection.
+  StopReader();
+  output.clear_connection();
+  EXPECT_TRUE(handler.closed());
+  g_harness.reset();
+
+  EXPECT_EQ(writer.Join(), Status::Unavailable());
 }
 
 }  // namespace

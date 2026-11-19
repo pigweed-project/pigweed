@@ -98,6 +98,9 @@ pw_source_set("grpc_channel_output") {
     ":connection",
     "$dir_pw_bytes",
     "$dir_pw_rpc",
+    "$dir_pw_sync:lock_annotations",
+    "$dir_pw_sync:mutex",
+    "$dir_pw_sync:thread_notification",
   ]
 }
 
@@ -142,12 +145,14 @@ pw_test("connection_test") {
   sources = [ "connection_test.cc" ]
   deps = [
     ":connection",
+    ":grpc_channel_output",
     ":send_queue",
     "$dir_pw_allocator:best_fit",
     "$dir_pw_allocator:synchronized_allocator",
     "$dir_pw_bytes",
     "$dir_pw_containers:inline_deque",
     "$dir_pw_containers:vector",
+    "$dir_pw_rpc",
     "$dir_pw_status",
     "$dir_pw_stream",
     "$dir_pw_string",
