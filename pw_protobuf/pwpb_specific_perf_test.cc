@@ -28,8 +28,8 @@
 #include "pw_protobuf/buffer_encoder.h"
 #include "pw_protobuf/decoder.h"
 #include "pw_protobuf/encoder.h"
+#include "pw_protobuf_private/test_data_perf_test.h"
 #include "pw_protobuf_test_protos/perf_test.pwpb.h"
-#include "pw_protobuf_test_protos/test_data_perf_test.h"
 #include "pw_span/span.h"
 #include "pw_status/status.h"
 

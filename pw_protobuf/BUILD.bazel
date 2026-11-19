@@ -217,8 +217,8 @@ pwpb_proto_library(
 cc_library(
     name = "perf_test_data",
     testonly = True,
-    hdrs = ["pw_protobuf_test_protos/test_data_perf_test.h"],
-    strip_include_prefix = "/pw_protobuf",
+    hdrs = ["private/pw_protobuf_private/test_data_perf_test.h"],
+    strip_include_prefix = "private",
     visibility = ["//:__subpackages__"],
     deps = [
         "//pw_bytes",

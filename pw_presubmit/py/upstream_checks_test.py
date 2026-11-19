@@ -204,7 +204,7 @@ class TestSourceFilesFilter(unittest.TestCase):
         )
         self.assertFalse(
             upstream_checks.SOURCE_FILES_FILTER_GN_EXCLUDE.matches(
-                'pw_protobuf/pw_protobuf_test_protos/test_data_perf_test.h'
+                'pw_protobuf/private/pw_protobuf_private/test_data_perf_test.h'
             )
         )
         self.assertFalse(
