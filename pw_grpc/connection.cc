@@ -769,9 +769,11 @@ Status Connection::Writer::SendResponseMessage(StreamId stream_id,
       return Status::NotFound();
     }
 
-    const size_t message_size = message.size();
-    if (static_cast<int32_t>(message_size) <= stream->send_window &&
-        static_cast<int32_t>(message_size) <= state->connection_send_window()) {
+    const size_t frame_payload_size =
+        message.size() + kLengthPrefixedMessageHdrSize;
+    if (static_cast<int32_t>(frame_payload_size) <= stream->send_window &&
+        static_cast<int32_t>(frame_payload_size) <=
+            state->connection_send_window()) {
       // Enough window!
       PW_TRY_ASSIGN(DataFrame data_frame,
                     DataFrame::Create(state->send_allocator(), message.size()));

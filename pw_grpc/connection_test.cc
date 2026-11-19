@@ -883,5 +883,111 @@ TEST_F(ConnectionTest, WaitingSendUnblocksOnResetOrDisconnect) {
   EXPECT_TRUE(close_status.IsUnavailable() || close_status.IsNotFound());
 }
 
+TEST_F(ConnectionTest, EmptyResponseWaitsUntilFiveBytePrefixWindowAvailable) {
+  constexpr uint32_t kShortfall = 1;
+  constexpr uint32_t kWindowBelowPrefix =
+      static_cast<uint32_t>(kLengthPrefixedMessageHdrSize) - kShortfall;
+  StartConnectionWithWindow(/*initial_window=*/0);
+
+  constexpr StreamId kStreamId = 1;
+  OpenStream(kStreamId);
+
+  ResponseWriter writer(harness().connection,
+                        kStreamId,
+                        ConstByteSpan(),
+                        /*complete_after_message=*/true);
+  writer.WaitUntilStarted();
+
+  // Raise the stream window to 4 bytes (still below the 5-byte gRPC message
+  // prefix) before granting the final byte, exercising the post-wakeup loop
+  // re-check.
+  harness().reader.PushWindowUpdate(kStreamId,
+                                    /*increment=*/kWindowBelowPrefix);
+  harness().reader.WaitUntilIdle();
+
+  harness().reader.PushWindowUpdate(kStreamId, /*increment=*/kShortfall);
+  ASSERT_EQ(writer.Join(), OkStatus());
+  ASSERT_EQ(writer.complete_status(), OkStatus());
+
+  Vector<RecordedFrame, kMaxStreamFrames> sent;
+  harness().send_queue.TakeStreamFrames(kStreamId, sent);
+  ASSERT_EQ(sent.size(), 3U);
+  EXPECT_EQ(sent[0].type, kFrameTypeHeaders);
+  EXPECT_EQ(sent[1].type, kFrameTypeData);
+  ASSERT_EQ(sent[1].payload().size(), kLengthPrefixedMessageHdrSize);
+  EXPECT_EQ(sent[1].payload()[0], std::byte{0});
+  EXPECT_EQ(
+      bytes::ReadInOrder<uint32_t>(endian::big, sent[1].payload().data() + 1),
+      0U);
+  EXPECT_EQ(sent[2].type, kFrameTypeHeaders);
+  EXPECT_NE(sent[2].flags & kFlagEndStream, 0);
+}
+
+TEST_F(ConnectionTest,
+       NonEmptyResponseWaitsWhenStreamOrConnectionWindowExcludesPrefix) {
+  constexpr auto kPayload = bytes::Array<0x01, 0x02, 0x03, 0x04, 0x05, 0x06>();
+  constexpr uint32_t kFramedBytes =
+      static_cast<uint32_t>(kLengthPrefixedMessageHdrSize + kPayload.size());
+  constexpr uint32_t kShortfall = 3;
+  constexpr uint32_t kWindowMissingPrefixBytes = kFramedBytes - kShortfall;
+  static_assert(kWindowMissingPrefixBytes >= kPayload.size());
+  static_assert(kWindowMissingPrefixBytes < kFramedBytes);
+
+  StartConnectionWithWindow(/*initial_window=*/0);
+
+  // 1. Stream window holds kPayload.size() bytes without room for the 5-byte
+  // gRPC message prefix.
+  constexpr StreamId kStream1 = 1;
+  OpenStream(kStream1);
+
+  ResponseWriter stream_writer(harness().connection,
+                               kStream1,
+                               kPayload,
+                               /*complete_after_message=*/true);
+  stream_writer.WaitUntilStarted();
+
+  harness().reader.PushWindowUpdate(kStream1,
+                                    /*increment=*/kWindowMissingPrefixBytes);
+  harness().reader.WaitUntilIdle();
+
+  harness().reader.PushWindowUpdate(kStream1, /*increment=*/kShortfall);
+  ASSERT_EQ(stream_writer.Join(), OkStatus());
+  ASSERT_EQ(stream_writer.complete_status(), OkStatus());
+
+  Vector<RecordedFrame, kMaxStreamFrames> stream1_frames;
+  harness().send_queue.TakeStreamFrames(kStream1, stream1_frames);
+  EXPECT_EQ(stream1_frames.size(), 3U);
+
+  // 2. Connection window holds kPayload.size() bytes without room for the
+  // 5-byte gRPC message prefix while stream send window is large.
+  harness().reader.PushSettingsInitialWindow(kDefaultInitialWindowSize);
+  harness().reader.WaitUntilIdle();
+  constexpr size_t kRemainingConnWindowAfterStream1 =
+      kDefaultInitialWindowSize - kFramedBytes;
+  DrainConnectionSendWindow(kRemainingConnWindowAfterStream1,
+                            /*drain_stream_id=*/3);
+
+  constexpr StreamId kConnBlockedStream = 5;
+  OpenStream(kConnBlockedStream);
+
+  ResponseWriter conn_writer(harness().connection,
+                             kConnBlockedStream,
+                             kPayload,
+                             /*complete_after_message=*/true);
+  conn_writer.WaitUntilStarted();
+
+  harness().reader.PushWindowUpdate(/*stream_id=*/0,
+                                    /*increment=*/kWindowMissingPrefixBytes);
+  harness().reader.WaitUntilIdle();
+
+  harness().reader.PushWindowUpdate(/*stream_id=*/0, /*increment=*/kShortfall);
+  ASSERT_EQ(conn_writer.Join(), OkStatus());
+  ASSERT_EQ(conn_writer.complete_status(), OkStatus());
+
+  Vector<RecordedFrame, kMaxStreamFrames> conn_frames;
+  harness().send_queue.TakeStreamFrames(kConnBlockedStream, conn_frames);
+  EXPECT_EQ(conn_frames.size(), 3U);
+}
+
 }  // namespace
 }  // namespace pw::grpc
