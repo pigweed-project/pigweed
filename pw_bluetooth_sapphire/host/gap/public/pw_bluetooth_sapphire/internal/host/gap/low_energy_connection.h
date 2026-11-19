@@ -297,7 +297,9 @@ class LowEnergyConnection final : public sm::Delegate {
 
   // Handles the HCI LE Remote Connection Parameter Request event (Core Spec
   // v6.2, Vol 4, Part E, Sec 7.7.65.6) by validating the requested parameters
-  // and replying with Reply or Negative Reply.
+  // and replying with Reply or Negative Reply. Peripheral requests on a central
+  // link during initialization are rejected with Negative Reply while caching
+  // the parameters to apply once initialization completes.
   void OnLERemoteConnectionParameterRequest(const hci::EventPacket& event);
 
   // Sends an HCI LE Remote Connection Parameter Request Negative Reply command
@@ -306,10 +308,12 @@ class LowEnergyConnection final : public sm::Delegate {
       hci_spec::ConnectionHandle handle,
       pw::bluetooth::emboss::StatusCode reason);
 
+  // Returns true while initial connection setup (interrogation or the initial
+  // connection pause timeout) is still in progress.
+  bool IsInitializationInProgress() const;
+
   // Updates or requests an update of the connection parameters, for central and
-  // peripheral roles respectively, if interrogation has completed.
-  // TODO(fxbug.dev/42159733): Wait to update connection parameters until all
-  // initialization procedures have completed.
+  // peripheral roles respectively, if initialization has completed.
   void MaybeUpdateConnectionParameters();
 
   // Registers the peer with GATT and initiates service discovery. If

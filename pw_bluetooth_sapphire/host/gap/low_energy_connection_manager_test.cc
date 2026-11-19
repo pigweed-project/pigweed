@@ -1930,19 +1930,45 @@ TEST_F(LowEnergyConnectionManagerTest,
       conn_handle->handle() + 1, wrong_handle_conn_params);
   RunUntilIdle();
 
+  // Connection parameter updates from L2CAP are deferred until initialization
+  // (including kLEConnectionPauseCentral) completes, while preferred parameters
+  // are cached immediately.
+  EXPECT_FALSE(actual.has_value());
+  ASSERT_TRUE(peer->le());
+  ASSERT_TRUE(peer->le()->preferred_connection_parameters().has_value());
+  EXPECT_EQ(preferred, *peer->le()->preferred_connection_parameters());
+
+  RunFor(kLEConnectionPauseCentral);
+
   test_device()->SendLEConnectionUpdateCompleteSubevent(
       conn_handle->handle() + 1, wrong_handle_conn_params);
-
   RunUntilIdle();
 
   ASSERT_TRUE(actual.has_value());
-  ASSERT_TRUE(peer->le());
   EXPECT_EQ(preferred, *peer->le()->preferred_connection_parameters());
+  EXPECT_EQ(actual.value(), *peer->le()->connection_parameters());
+
+  // Subsequent L2CAP connection parameter update requests after initialization
+  // are applied immediately without waiting for another pause timeout.
+  actual.reset();
+  hci_spec::LEPreferredConnectionParameters updated_preferred(
+      /*min_interval=*/0x0010,
+      /*max_interval=*/0x0020,
+      /*max_latency=*/2,
+      /*supervision_timeout=*/0x00C8);
+  ASSERT_TRUE(updated_preferred.IsValid());
+
+  fake_l2cap()->TriggerLEConnectionParameterUpdate(conn_handle->handle(),
+                                                   updated_preferred);
+  RunUntilIdle();
+
+  ASSERT_TRUE(actual.has_value());
+  EXPECT_EQ(updated_preferred, *peer->le()->preferred_connection_parameters());
   EXPECT_EQ(actual.value(), *peer->le()->connection_parameters());
 }
 
 TEST_F(LowEnergyConnectionManagerTest,
-       CentralAcceptsLERemoteConnectionParameterRequestDuringInitialization) {
+       CentralDefersLERemoteConnectionParameterRequestDuringInitialization) {
   EXPECT_TRUE(BuildLEEventMask() &
               static_cast<uint64_t>(
                   hci_spec::LEEventMask::kLERemoteConnectionParameterRequest));
@@ -1962,20 +1988,18 @@ TEST_F(LowEnergyConnectionManagerTest,
   RunUntilIdle();
   ASSERT_TRUE(conn_handle);
 
-  std::optional<std::pair<hci_spec::ConnectionHandle,
-                          hci_spec::LEPreferredConnectionParameters>>
-      reply;
   size_t reply_count = 0;
   test_device()->set_le_remote_connection_parameter_request_reply_callback(
-      [&](auto handle, auto params) {
-        reply_count++;
-        reply = std::make_pair(handle, params);
-      });
+      [&](auto, auto) { reply_count++; });
 
-  size_t neg_reply_count = 0;
+  std::optional<
+      std::pair<hci_spec::ConnectionHandle, pw::bluetooth::emboss::StatusCode>>
+      neg_reply;
   test_device()
       ->set_le_remote_connection_parameter_request_negative_reply_callback(
-          [&](auto, auto) { neg_reply_count++; });
+          [&](auto handle, auto reason) {
+            neg_reply = std::make_pair(handle, reason);
+          });
 
   size_t hci_conn_param_update_count = 0;
   std::optional<hci_spec::LEConnectionParameters> updated_params;
@@ -1997,35 +2021,260 @@ TEST_F(LowEnergyConnectionManagerTest,
       conn_handle->handle() + 1, kPreferred);
   RunUntilIdle();
   EXPECT_EQ(0u, reply_count);
-  EXPECT_EQ(0u, neg_reply_count);
+  EXPECT_FALSE(neg_reply.has_value());
 
-  // When a valid request arrives before kLEConnectionPauseCentral expires,
-  // Central accepts it, caches the peer's preferred parameters, and does not
-  // send a redundant HCI_LE_Connection_Update once kLEConnectionPauseCentral
-  // elapses.
+  // During kLEConnectionPauseCentral, Central rejects the Link Layer request to
+  // preserve initial fast parameters, caches the peer's preferred parameters,
+  // and applies them once initialization finishes.
   test_device()->SendLERemoteConnectionParameterRequestSubevent(
       conn_handle->handle(), kPreferred);
   RunUntilIdle();
 
-  EXPECT_EQ(1u, reply_count);
-  EXPECT_EQ(0u, neg_reply_count);
-  ASSERT_TRUE(reply.has_value());
-  EXPECT_EQ(conn_handle->handle(), reply->first);
-  EXPECT_EQ(kPreferred, reply->second);
+  EXPECT_EQ(0u, reply_count);
+  ASSERT_TRUE(neg_reply.has_value());
+  EXPECT_EQ(conn_handle->handle(), neg_reply->first);
+  EXPECT_EQ(
+      pw::bluetooth::emboss::StatusCode::UNACCEPTABLE_CONNECTION_PARAMETERS,
+      neg_reply->second);
+  EXPECT_EQ(0u, hci_conn_param_update_count);
+  EXPECT_FALSE(updated_params.has_value());
+  ASSERT_TRUE(peer->le()->preferred_connection_parameters().has_value());
+  EXPECT_EQ(kPreferred, *peer->le()->preferred_connection_parameters());
+
+  RunFor(kLEConnectionPauseCentral);
+
   EXPECT_EQ(1u, hci_conn_param_update_count);
   ASSERT_TRUE(updated_params.has_value());
   EXPECT_EQ(0x0020u, updated_params->interval());
   EXPECT_EQ(4u, updated_params->latency());
   EXPECT_EQ(0x0190u, updated_params->supervision_timeout());
-  ASSERT_TRUE(peer->le()->preferred_connection_parameters().has_value());
-  EXPECT_EQ(kPreferred, *peer->le()->preferred_connection_parameters());
   ASSERT_TRUE(peer->le()->connection_parameters().has_value());
   EXPECT_EQ(*updated_params, *peer->le()->connection_parameters());
+}
+
+TEST_F(
+    LowEnergyConnectionManagerTest,
+    CentralDefersLERemoteConnectionParameterRequestUntilInterrogationCompletes) {
+  auto fake_peer = std::make_unique<FakePeer>(kAddress0, dispatcher());
+  FakePeer* fake_peer_ptr = fake_peer.get();
+  test_device()->AddPeer(std::move(fake_peer));
+  auto* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  ASSERT_TRUE(peer);
+
+  fit::closure resume_interrogation;
+  test_device()->pause_responses_for_opcode(
+      hci_spec::kLEReadRemoteFeatures,
+      [&](fit::closure resume) { resume_interrogation = std::move(resume); });
+
+  std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
+  conn_mgr()->Connect(
+      peer->identifier(),
+      [&conn_handle](auto result) {
+        ASSERT_EQ(fit::ok(), result);
+        conn_handle = std::move(result).value();
+      },
+      kConnectionOptions);
+  RunUntilIdle();
+  ASSERT_TRUE(resume_interrogation);
+  EXPECT_FALSE(conn_handle);
+  ASSERT_FALSE(fake_peer_ptr->logical_links().empty());
+  const hci_spec::ConnectionHandle handle =
+      *fake_peer_ptr->logical_links().begin();
+
+  // Advance past kLEConnectionPauseCentral while interrogation is still in
+  // progress.
+  RunFor(kLEConnectionPauseCentral);
+  EXPECT_FALSE(conn_handle);
+
+  size_t reply_count = 0;
+  test_device()->set_le_remote_connection_parameter_request_reply_callback(
+      [&](auto, auto) { reply_count++; });
+  size_t neg_reply_count = 0;
+  test_device()
+      ->set_le_remote_connection_parameter_request_negative_reply_callback(
+          [&](auto, auto reason) {
+            EXPECT_EQ(pw::bluetooth::emboss::StatusCode::
+                          UNACCEPTABLE_CONNECTION_PARAMETERS,
+                      reason);
+            neg_reply_count++;
+          });
+  std::optional<hci_spec::LEConnectionParameters> updated_params;
+  test_device()->set_le_connection_parameters_callback(
+      [&](const auto&, const auto& params) { updated_params = params; });
+
+  const hci_spec::LEPreferredConnectionParameters kPreferred(
+      /*min_interval=*/0x0014,
+      /*max_interval=*/0x0014,
+      /*max_latency=*/2,
+      /*supervision_timeout=*/0x0100);
+  test_device()->SendLERemoteConnectionParameterRequestSubevent(handle,
+                                                                kPreferred);
+  RunUntilIdle();
+
+  EXPECT_EQ(0u, reply_count);
+  EXPECT_EQ(1u, neg_reply_count);
+  EXPECT_FALSE(updated_params.has_value());
+
+  test_device()->clear_pause_listener_for_opcode(
+      hci_spec::kLEReadRemoteFeatures);
+  resume_interrogation();
+  RunUntilIdle();
+
+  ASSERT_TRUE(conn_handle);
+  ASSERT_TRUE(updated_params.has_value());
+  EXPECT_EQ(0x0014u, updated_params->interval());
+  EXPECT_EQ(2u, updated_params->latency());
+  EXPECT_EQ(0x0100u, updated_params->supervision_timeout());
+}
+
+TEST_F(LowEnergyConnectionManagerTest,
+       CentralDefersL2capConnectionParameterUpdateUntilInterrogationCompletes) {
+  auto fake_peer = std::make_unique<FakePeer>(kAddress0, dispatcher());
+  FakePeer* fake_peer_ptr = fake_peer.get();
+  test_device()->AddPeer(std::move(fake_peer));
+  auto* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  ASSERT_TRUE(peer);
+
+  fit::closure resume_interrogation;
+  test_device()->pause_responses_for_opcode(
+      hci_spec::kLEReadRemoteFeatures,
+      [&](fit::closure resume) { resume_interrogation = std::move(resume); });
+
+  std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
+  conn_mgr()->Connect(
+      peer->identifier(),
+      [&conn_handle](auto result) {
+        ASSERT_EQ(fit::ok(), result);
+        conn_handle = std::move(result).value();
+      },
+      kConnectionOptions);
+  RunUntilIdle();
+  ASSERT_TRUE(resume_interrogation);
+  EXPECT_FALSE(conn_handle);
+  ASSERT_FALSE(fake_peer_ptr->logical_links().empty());
+  const hci_spec::ConnectionHandle handle =
+      *fake_peer_ptr->logical_links().begin();
+
+  // Advance past kLEConnectionPauseCentral while interrogation is still in
+  // progress.
+  RunFor(kLEConnectionPauseCentral);
+  EXPECT_FALSE(conn_handle);
+
+  std::optional<hci_spec::LEConnectionParameters> updated_params;
+  test_device()->set_le_connection_parameters_callback(
+      [&](const auto&, const auto& params) { updated_params = params; });
+
+  const hci_spec::LEPreferredConnectionParameters kPreferred(
+      /*min_interval=*/0x0014,
+      /*max_interval=*/0x0014,
+      /*max_latency=*/2,
+      /*supervision_timeout=*/0x0100);
+  ASSERT_TRUE(kPreferred.IsValid());
+
+  fake_l2cap()->TriggerLEConnectionParameterUpdate(handle, kPreferred);
+  RunUntilIdle();
+
+  EXPECT_FALSE(updated_params.has_value());
+  ASSERT_TRUE(peer->le());
+  ASSERT_TRUE(peer->le()->preferred_connection_parameters().has_value());
+  EXPECT_EQ(kPreferred, *peer->le()->preferred_connection_parameters());
+
+  test_device()->clear_pause_listener_for_opcode(
+      hci_spec::kLEReadRemoteFeatures);
+  resume_interrogation();
+  RunUntilIdle();
+
+  ASSERT_TRUE(conn_handle);
+  ASSERT_TRUE(updated_params.has_value());
+  EXPECT_EQ(0x0014u, updated_params->interval());
+  EXPECT_EQ(2u, updated_params->latency());
+  EXPECT_EQ(0x0100u, updated_params->supervision_timeout());
+}
+
+TEST_F(
+    LowEnergyConnectionManagerTest,
+    CentralDefersLERemoteConnectionParameterRequestUntilBothInterrogationAndPauseComplete) {
+  auto fake_peer = std::make_unique<FakePeer>(kAddress0, dispatcher());
+  FakePeer* fake_peer_ptr = fake_peer.get();
+  test_device()->AddPeer(std::move(fake_peer));
+  auto* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  ASSERT_TRUE(peer);
+
+  fit::closure resume_interrogation;
+  test_device()->pause_responses_for_opcode(
+      hci_spec::kLEReadRemoteFeatures,
+      [&](fit::closure resume) { resume_interrogation = std::move(resume); });
+
+  std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
+  conn_mgr()->Connect(
+      peer->identifier(),
+      [&conn_handle](auto result) {
+        ASSERT_EQ(fit::ok(), result);
+        conn_handle = std::move(result).value();
+      },
+      kConnectionOptions);
+  RunUntilIdle();
+  ASSERT_TRUE(resume_interrogation);
+  EXPECT_FALSE(conn_handle);
+  ASSERT_FALSE(fake_peer_ptr->logical_links().empty());
+  const hci_spec::ConnectionHandle handle =
+      *fake_peer_ptr->logical_links().begin();
+
+  size_t reply_count = 0;
+  test_device()->set_le_remote_connection_parameter_request_reply_callback(
+      [&](auto, auto) { reply_count++; });
+  size_t neg_reply_count = 0;
+  test_device()
+      ->set_le_remote_connection_parameter_request_negative_reply_callback(
+          [&](auto, auto reason) {
+            EXPECT_EQ(pw::bluetooth::emboss::StatusCode::
+                          UNACCEPTABLE_CONNECTION_PARAMETERS,
+                      reason);
+            neg_reply_count++;
+          });
+  size_t hci_conn_param_update_count = 0;
+  std::optional<hci_spec::LEConnectionParameters> updated_params;
+  test_device()->set_le_connection_parameters_callback(
+      [&](const auto&, const auto& params) {
+        hci_conn_param_update_count++;
+        updated_params = params;
+      });
+
+  // Peripheral sends a request while both interrogation and
+  // kLEConnectionPauseCentral are still in progress.
+  const hci_spec::LEPreferredConnectionParameters kPreferred(
+      /*min_interval=*/0x0014,
+      /*max_interval=*/0x0014,
+      /*max_latency=*/2,
+      /*supervision_timeout=*/0x0100);
+  ASSERT_TRUE(kPreferred.IsValid());
+  test_device()->SendLERemoteConnectionParameterRequestSubevent(handle,
+                                                                kPreferred);
+  RunUntilIdle();
+
+  EXPECT_EQ(0u, reply_count);
+  EXPECT_EQ(1u, neg_reply_count);
+  EXPECT_EQ(0u, hci_conn_param_update_count);
+  EXPECT_FALSE(updated_params.has_value());
+
+  // Completing interrogation before kLEConnectionPauseCentral expires must
+  // still defer applying the cached parameters until the pause finishes.
+  test_device()->clear_pause_listener_for_opcode(
+      hci_spec::kLEReadRemoteFeatures);
+  resume_interrogation();
+  RunUntilIdle();
+
+  ASSERT_TRUE(conn_handle);
+  EXPECT_EQ(0u, hci_conn_param_update_count);
+  EXPECT_FALSE(updated_params.has_value());
 
   RunFor(kLEConnectionPauseCentral);
+
   EXPECT_EQ(1u, hci_conn_param_update_count);
-  EXPECT_EQ(kPreferred, *peer->le()->preferred_connection_parameters());
-  EXPECT_EQ(*updated_params, *peer->le()->connection_parameters());
+  ASSERT_TRUE(updated_params.has_value());
+  EXPECT_EQ(0x0014u, updated_params->interval());
+  EXPECT_EQ(2u, updated_params->latency());
+  EXPECT_EQ(0x0100u, updated_params->supervision_timeout());
 }
 
 TEST_F(LowEnergyConnectionManagerTest,
@@ -2164,7 +2413,7 @@ TEST_F(LowEnergyConnectionManagerTest,
 }
 
 TEST_F(LowEnergyConnectionManagerTest,
-       InFlightGattPpcpReadDoesNotOverwriteRemoteParameterRequest) {
+       InFlightGattPpcpReadDoesNotOverwriteDeferredRemoteParameterRequest) {
   auto* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
   test_device()->AddPeer(std::make_unique<FakePeer>(kAddress0, dispatcher()));
 
@@ -2204,8 +2453,12 @@ TEST_F(LowEnergyConnectionManagerTest,
   ASSERT_TRUE(pending_ppcp_read_cb);
 
   size_t hci_conn_param_update_count = 0;
+  std::optional<hci_spec::LEConnectionParameters> applied_params;
   test_device()->set_le_connection_parameters_callback(
-      [&](const auto&, const auto&) { hci_conn_param_update_count++; });
+      [&](const auto&, const auto& params) {
+        hci_conn_param_update_count++;
+        applied_params = params;
+      });
 
   // While the GATT PPCP characteristic read is still in flight, the peripheral
   // sends a live LE Remote Connection Parameter Request.
@@ -2217,7 +2470,7 @@ TEST_F(LowEnergyConnectionManagerTest,
   test_device()->SendLERemoteConnectionParameterRequestSubevent(
       conn_handle->handle(), kLiveRequest);
   RunUntilIdle();
-  EXPECT_EQ(1u, hci_conn_param_update_count);
+  EXPECT_EQ(0u, hci_conn_param_update_count);
   ASSERT_TRUE(peer->le()->preferred_connection_parameters().has_value());
   EXPECT_EQ(kLiveRequest, *peer->le()->preferred_connection_parameters());
 
@@ -2229,15 +2482,15 @@ TEST_F(LowEnergyConnectionManagerTest,
   pending_ppcp_read_cb(fit::ok(), kStaticPpcpValue, /*maybe_truncated=*/false);
   RunUntilIdle();
 
+  EXPECT_EQ(0u, hci_conn_param_update_count);
   EXPECT_EQ(kLiveRequest, *peer->le()->preferred_connection_parameters());
 
   RunFor(kLEConnectionPauseCentral);
   EXPECT_EQ(1u, hci_conn_param_update_count);
-  ASSERT_TRUE(peer->le()->connection_parameters().has_value());
-  EXPECT_EQ(0x0018u, peer->le()->connection_parameters()->interval());
-  EXPECT_EQ(2u, peer->le()->connection_parameters()->latency());
-  EXPECT_EQ(0x0190u,
-            peer->le()->connection_parameters()->supervision_timeout());
+  ASSERT_TRUE(applied_params.has_value());
+  EXPECT_EQ(0x0018u, applied_params->interval());
+  EXPECT_EQ(2u, applied_params->latency());
+  EXPECT_EQ(0x0190u, applied_params->supervision_timeout());
 }
 
 TEST_F(LowEnergyConnectionManagerTest,

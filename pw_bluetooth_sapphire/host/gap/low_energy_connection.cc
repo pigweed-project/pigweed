@@ -492,6 +492,21 @@ void LowEnergyConnection::OnNewLEConnectionParams(
 
   peer_->MutLe().SetPreferredConnectionParameters(params);
 
+  if (IsInitializationInProgress()) {
+    // LogicalLink has already sent an L2CAP Connection Parameter Update
+    // Response with "accepted" before invoking this callback. Deferring the
+    // HCI_LE_Connection_Update until initialization finishes is allowed because
+    // GAP only requires the central to initiate the update within
+    // TGAP(conn_param_timeout) (30 s; Core Spec v6.2, Vol 3, Part C, 9.3.9.2).
+    bt_log(DEBUG,
+           "gap-le",
+           "deferring LE connection parameter update until initialization "
+           "completes (peer: %s, handle: %#.4x)",
+           bt_str(peer_id()),
+           link_->handle());
+    return;
+  }
+
   UpdateConnectionParams(params);
 }
 
@@ -760,7 +775,30 @@ void LowEnergyConnection::OnLERemoteConnectionParameterRequest(
   if (link_->role() == pw::bluetooth::emboss::ConnectionRole::CENTRAL) {
     PW_CHECK(peer_.is_alive());
     peer_->MutLe().SetPreferredConnectionParameters(params);
-    conn_pause_central_timeout_.reset();
+
+    if (IsInitializationInProgress()) {
+      // Although GAP allows a peripheral-initiated update to end the initial
+      // fast interval, peripherals should not request an update within
+      // TGAP(conn_pause_peripheral) (5 s; Core Spec v6.2, Vol 3, Part C,
+      // 9.3.12.2), so this only defers early requests.
+      // Reject immediately instead of holding the HCI reply so the controller
+      // closes the LL procedure rather than leaving it open (T_PRT is 40 s and
+      // an open procedure blocks other instant-based LL procedures; Vol 6,
+      // Part B, 5.2-5.3). The cached parameters are applied once initialization
+      // finishes.
+      bt_log(DEBUG,
+             "gap-le",
+             "rejecting remote LE connection parameter request during "
+             "initialization; will apply cached parameters after (peer: %s, "
+             "handle: %#.4x)",
+             bt_str(peer_id()),
+             handle);
+      SendLERemoteConnectionParameterRequestNegativeReply(
+          handle,
+          pw::bluetooth::emboss::StatusCode::
+              UNACCEPTABLE_CONNECTION_PARAMETERS);
+      return;
+    }
     connection_parameters_update_requested_ = true;
   } else {
     // The Central has explicitly negotiated connection parameters for this
@@ -825,9 +863,16 @@ void LowEnergyConnection::SendLERemoteConnectionParameterRequestNegativeReply(
   cmd_->SendCommand(std::move(command), std::move(status_cb)).IgnoreError();
 }
 
+bool LowEnergyConnection::IsInitializationInProgress() const {
+  // TODO(b/587398825): Also return true while GATT service discovery, pairing,
+  // or profile setup is in progress.
+  return conn_pause_central_timeout_.has_value() ||
+         conn_pause_peripheral_timeout_.has_value() ||
+         !interrogation_completed_;
+}
+
 void LowEnergyConnection::MaybeUpdateConnectionParameters() {
-  if (connection_parameters_update_requested_ || conn_pause_central_timeout_ ||
-      conn_pause_peripheral_timeout_ || !interrogation_completed_) {
+  if (connection_parameters_update_requested_ || IsInitializationInProgress()) {
     return;
   }
 
