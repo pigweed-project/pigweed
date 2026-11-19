@@ -169,6 +169,7 @@ sphinx_docs_library(
         "glossary.rst",
         "infra/bazel_lockfile.rst",
         "infra/ci_cq_intro.rst",
+        "infra/dependent_changes.rst",
         "infra/glossary.rst",
         "infra/index.rst",
         "infra/rollers.rst",
