@@ -121,8 +121,9 @@ class TestDynamicChannelRegistry final : public DynamicChannelRegistry {
   using DynamicChannelRegistry::FindAvailableChannelId;
   using DynamicChannelRegistry::FindChannelByLocalId;
   using DynamicChannelRegistry::FindChannelByRemoteId;
+  using DynamicChannelRegistry::FindService;
   using DynamicChannelRegistry::ForEach;
-  using DynamicChannelRegistry::RequestService;
+  using DynamicChannelRegistry::OpenInbound;
 
  private:
   // DynamicChannelRegistry overrides
@@ -251,7 +252,7 @@ TEST(DynamicChannelRegistryTest, RejectServiceRequest) {
 
   TestDynamicChannelRegistry registry(DoNothing, std::move(service_request_cb));
 
-  registry.RequestService(kPsm, registry.FindAvailableChannelId(), kRemoteCId);
+  EXPECT_FALSE(registry.FindService(kPsm));
   EXPECT_TRUE(service_request_cb_called);
   EXPECT_FALSE(registry.last_channel());
 }
@@ -276,12 +277,16 @@ TEST(DynamicChannelRegistryTest, AcceptServiceRequestThenOpenOk) {
     EXPECT_FALSE(service_request_cb_called);
     EXPECT_EQ(kPsm, psm);
     service_request_cb_called = true;
-    return DynamicChannelRegistry::ServiceInfo{ChannelParameters(), cb.share()};
+    return DynamicChannelRegistry::ServiceInfo{
+        ChannelParameters(), cb.share(), sm::SecurityLevel::kNoSecurity};
   };
 
   TestDynamicChannelRegistry registry(DoNothing, std::move(service_request_cb));
 
-  registry.RequestService(kPsm, registry.FindAvailableChannelId(), kRemoteCId);
+  auto service = registry.FindService(kPsm);
+  ASSERT_TRUE(service);
+  registry.OpenInbound(
+      std::move(*service), kPsm, registry.FindAvailableChannelId(), kRemoteCId);
   EXPECT_TRUE(service_request_cb_called);
   ASSERT_TRUE(registry.last_channel());
   registry.last_channel()->DoOpen();
@@ -310,14 +315,17 @@ TEST(DynamicChannelRegistryTest, AcceptServiceRequestThenOpenFails) {
     EXPECT_FALSE(service_request_cb_called);
     EXPECT_EQ(kPsm, psm);
     service_request_cb_called = true;
-    return DynamicChannelRegistry::ServiceInfo{ChannelParameters(), cb.share()};
+    return DynamicChannelRegistry::ServiceInfo{
+        ChannelParameters(), cb.share(), sm::SecurityLevel::kNoSecurity};
   };
 
   TestDynamicChannelRegistry registry(DoNothing, std::move(service_request_cb));
 
   ChannelId local_cid = registry.FindAvailableChannelId();
   EXPECT_NE(kInvalidChannelId, local_cid);
-  registry.RequestService(kPsm, local_cid, kRemoteCId);
+  auto service = registry.FindService(kPsm);
+  ASSERT_TRUE(service);
+  registry.OpenInbound(std::move(*service), kPsm, local_cid, kRemoteCId);
   EXPECT_TRUE(service_request_cb_called);
   ASSERT_TRUE(registry.last_channel());
   registry.last_channel()->DoOpen(false);

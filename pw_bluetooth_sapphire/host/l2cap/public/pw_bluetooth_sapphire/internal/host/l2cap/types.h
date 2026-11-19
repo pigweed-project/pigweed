@@ -264,8 +264,12 @@ struct ChannelInfo {
 // Data stored for services registered by higher layers.
 template <typename ChannelCallbackT>
 struct ServiceInfo {
-  ServiceInfo(ChannelParameters params, ChannelCallbackT cb)
-      : channel_params(params), channel_cb(std::move(cb)) {}
+  ServiceInfo(ChannelParameters params,
+              ChannelCallbackT cb,
+              sm::SecurityLevel min_security_level)
+      : channel_params(params),
+        channel_cb(std::move(cb)),
+        min_security(min_security_level) {}
   ServiceInfo(ServiceInfo&&) = default;
   ServiceInfo& operator=(ServiceInfo&&) = default;
   BT_DISALLOW_COPY_AND_ASSIGN_ALLOW_MOVE(ServiceInfo);
@@ -276,6 +280,10 @@ struct ServiceInfo {
 
   // Callback for forwarding new channels to locally-hosted service.
   ChannelCallbackT channel_cb;
+
+  // Minimum security the link must have before an inbound LE credit-based
+  // connection for this service is accepted. Not enforced on BR/EDR links.
+  sm::SecurityLevel min_security;
 };
 
 }  // namespace bt::l2cap

@@ -125,10 +125,13 @@ class FakeL2cap final : public ChannelManager {
                         Psm psm,
                         ChannelParameters params,
                         ChannelCallback cb) override;
+  // The fake does not enforce |min_security|.
+  using ChannelManager::RegisterService;
   bool RegisterService(bt::LinkType link_type,
                        Psm psm,
                        ChannelParameters params,
-                       ChannelCallback channel_callback) override;
+                       ChannelCallback channel_callback,
+                       sm::SecurityLevel min_security) override;
   void UnregisterService(bt::LinkType link_type, Psm psm) override;
 
   WeakSelf<internal::LogicalLink>::WeakPtr LogicalLinkForTesting(

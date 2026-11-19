@@ -5227,6 +5227,274 @@ TEST_F(ChannelManagerMockAclChannelTest,
   EXPECT_TRUE(channel.is_alive());
 }
 
+// A service's security requirement, the security of the link a connection
+// request arrives on, and the expected outcome.
+struct InboundLeSecurityParam {
+  const char* name;
+  sm::SecurityLevel required;
+  sm::SecurityProperties link_security;
+  // The result the request is refused with, or nullopt if it is accepted.
+  std::optional<LECreditBasedConnectionResult> refusal;
+};
+
+class InboundLeConnectionSecurityTest
+    : public ChannelManagerMockAclChannelTest,
+      public ::testing::WithParamInterface<InboundLeSecurityParam> {};
+
+// Tests that an LE credit-based connection request is accepted only when the
+// link meets the security level required by the service. A refused request
+// gets the expected result and the service is not given a channel.
+TEST_P(InboundLeConnectionSecurityTest, ChecksLinkSecurity) {
+  static constexpr Psm kPsm = 0x0015;
+  const InboundLeSecurityParam& param = GetParam();
+
+  Channel::WeakPtr channel;
+  ASSERT_TRUE(chanmgr()->RegisterService(bt::LinkType::kLE,
+                                         kPsm,
+                                         kLeCreditBasedModeParams,
+                                         StoreChannel(&channel),
+                                         param.required));
+  LEFixedChannels fixed_channels =
+      RegisterLE(kTestHandle1, pw::bluetooth::emboss::ConnectionRole::CENTRAL);
+  chanmgr()->AssignLinkSecurityProperties(kTestHandle1, param.link_security);
+
+  constexpr CommandId kPeerConnReqId = 1;
+  if (param.refusal) {
+    EXPECT_LE_PACKET_OUT(
+        OutboundLeConnectionRefusal(kPeerConnReqId, *param.refusal),
+        kHighPriority);
+  } else {
+    EXPECT_LE_PACKET_OUT(OutboundLeConnectionResponse(kPeerConnReqId),
+                         kHighPriority);
+  }
+  ReceiveAclDataPacket(InboundLeConnectionRequest(kPeerConnReqId, kPsm));
+  RunUntilIdle();
+
+  EXPECT_TRUE(AllExpectedPacketsSent());
+  if (param.refusal) {
+    EXPECT_FALSE(channel.is_alive());
+  } else {
+    ASSERT_TRUE(channel.is_alive());
+    EXPECT_EQ(param.link_security, channel->security());
+  }
+}
+
+const InboundLeSecurityParam kInboundLeSecurityParams[] = {
+    {.name = "RefusedOnUnencryptedLink",
+     .required = sm::SecurityLevel::kEncrypted,
+     .link_security = sm::SecurityProperties(),
+     .refusal = LECreditBasedConnectionResult::kInsufficientAuthentication},
+    {.name = "AcceptedOnEncryptedLink",
+     .required = sm::SecurityLevel::kEncrypted,
+     .link_security = sm::SecurityProperties(/*encrypted=*/true,
+                                             /*authenticated=*/false,
+                                             /*secure_connections=*/false,
+                                             /*enc_key_size=*/16),
+     .refusal = std::nullopt},
+    // A kEncrypted requirement does not imply a key size.
+    {.name = "AcceptedOnEncryptedLinkWithShortKey",
+     .required = sm::SecurityLevel::kEncrypted,
+     .link_security = sm::SecurityProperties(/*encrypted=*/true,
+                                             /*authenticated=*/false,
+                                             /*secure_connections=*/false,
+                                             /*enc_key_size=*/7),
+     .refusal = std::nullopt},
+    {.name = "RefusedOnUnauthenticatedLink",
+     .required = sm::SecurityLevel::kAuthenticated,
+     .link_security = sm::SecurityProperties(/*encrypted=*/true,
+                                             /*authenticated=*/false,
+                                             /*secure_connections=*/true,
+                                             /*enc_key_size=*/16),
+     .refusal = LECreditBasedConnectionResult::kInsufficientAuthentication},
+    // A link above the required level is accepted.
+    {.name = "AcceptedOnLinkAboveRequirement",
+     .required = sm::SecurityLevel::kAuthenticated,
+     .link_security = sm::SecurityProperties(/*encrypted=*/true,
+                                             /*authenticated=*/true,
+                                             /*secure_connections=*/true,
+                                             /*enc_key_size=*/16),
+     .refusal = std::nullopt},
+    {.name = "AcceptedOnSecureAuthenticatedLink",
+     .required = sm::SecurityLevel::kSecureAuthenticated,
+     .link_security = sm::SecurityProperties(/*encrypted=*/true,
+                                             /*authenticated=*/true,
+                                             /*secure_connections=*/true,
+                                             /*enc_key_size=*/16),
+     .refusal = std::nullopt},
+    {.name = "RefusedWithoutSecureConnections",
+     .required = sm::SecurityLevel::kSecureAuthenticated,
+     .link_security = sm::SecurityProperties(/*encrypted=*/true,
+                                             /*authenticated=*/true,
+                                             /*secure_connections=*/false,
+                                             /*enc_key_size=*/16),
+     .refusal = LECreditBasedConnectionResult::kInsufficientAuthentication},
+    // A short key is reported as the reason only when it is all that is
+    // lacking.
+    {.name = "RefusedOnShortEncryptionKey",
+     .required = sm::SecurityLevel::kSecureAuthenticated,
+     .link_security = sm::SecurityProperties(/*encrypted=*/true,
+                                             /*authenticated=*/true,
+                                             /*secure_connections=*/true,
+                                             /*enc_key_size=*/7),
+     .refusal = LECreditBasedConnectionResult::kInsufficientEncryptionKeySize},
+    {.name = "RefusedOnLegacyPairingWithShortKey",
+     .required = sm::SecurityLevel::kSecureAuthenticated,
+     .link_security = sm::SecurityProperties(/*encrypted=*/true,
+                                             /*authenticated=*/true,
+                                             /*secure_connections=*/false,
+                                             /*enc_key_size=*/7),
+     .refusal = LECreditBasedConnectionResult::kInsufficientAuthentication},
+    {.name = "RefusedOnUnencryptedLinkWithShortKey",
+     .required = sm::SecurityLevel::kSecureAuthenticated,
+     .link_security = sm::SecurityProperties(/*encrypted=*/false,
+                                             /*authenticated=*/true,
+                                             /*secure_connections=*/true,
+                                             /*enc_key_size=*/7),
+     .refusal = LECreditBasedConnectionResult::kInsufficientAuthentication},
+};
+INSTANTIATE_TEST_SUITE_P(
+    ChannelManagerMockAclChannelTest,
+    InboundLeConnectionSecurityTest,
+    ::testing::ValuesIn(kInboundLeSecurityParams),
+    [](const ::testing::TestParamInfo<InboundLeSecurityParam>& param_info) {
+      return std::string(param_info.param.name);
+    });
+
+// Tests that a refused request leaves no channel state behind: once the link
+// is encrypted, a second request that reuses the same source CID succeeds.
+TEST_F(ChannelManagerMockAclChannelTest,
+       InboundLeConnectionSucceedsOnRetryAfterEncryption) {
+  static constexpr Psm kPsm = 0x0015;
+  Channel::WeakPtr channel;
+  ASSERT_TRUE(chanmgr()->RegisterService(bt::LinkType::kLE,
+                                         kPsm,
+                                         kLeCreditBasedModeParams,
+                                         StoreChannel(&channel),
+                                         sm::SecurityLevel::kEncrypted));
+  LEFixedChannels fixed_channels =
+      RegisterLE(kTestHandle1, pw::bluetooth::emboss::ConnectionRole::CENTRAL);
+
+  constexpr CommandId kFirstConnReqId = 1;
+  EXPECT_LE_PACKET_OUT(
+      OutboundLeConnectionRefusal(
+          kFirstConnReqId,
+          LECreditBasedConnectionResult::kInsufficientAuthentication),
+      kHighPriority);
+  ReceiveAclDataPacket(InboundLeConnectionRequest(kFirstConnReqId, kPsm));
+  RunUntilIdle();
+  EXPECT_TRUE(AllExpectedPacketsSent());
+  EXPECT_FALSE(channel.is_alive());
+
+  chanmgr()->AssignLinkSecurityProperties(
+      kTestHandle1,
+      sm::SecurityProperties(sm::SecurityLevel::kEncrypted,
+                             /*enc_key_size=*/16,
+                             /*secure_connections=*/false));
+
+  constexpr CommandId kSecondConnReqId = 2;
+  EXPECT_LE_PACKET_OUT(OutboundLeConnectionResponse(kSecondConnReqId),
+                       kHighPriority);
+  ReceiveAclDataPacket(InboundLeConnectionRequest(kSecondConnReqId, kPsm));
+  RunUntilIdle();
+  EXPECT_TRUE(AllExpectedPacketsSent());
+  EXPECT_TRUE(channel.is_alive());
+}
+
+// Tests that a service registered without a security requirement still
+// accepts connections on an unencrypted link.
+TEST_F(ChannelManagerMockAclChannelTest,
+       InboundLeConnectionAcceptedWithoutSecurityRequirement) {
+  static constexpr Psm kPsm = 0x0015;
+  Channel::WeakPtr channel;
+  ASSERT_TRUE(chanmgr()->RegisterService(bt::LinkType::kLE,
+                                         kPsm,
+                                         kLeCreditBasedModeParams,
+                                         StoreChannel(&channel)));
+  LEFixedChannels fixed_channels =
+      RegisterLE(kTestHandle1, pw::bluetooth::emboss::ConnectionRole::CENTRAL);
+
+  constexpr CommandId kPeerConnReqId = 1;
+  EXPECT_LE_PACKET_OUT(OutboundLeConnectionResponse(kPeerConnReqId),
+                       kHighPriority);
+  ReceiveAclDataPacket(InboundLeConnectionRequest(kPeerConnReqId, kPsm));
+  RunUntilIdle();
+
+  EXPECT_TRUE(AllExpectedPacketsSent());
+  ASSERT_TRUE(channel.is_alive());
+  EXPECT_EQ(sm::SecurityLevel::kNoSecurity, channel->security().level());
+}
+
+// Tests that the security check also applies to a request that was received
+// before the link was registered and is handled when the link is registered.
+TEST_F(ChannelManagerMockAclChannelTest,
+       InboundLeConnectionQueuedBeforeLinkRegistrationRefused) {
+  static constexpr Psm kPsm = 0x0015;
+  Channel::WeakPtr channel;
+  ASSERT_TRUE(chanmgr()->RegisterService(bt::LinkType::kLE,
+                                         kPsm,
+                                         kLeCreditBasedModeParams,
+                                         StoreChannel(&channel),
+                                         sm::SecurityLevel::kEncrypted));
+
+  constexpr CommandId kPeerConnReqId = 1;
+  ReceiveAclDataPacket(InboundLeConnectionRequest(kPeerConnReqId, kPsm));
+
+  EXPECT_LE_PACKET_OUT(
+      OutboundLeConnectionRefusal(
+          kPeerConnReqId,
+          LECreditBasedConnectionResult::kInsufficientAuthentication),
+      kHighPriority);
+  LEFixedChannels fixed_channels =
+      RegisterLE(kTestHandle1, pw::bluetooth::emboss::ConnectionRole::CENTRAL);
+  RunUntilIdle();
+
+  EXPECT_TRUE(AllExpectedPacketsSent());
+  EXPECT_FALSE(channel.is_alive());
+}
+
+// Tests that a security requirement on a BR/EDR service has no effect: the
+// connection is accepted on a link with no security.
+// TODO(fxbug.dev/587060139): Expect a refusal once BR/EDR enforces it.
+TEST_F(ChannelManagerMockAclChannelTest,
+       InboundBrEdrConnectionIgnoresSecurityRequirement) {
+  Channel::WeakPtr channel;
+  ASSERT_TRUE(chanmgr()->RegisterService(bt::LinkType::kACL,
+                                         kTestPsm,
+                                         kChannelParams,
+                                         StoreChannel(&channel),
+                                         sm::SecurityLevel::kEncrypted));
+
+  constexpr CommandId kPeerConnReqId = 1;
+  ReceiveAclDataPacket(InboundConnectionRequest(kPeerConnReqId));
+
+  const auto extended_features_id = NextCommandId();
+  const auto fixed_channels_supported_id = NextCommandId();
+  const auto config_req_id = NextCommandId();
+  EXPECT_ACL_PACKET_OUT_(MakeExtendedFeaturesInformationRequest(
+                             extended_features_id, kTestHandle1),
+                         kHighPriority);
+  EXPECT_ACL_PACKET_OUT_(testing::AclFixedChannelsSupportedInfoReq(
+                             fixed_channels_supported_id, kTestHandle1),
+                         kHighPriority);
+  EXPECT_ACL_PACKET_OUT_(OutboundConnectionResponse(kPeerConnReqId),
+                         kHighPriority);
+  EXPECT_ACL_PACKET_OUT_(OutboundConfigurationRequest(config_req_id),
+                         kHighPriority);
+  RegisterACL(kTestHandle1, pw::bluetooth::emboss::ConnectionRole::CENTRAL);
+  RunUntilIdle();
+  EXPECT_TRUE(AllExpectedPacketsSent());
+
+  EXPECT_ACL_PACKET_OUT_(OutboundConfigurationResponse(kPeerConfigRequestId),
+                         kHighPriority);
+  ReceiveAclDataPacket(InboundConfigurationRequest(kPeerConfigRequestId));
+  ReceiveAclDataPacket(InboundConfigurationResponse(config_req_id));
+  RunUntilIdle();
+
+  EXPECT_TRUE(AllExpectedPacketsSent());
+  ASSERT_TRUE(channel.is_alive());
+  EXPECT_EQ(sm::SecurityLevel::kNoSecurity, channel->security().level());
+}
+
 // Tests that RegisterService rejects channel modes that the link type does not
 // support.
 TEST_F(ChannelManagerMockAclChannelTest,

@@ -73,30 +73,25 @@ DynamicChannelRegistry::DynamicChannelRegistry(
   PW_DCHECK(service_request_cb_);
 }
 
-DynamicChannel* DynamicChannelRegistry::RequestService(Psm psm,
-                                                       ChannelId local_cid,
-                                                       ChannelId remote_cid) {
-  PW_DCHECK(local_cid != kInvalidChannelId);
+std::optional<DynamicChannelRegistry::ServiceInfo>
+DynamicChannelRegistry::FindService(Psm psm) {
+  return service_request_cb_(psm);
+}
 
-  auto service_info = service_request_cb_(psm);
-  if (!service_info) {
-    bt_log(WARN,
-           "l2cap",
-           "No service found for PSM %#.4x from %#.4x",
-           psm,
-           remote_cid);
-    return nullptr;
-  }
+DynamicChannel* DynamicChannelRegistry::OpenInbound(ServiceInfo&& service_info,
+                                                    Psm psm,
+                                                    ChannelId local_cid,
+                                                    ChannelId remote_cid) {
+  PW_DCHECK(local_cid != kInvalidChannelId);
 
   auto iter =
       channels_
-          .emplace(
-              local_cid,
-              MakeInbound(
-                  psm, local_cid, remote_cid, service_info->channel_params))
+          .emplace(local_cid,
+                   MakeInbound(
+                       psm, local_cid, remote_cid, service_info.channel_params))
           .first;
   ActivateChannel(iter->second.get(),
-                  std::move(service_info->channel_cb),
+                  std::move(service_info.channel_cb),
                   /*pass_failed=*/false);
   return iter->second.get();
 }

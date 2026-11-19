@@ -1907,7 +1907,8 @@ TEST_F(BrEdrDynamicChannelTest, InboundConnectionOk) {
     service_request_cb_count++;
     EXPECT_EQ(kPsm, psm);
     if (psm == kPsm) {
-      return DynamicChannelRegistry::ServiceInfo(kChannelParams, cb.share());
+      return DynamicChannelRegistry::ServiceInfo(
+          kChannelParams, cb.share(), sm::SecurityLevel::kNoSecurity);
     }
     return std::nullopt;
   };
@@ -1952,8 +1953,8 @@ TEST_F(BrEdrDynamicChannelTest, InboundConnectionPeerDropsConfigReqTimeout) {
     DynamicChannelCallback open_cb = [&open_cb_count](auto) {
       open_cb_count++;
     };
-    return DynamicChannelRegistry::ServiceInfo(kChannelParams,
-                                               std::move(open_cb));
+    return DynamicChannelRegistry::ServiceInfo(
+        kChannelParams, std::move(open_cb), sm::SecurityLevel::kNoSecurity);
   };
   set_service_request_cb(std::move(service_request_cb));
 
@@ -2044,8 +2045,8 @@ TEST_F(BrEdrDynamicChannelTest, InboundConnectionPendingLimitExceeded) {
     DynamicChannelCallback open_cb = [&open_cb_count](auto) {
       open_cb_count++;
     };
-    return DynamicChannelRegistry::ServiceInfo(kChannelParams,
-                                               std::move(open_cb));
+    return DynamicChannelRegistry::ServiceInfo(
+        kChannelParams, std::move(open_cb), sm::SecurityLevel::kNoSecurity);
   };
   set_service_request_cb(std::move(service_request_cb));
 
@@ -2134,7 +2135,8 @@ TEST_F(BrEdrDynamicChannelTest, InboundConnectionErtmWaitFeaturesTimeout) {
       [&ertm_params](
           Psm psm) -> std::optional<DynamicChannelRegistry::ServiceInfo> {
     EXPECT_EQ(kPsm, psm);
-    return DynamicChannelRegistry::ServiceInfo(ertm_params, [](auto) {});
+    return DynamicChannelRegistry::ServiceInfo(
+        ertm_params, [](auto) {}, sm::SecurityLevel::kNoSecurity);
   };
   set_service_request_cb(std::move(service_request_cb));
 
@@ -2175,7 +2177,8 @@ TEST_F(BrEdrDynamicChannelTest,
     service_request_cb_count++;
     EXPECT_EQ(kPsm, psm);
     if (psm == kPsm) {
-      return DynamicChannelRegistry::ServiceInfo(kChannelParams, cb.share());
+      return DynamicChannelRegistry::ServiceInfo(
+          kChannelParams, cb.share(), sm::SecurityLevel::kNoSecurity);
     }
     return std::nullopt;
   };
@@ -2213,9 +2216,11 @@ TEST_F(BrEdrDynamicChannelTest, InboundConnectionInvalidPsm) {
     EXPECT_EQ(kInvalidPsm, psm);
     if (psm == kInvalidPsm) {
       return DynamicChannelRegistry::ServiceInfo(
-          kChannelParams, [](auto /*unused*/) {
+          kChannelParams,
+          [](auto /*unused*/) {
             FAIL() << "Channel should fail to open for PSM";
-          });
+          },
+          sm::SecurityLevel::kNoSecurity);
     }
     return std::nullopt;
   };
@@ -2255,9 +2260,11 @@ TEST_F(BrEdrDynamicChannelTest, InboundConnectionInvalidSrcCId) {
     EXPECT_EQ(kPsm, psm);
     if (psm == kPsm) {
       return DynamicChannelRegistry::ServiceInfo(
-          kChannelParams, [](auto /*unused*/) {
+          kChannelParams,
+          [](auto /*unused*/) {
             FAIL() << "Channel from src_cid should fail to open";
-          });
+          },
+          sm::SecurityLevel::kNoSecurity);
     }
     return std::nullopt;
   };

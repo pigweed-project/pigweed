@@ -92,7 +92,8 @@ class LeDynamicChannelTest : public pw::async::test::FakeDispatcherFixture {
         sig(),
         fit::bind_member<&LeDynamicChannelTest::OnChannelClose>(this),
         fit::bind_member<&LeDynamicChannelTest::OnServiceRequest>(this),
-        /*random_channel_ids=*/false);
+        /*random_channel_ids=*/false,
+        [this] { return link_security_; });
   }
 
   void TearDown() override {
@@ -190,13 +191,22 @@ class LeDynamicChannelTest : public pw::async::test::FakeDispatcherFixture {
     channel_close_cb_ = std::move(close_cb);
   }
 
-  bool RegisterService(Psm psm, ChannelParameters params) {
+  bool RegisterService(
+      Psm psm,
+      ChannelParameters params,
+      sm::SecurityLevel min_security = sm::SecurityLevel::kNoSecurity) {
     auto [_, result] = services_.insert(
         {psm,
          DynamicChannelRegistry::ServiceInfo{
              params,
-             fit::bind_member(this, &LeDynamicChannelTest::OnInboundChannel)}});
+             fit::bind_member(this, &LeDynamicChannelTest::OnInboundChannel),
+             min_security}});
     return result;
+  }
+
+  // Sets the security the registry sees for the link. Defaults to none.
+  void set_link_security(const sm::SecurityProperties& security) {
+    link_security_ = security;
   }
 
   void SetNextInboundChannel(std::optional<const DynamicChannel*>* out) {
@@ -224,12 +234,14 @@ class LeDynamicChannelTest : public pw::async::test::FakeDispatcherFixture {
     }
 
     return DynamicChannelRegistry::ServiceInfo(iter->second.channel_params,
-                                               iter->second.channel_cb.share());
+                                               iter->second.channel_cb.share(),
+                                               iter->second.min_security);
   }
 
   DynamicChannelCallback channel_close_cb_;
   DynamicChannelCallback inbound_open_cb_;
   std::unordered_map<Psm, DynamicChannelRegistry::ServiceInfo> services_;
+  sm::SecurityProperties link_security_;
   std::unique_ptr<testing::FakeSignalingChannel> signaling_channel_;
   std::unique_ptr<LeDynamicChannelRegistry> registry_;
 
@@ -629,6 +641,62 @@ TEST_F(LeDynamicChannelTest, OpenInboundUnacceptableParameters) {
     EXPECT_TRUE(DoOpenInbound(req_payload, rsp_payload));
     EXPECT_FALSE(channel);
   }
+}
+
+// The registry checks the service's security requirement against the link
+// security it reads through its callback: it refuses while the link falls
+// short, and accepts once the link meets the requirement.
+TEST_F(LeDynamicChannelTest, OpenInboundChecksLinkSecurity) {
+  static constexpr Psm kPsm = 0x0015;
+  static constexpr ChannelParameters kChannelParams{
+      .mode = CreditBasedFlowControlMode::kLeCreditBasedFlowControl,
+      .max_rx_sdu_size = std::nullopt,
+      .flush_timeout = std::nullopt,
+  };
+  static constexpr LECreditBasedConnectionRequestPayload kLeConnReqPayload{
+      .le_psm = kPsm,
+      .src_cid = DynamicCid(),
+      .mtu = 0x0064,
+      .mps = 0x0032,
+      .initial_credits = 0x0032,
+  };
+  static constexpr LECreditBasedConnectionResponsePayload kRefusalPayload{
+      .dst_cid = kInvalidChannelId,
+      .mtu = 0,
+      .mps = 0,
+      .initial_credits = 0,
+      .result = LECreditBasedConnectionResult::kInsufficientAuthentication,
+  };
+  static constexpr LECreditBasedConnectionResponsePayload kSuccessPayload{
+      .dst_cid = DynamicCid(),
+      .mtu = kDefaultMTU,
+      .mps = kMaxInboundPduPayloadSize,
+      .initial_credits = kLocalRxCredits,
+      .result = LECreditBasedConnectionResult::kSuccess,
+  };
+  static constexpr DisconnectionRequestPayload kDisconnReqPayload{
+      .dst_cid = kSuccessPayload.dst_cid,
+      .src_cid = kLeConnReqPayload.src_cid,
+  };
+
+  std::optional<const DynamicChannel*> channel;
+  SetNextInboundChannel(&channel);
+  ASSERT_TRUE(
+      RegisterService(kPsm, kChannelParams, sm::SecurityLevel::kEncrypted));
+
+  // The link has no security by default.
+  EXPECT_TRUE(DoOpenInbound(kLeConnReqPayload, kRefusalPayload));
+  EXPECT_FALSE(channel);
+
+  set_link_security(sm::SecurityProperties(sm::SecurityLevel::kEncrypted,
+                                           /*enc_key_size=*/16,
+                                           /*secure_connections=*/false));
+  EXPECT_TRUE(DoOpenInbound(kLeConnReqPayload, kSuccessPayload));
+  ASSERT_TRUE(channel);
+  ASSERT_TRUE(*channel);
+  EXPECT_TRUE((*channel)->IsOpen());
+
+  EXPECT_TRUE(DoCloseOutbound(kDisconnReqPayload));
 }
 
 TEST_F(LeDynamicChannelTest, OpenOutboundUnacceptableParameters) {

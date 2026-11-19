@@ -119,7 +119,8 @@ class ChannelManagerImpl final : public ChannelManager {
   bool RegisterService(bt::LinkType link_type,
                        Psm psm,
                        ChannelParameters params,
-                       ChannelCallback cb) override;
+                       ChannelCallback cb,
+                       sm::SecurityLevel min_security) override;
   void UnregisterService(bt::LinkType link_type, Psm psm) override;
 
   void RequestConnectionParameterUpdate(
@@ -374,7 +375,8 @@ void ChannelManagerImpl::OpenL2capChannel(hci_spec::ConnectionHandle handle,
 bool ChannelManagerImpl::RegisterService(bt::LinkType link_type,
                                          Psm psm,
                                          ChannelParameters params,
-                                         ChannelCallback cb) {
+                                         ChannelCallback cb,
+                                         sm::SecurityLevel min_security) {
   if (!IsValidPsm(link_type, psm)) {
     bt_log(ERROR,
            "l2cap",
@@ -395,6 +397,10 @@ bool ChannelManagerImpl::RegisterService(bt::LinkType link_type,
     return false;
   }
 
+  // |min_security| is only enforced for LE services (see
+  // LeDynamicChannelRegistry). The BR/EDR inbound path does not check link
+  // security, so a requirement on a kACL service is stored but has no effect
+  // (fxbug.dev/587060139).
   auto iter = services_.find({link_type, psm});
   if (iter != services_.end()) {
     bt_log(WARN,
@@ -405,7 +411,7 @@ bool ChannelManagerImpl::RegisterService(bt::LinkType link_type,
     return false;
   }
 
-  ServiceData service{.info = ServiceInfo(params, std::move(cb)),
+  ServiceData service{.info = ServiceInfo(params, std::move(cb), min_security),
                       .link_type = link_type,
                       .psm = psm,
                       .node = {},
@@ -579,7 +585,8 @@ std::optional<ChannelManager::ServiceInfo> ChannelManagerImpl::QueryService(
   // already trampolines to the appropriate dispatcher (passed to
   // RegisterService).
   return ServiceInfo(iter->second.info.channel_params,
-                     iter->second.info.channel_cb.share());
+                     iter->second.info.channel_cb.share(),
+                     iter->second.info.min_security);
 }
 
 void ChannelManagerImpl::ServiceData::AttachInspect(inspect::Node& parent) {

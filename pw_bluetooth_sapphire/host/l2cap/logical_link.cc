@@ -156,7 +156,8 @@ LogicalLink::LogicalLink(
         signaling_channel_.get(),
         fit::bind_member<&LogicalLink::OnChannelDisconnectRequest>(this),
         fit::bind_member<&LogicalLink::OnServiceRequest>(this),
-        random_channel_ids);
+        random_channel_ids,
+        [this] { return security(); });
 
     ServeConnectionParameterUpdateRequest();
     ServeFlowControlCreditInd();
@@ -677,8 +678,8 @@ LogicalLink::OnServiceRequest(Psm psm) {
                         const DynamicChannel* dyn_chan) mutable {
     CompleteDynamicOpen(dyn_chan, std::move(chan_cb));
   };
-  return DynamicChannelRegistry::ServiceInfo(result->channel_params,
-                                             std::move(channel_cb));
+  return DynamicChannelRegistry::ServiceInfo(
+      result->channel_params, std::move(channel_cb), result->min_security);
 }
 
 void LogicalLink::OnChannelDisconnectRequest(const DynamicChannel* dyn_chan) {

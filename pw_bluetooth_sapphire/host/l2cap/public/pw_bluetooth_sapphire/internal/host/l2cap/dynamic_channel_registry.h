@@ -109,11 +109,22 @@ class DynamicChannelRegistry : public WeakSelf<DynamicChannelRegistry> {
                                         ChannelId remote_cid,
                                         ChannelParameters params) = 0;
 
-  // Open an inbound channel for a service |psm| from the remote endpoint
-  // identified by |remote_cid| to the local endpoint by |local_cid|.
-  DynamicChannel* RequestService(Psm psm,
-                                 ChannelId local_cid,
-                                 ChannelId remote_cid);
+  // Opening an inbound channel takes two steps, so that a registry can decide
+  // whether to accept the connection (e.g. check the service's security
+  // requirement against the link) after the service is known and before any
+  // channel state exists.
+  //
+  // Step 1: Queries the upper layers for the service registered for |psm|
+  // without creating a channel. Returns nullopt if there is none.
+  std::optional<ServiceInfo> FindService(Psm psm);
+
+  // Step 2: Creates and activates an inbound channel for |service_info|, which
+  // was returned by FindService for |psm|, from the remote endpoint identified
+  // by |remote_cid| to the local endpoint identified by |local_cid|.
+  DynamicChannel* OpenInbound(ServiceInfo&& service_info,
+                              Psm psm,
+                              ChannelId local_cid,
+                              ChannelId remote_cid);
 
   // In the range starting at kFirstDynamicChannelId with |max_num_channels_|,
   // pick a dynamic channel ID that is available on this link. Returns

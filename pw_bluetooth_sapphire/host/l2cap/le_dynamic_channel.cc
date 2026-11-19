@@ -17,11 +17,14 @@
 #include <pw_assert/check.h>
 #include <pw_bluetooth/l2cap_frames.emb.h>
 
+#include <optional>
 #include <variant>
 
 #include "pw_bluetooth_sapphire/internal/host/l2cap/l2cap_defs.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/low_energy_command_handler.h"
 #include "pw_bluetooth_sapphire/internal/host/l2cap/types.h"
+#include "pw_bluetooth_sapphire/internal/host/sm/smp.h"
+#include "pw_bluetooth_sapphire/internal/host/sm/types.h"
 
 namespace bt::l2cap::internal {
 namespace {
@@ -42,19 +45,47 @@ CreditBasedFlowControlMode ConvertMode(AnyChannelMode mode) {
   return std::get<CreditBasedFlowControlMode>(mode);
 }
 
+// Returns the result to refuse an inbound connection with, or nullopt if
+// |security| satisfies |required|. See Core Spec v6.2, Vol 3, Part A, Section
+// 10.1 and Vol 3, Part C, Section 10.3.1.
+std::optional<LECreditBasedConnectionResult> CheckSecurity(
+    sm::SecurityLevel required, const sm::SecurityProperties& security) {
+  if (security.level() >= required) {
+    return std::nullopt;
+  }
+
+  // The only requirement that implies a key size is kSecureAuthenticated. If
+  // the link is encrypted and otherwise good enough, report the short key as
+  // the reason.
+  if (required == sm::SecurityLevel::kSecureAuthenticated &&
+      security.encrypted() && security.authenticated() &&
+      security.secure_connections() &&
+      security.enc_key_size() < sm::kMaxEncryptionKeySize) {
+    return LECreditBasedConnectionResult::kInsufficientEncryptionKeySize;
+  }
+
+  // L2CAP does not know whether a key exists for the peer, so an unencrypted
+  // link is always reported as insufficient authentication and never as
+  // insufficient encryption. att::CheckSecurity makes the same choice.
+  return LECreditBasedConnectionResult::kInsufficientAuthentication;
+}
+
 }  // namespace
 
 LeDynamicChannelRegistry::LeDynamicChannelRegistry(
     SignalingChannelInterface* sig,
     DynamicChannelCallback close_cb,
     ServiceRequestCallback service_request_cb,
-    bool random_channel_ids)
+    bool random_channel_ids,
+    LinkSecurityCallback link_security_cb)
     : DynamicChannelRegistry(kLeDynamicChannelCount,
                              std::move(close_cb),
                              std::move(service_request_cb),
                              random_channel_ids),
-      sig_(sig) {
+      sig_(sig),
+      link_security_cb_(std::move(link_security_cb)) {
   PW_DCHECK(sig_);
+  PW_CHECK(link_security_cb_);
   LowEnergyCommandHandler cmd_handler(sig_);
   cmd_handler.ServeLeCreditBasedConnectionRequest(
       fit::bind_member<
@@ -138,8 +169,8 @@ void LeDynamicChannelRegistry::OnRxLeCreditBasedConnectionRequest(
     return;
   }
 
-  DynamicChannel* dyn_chan = RequestService(psm, local_cid, remote_cid);
-  if (!dyn_chan) {
+  auto service = FindService(psm);
+  if (!service) {
     bt_log(DEBUG,
            "l2cap-le",
            "Rejecting connection for unsupported PSM %#.4x from channel %#.4x",
@@ -149,6 +180,26 @@ void LeDynamicChannelRegistry::OnRxLeCreditBasedConnectionRequest(
         0, 0, 0, 0, LECreditBasedConnectionResult::kPsmNotSupported);
     return;
   }
+
+  // Check the link's security before any channel state is created or a
+  // response is sent: the channel is established as soon as the peer receives
+  // a successful response.
+  const sm::SecurityProperties security = link_security_cb_();
+  if (auto refusal = CheckSecurity(service->min_security, security)) {
+    bt_log(DEBUG,
+           "l2cap-le",
+           "Insufficient link security (required: %s, link: %s); rejecting "
+           "connection for PSM %#.4x from channel %#.4x",
+           sm::LevelToString(service->min_security),
+           security.ToString().c_str(),
+           psm,
+           remote_cid);
+    responder->Send(0, 0, 0, 0, *refusal);
+    return;
+  }
+
+  DynamicChannel* dyn_chan =
+      OpenInbound(std::move(*service), psm, local_cid, remote_cid);
 
   static_cast<LeDynamicChannel*>(dyn_chan)->CompleteInboundConnection(
       LeChannelConfig{

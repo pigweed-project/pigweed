@@ -182,10 +182,38 @@ class ChannelManager {
   //
   // Inbound connection requests with a PSM that has no registered handler for
   // the link's type will be rejected.
+  //
+  // |min_security| is the minimum link security required before an inbound LE
+  // credit-based connection to |psm| is accepted. A request on a link below
+  // that level is refused with the matching L2CAP result code (Core Spec v6.2,
+  // Vol 3, Part A, Section 10.1) and |callback| is not run. LE services that
+  // carry user data should pass at least kEncrypted.
+  //
+  // Only kSecureAuthenticated implies an encryption key size (16 octets). A
+  // kEncrypted or kAuthenticated requirement is met by a link with a shorter
+  // key.
+  //
+  // NOTE: |min_security| is only enforced for kLE services. L2CAP does not
+  // check link security for inbound BR/EDR connection requests, so a
+  // requirement registered for a kACL service is stored but has no effect
+  // (fxbug.dev/587060139).
   virtual bool RegisterService(bt::LinkType link_type,
                                l2cap::Psm psm,
                                l2cap::ChannelParameters params,
-                               l2cap::ChannelCallback callback) = 0;
+                               l2cap::ChannelCallback callback,
+                               sm::SecurityLevel min_security) = 0;
+
+  // Registers a service with no security requirement.
+  bool RegisterService(bt::LinkType link_type,
+                       l2cap::Psm psm,
+                       l2cap::ChannelParameters params,
+                       l2cap::ChannelCallback callback) {
+    return RegisterService(link_type,
+                           psm,
+                           params,
+                           std::move(callback),
+                           sm::SecurityLevel::kNoSecurity);
+  }
 
   // Removes the handler for inbound channel requests for the previously-
   // registered service identified by |link_type| and |psm|. This only prevents

@@ -81,7 +81,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
     auto params = ConsumeChannelParameters(provider);
     return std::optional(
         bt::l2cap::internal::DynamicChannelRegistry::ServiceInfo(
-            params, service_chan_cb));
+            params, service_chan_cb, bt::sm::SecurityLevel::kNoSecurity));
   };
   // Random channel IDs are disabled because they result in infinite loops in
   // RandomGenerator::GetInt when the remaining fuzzer data is all 0 or there

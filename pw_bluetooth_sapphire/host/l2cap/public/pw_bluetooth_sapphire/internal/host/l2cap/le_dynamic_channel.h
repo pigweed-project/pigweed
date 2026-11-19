@@ -31,10 +31,17 @@ namespace bt::l2cap::internal {
 // signaling channel requests to the corresponding channels by local ID.
 class LeDynamicChannelRegistry final : public DynamicChannelRegistry {
  public:
+  // Returns the current security properties of the link this registry is on.
+  using LinkSecurityCallback = fit::function<sm::SecurityProperties()>;
+
+  // |link_security_cb| is used to check the link's security against the
+  // requirement of a service before accepting an inbound connection. It must
+  // not be null.
   LeDynamicChannelRegistry(SignalingChannelInterface* sig,
                            DynamicChannelCallback close_cb,
                            ServiceRequestCallback service_request_cb,
-                           bool random_channel_ids);
+                           bool random_channel_ids,
+                           LinkSecurityCallback link_security_cb);
   ~LeDynamicChannelRegistry() override = default;
 
  private:
@@ -57,6 +64,7 @@ class LeDynamicChannelRegistry final : public DynamicChannelRegistry {
       LowEnergyCommandHandler::LeCreditBasedConnectionResponder* responder);
 
   SignalingChannelInterface* const sig_;
+  LinkSecurityCallback link_security_cb_;
 };
 
 struct LeChannelConfig {

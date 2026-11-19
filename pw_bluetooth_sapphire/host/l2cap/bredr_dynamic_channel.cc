@@ -167,8 +167,8 @@ void BrEdrDynamicChannelRegistry::OnRxConnReq(
     return;
   }
 
-  auto dyn_chan = RequestService(psm, local_cid, remote_cid);
-  if (!dyn_chan) {
+  auto service = FindService(psm);
+  if (!service) {
     bt_log(DEBUG,
            "l2cap-bredr",
            "Rejecting connection for unsupported PSM %#.4x from channel %#.4x",
@@ -179,6 +179,12 @@ void BrEdrDynamicChannelRegistry::OnRxConnReq(
                     ConnectionStatus::kNoInfoAvailable);
     return;
   }
+
+  // TODO(fxbug.dev/587060139): Check the link's security here, before any
+  // channel state is created. Until then |service->min_security| has no effect
+  // on BR/EDR links.
+  DynamicChannel* dyn_chan =
+      OpenInbound(std::move(*service), psm, local_cid, remote_cid);
 
   static_cast<BrEdrDynamicChannel*>(dyn_chan)->CompleteInboundConnection(
       responder);

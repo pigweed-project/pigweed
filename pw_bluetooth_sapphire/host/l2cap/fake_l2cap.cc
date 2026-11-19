@@ -279,12 +279,13 @@ void FakeL2cap::OpenL2capChannel(hci_spec::ConnectionHandle handle,
 bool FakeL2cap::RegisterService(bt::LinkType link_type,
                                 l2cap::Psm psm,
                                 l2cap::ChannelParameters params,
-                                l2cap::ChannelCallback channel_callback) {
+                                l2cap::ChannelCallback channel_callback,
+                                sm::SecurityLevel min_security) {
   PW_DCHECK(link_type == bt::LinkType::kACL || link_type == bt::LinkType::kLE);
   PW_DCHECK(registered_services_.count({link_type, psm}) == 0);
   registered_services_.emplace(
       std::make_pair(link_type, psm),
-      ServiceInfo(params, std::move(channel_callback)));
+      ServiceInfo(params, std::move(channel_callback), min_security));
   return true;
 }
 
