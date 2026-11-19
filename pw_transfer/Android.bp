@@ -16,16 +16,8 @@ package {
     default_applicable_licenses: ["external_pigweed_license"],
 }
 
-cc_library_static {
-    name: "pw_transfer_core",
-    cpp_std: "c++20",
-    vendor_available: true,
-    host_supported: true,
-    defaults: [
-        "pw_android_common_backends",
-        "pw_rpc_raw_defaults",
-        "pw_rpc_defaults",
-    ],
+filegroup {
+    name: "pw_transfer_core_src_files",
     srcs: [
         "chunk.cc",
         "client_context.cc",
@@ -34,18 +26,74 @@ cc_library_static {
         "server_context.cc",
         "transfer_thread.cc",
     ],
+}
+
+filegroup {
+    name: "pw_transfer_client_src_files",
+    srcs: [
+        "client.cc",
+    ],
+}
+
+filegroup {
+    name: "pw_transfer_service_src_files",
+    srcs: [
+        "transfer.cc",
+    ],
+}
+
+// Do not use this directly. It is used by the pw_transfer defaults to keep the
+// path to the "public" directory relative to this module.
+cc_library_headers {
+    name: "pw_transfer_include_dirs",
     export_include_dirs: [
         "public",
+    ],
+    vendor_available: true,
+    host_supported: true,
+}
+
+// This rule must be instantiated, i.e.
+//
+//   cc_library_static {
+//       name: "pw_transfer_<instance_name>",
+//       defaults: [
+//           "pw_rpc_cflags_<instance_name>",
+//           "pw_transfer_core_defaults",
+//           "pw_transfer_client_defaults",
+//       ],
+//   }
+//
+// where pw_rpc_cflags_<instance_name> defines the same pw_rpc flags as the
+// rest of the binary. pw_transfer_core compiles pw_rpc through
+// pw_rpc_defaults, so every pw_rpc user in a binary must use the same flags.
+//
+// Add pw_transfer_client_defaults and/or pw_transfer_service_defaults to the
+// same instance to include the client and/or the transfer service.
+//
+// see pw_rpc_defaults
+cc_defaults {
+    name: "pw_transfer_core_defaults",
+    cpp_std: "c++20",
+    defaults: [
+        "pw_android_common_backends",
+        "pw_rpc_raw_defaults",
+        "pw_rpc_defaults",
+    ],
+    srcs: [
+        ":pw_transfer_core_src_files",
     ],
     header_libs: [
         "pw_assert",
         "pw_chrono",
         "pw_log",
         "pw_sync",
+        "pw_transfer_include_dirs",
         "pw_transfer_raw_rpc",
         "pw_transfer_pwpb",
     ],
     export_header_lib_headers: [
+        "pw_transfer_include_dirs",
         "pw_transfer_raw_rpc",
         "pw_transfer_pwpb",
     ],
@@ -66,44 +114,87 @@ cc_library_static {
     ],
 }
 
-cc_library_static {
-    name: "pw_transfer",
-    vendor_available: true,
-    host_supported: true,
+// Client sources. Must be instantiated together with
+// pw_transfer_core_defaults; see pw_transfer_core_defaults.
+cc_defaults {
+    name: "pw_transfer_client_defaults",
     defaults: [
         "pw_android_common_backends",
     ],
     srcs: [
-        "transfer.cc",
+        ":pw_transfer_client_src_files",
     ],
-    export_include_dirs: [
-        "public",
+    header_libs: [
+        "pw_transfer_include_dirs",
+    ],
+    export_header_lib_headers: [
+        "pw_transfer_include_dirs",
+    ],
+    static_libs: [
+        "pw_function",
+        "pw_stream",
+    ],
+}
+
+// Transfer service sources. Must be instantiated together with
+// pw_transfer_core_defaults; see pw_transfer_core_defaults.
+cc_defaults {
+    name: "pw_transfer_service_defaults",
+    defaults: [
+        "pw_android_common_backends",
+    ],
+    srcs: [
+        ":pw_transfer_service_src_files",
+    ],
+    header_libs: [
+        "pw_transfer_include_dirs",
+    ],
+    export_header_lib_headers: [
+        "pw_transfer_include_dirs",
     ],
     static_libs: [
         "pw_bytes",
         "pw_result",
         "pw_status",
         "pw_stream",
+    ],
+}
+
+// Deprecated: pw_transfer_core, pw_transfer, and pw_transfer_client build
+// pw_rpc with the default pw_rpc flags. Linking them into a binary that uses
+// other pw_rpc flags violates the ODR. Instantiate pw_transfer_core_defaults
+// with your pw_rpc flags instead.
+cc_library_static {
+    name: "pw_transfer_core",
+    vendor_available: true,
+    host_supported: true,
+    defaults: [
+        "pw_transfer_core_defaults",
+    ],
+}
+
+// Deprecated: see pw_transfer_core.
+cc_library_static {
+    name: "pw_transfer",
+    vendor_available: true,
+    host_supported: true,
+    defaults: [
+        "pw_transfer_service_defaults",
+    ],
+    static_libs: [
         "pw_transfer_core",
     ],
 }
 
+// Deprecated: see pw_transfer_core.
 cc_library_static {
     name: "pw_transfer_client",
     vendor_available: true,
     host_supported: true,
     defaults: [
-        "pw_android_common_backends",
-    ],
-    srcs: [
-        "client.cc",
-    ],
-    export_include_dirs: [
-        "public",
+        "pw_transfer_client_defaults",
     ],
     static_libs: [
-        "pw_function",
-        "pw_stream",
         "pw_transfer_core",
     ],
 }
