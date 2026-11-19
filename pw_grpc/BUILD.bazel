@@ -225,6 +225,7 @@ pw_cc_test(
         ":grpc_channel_output",
         ":send_queue",
         "//pw_allocator:best_fit",
+        "//pw_allocator:forwarding_allocator",
         "//pw_allocator:synchronized_allocator",
         "//pw_bytes",
         "//pw_containers:inline_deque",

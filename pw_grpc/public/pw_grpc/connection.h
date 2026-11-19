@@ -59,6 +59,7 @@ inline constexpr uint32_t kMaxGrpcMessageSizeWithLengthPrefix =
     kMaxFramePayloadSize;
 inline constexpr uint32_t kMaxGrpcMessageSize =
     kMaxGrpcMessageSizeWithLengthPrefix - 5;
+inline constexpr uint32_t kMaxGrpcMessageAssemblySize = 4 * 1024 * 1024;
 
 }  // namespace internal
 
@@ -98,8 +99,14 @@ inline constexpr uint32_t kMaxMethodNameSize = 127;
 // HTTP2 DATA frame, as supporting fragmented messages requires buffering
 // up to the maximum message size per stream. To support fragmented messages,
 // provide a message_assembly_allocator, which will be used to allocate
-// temporary storage for fragmented gRPC messages when required. If no
-// allocator is provided, or allocation fails, the stream will be closed.
+// temporary storage for fragmented gRPC messages when required. Because
+// pw_grpc passes allocation requests up to
+// internal::kMaxGrpcMessageAssemblySize (4 MiB) per active stream based on the
+// peer's length prefix, message_assembly_allocator must be a bounded, failable
+// allocator (not an abort-on-OOM system heap), or nullptr to reject fragmented
+// messages. Messages exceeding kMaxGrpcMessageAssemblySize reset the stream
+// with ENHANCE_YOUR_CALM before allocating; if no allocator is provided or
+// allocation fails, the stream is reset with INTERNAL_ERROR.
 class Connection {
  public:
   ~Connection();

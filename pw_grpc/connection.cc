@@ -1211,6 +1211,16 @@ Status Connection::Reader::ProcessDataFramePayload(const FrameHeader& frame,
         return OkStatus();
       }
 
+      if (message_length > internal::kMaxGrpcMessageAssemblySize) {
+        PW_LOG_WARN("Inbound grpc message length %" PRIu32
+                    " exceeds max %" PRIu32,
+                    message_length,
+                    internal::kMaxGrpcMessageAssemblySize);
+        PW_TRY(SendRstStreamAndClose(
+            state, stream, Http2Error::ENHANCE_YOUR_CALM));
+        return OkStatus();
+      }
+
       if (message_length > payload.size()) {
         // gRPC message is split across DATA frames, must allocate buffer.
         if (!state->message_assembly_allocator()) {

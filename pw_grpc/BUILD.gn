@@ -148,6 +148,7 @@ pw_test("connection_test") {
     ":grpc_channel_output",
     ":send_queue",
     "$dir_pw_allocator:best_fit",
+    "$dir_pw_allocator:forwarding_allocator",
     "$dir_pw_allocator:synchronized_allocator",
     "$dir_pw_bytes",
     "$dir_pw_containers:inline_deque",

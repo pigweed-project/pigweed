@@ -46,6 +46,19 @@ send buffers. To avoid data races:
 * The allocator **must** outlive both the ``Connection`` and the ``SendQueue``
   instances.
 
+``Connection`` uses ``message_assembly_allocator`` to reassemble inbound gRPC
+messages that span multiple HTTP/2 ``DATA`` frames. Because ``pw_grpc`` passes
+allocation requests up to ``internal::kMaxGrpcMessageAssemblySize`` (4 MiB) per
+active stream based on the peer's gRPC length prefix:
+
+* ``message_assembly_allocator`` **must** be a bounded, failable allocator (not
+  an abort-on-OOM system heap), or ``nullptr`` to reject fragmented messages.
+* Messages exceeding ``internal::kMaxGrpcMessageAssemblySize`` reset the stream
+  with ``ENHANCE_YOUR_CALM`` before allocating.
+* When ``message_assembly_allocator`` is ``nullptr`` or allocation fails,
+  ``Connection`` resets the stream with ``INTERNAL_ERROR``.
+* ``message_assembly_allocator`` **must** outlive the ``Connection`` instance.
+
 -----
 Build
 -----
