@@ -15,28 +15,23 @@
 #include "pw_async2/join.h"
 
 #include <cstdint>
+#include <tuple>
 #include <utility>
 
-#include "public/pw_async2/size_report/size_report.h"
 #include "pw_async2/basic_dispatcher.h"
+#include "pw_async2/context.h"
 #include "pw_async2/func_task.h"
 #include "pw_async2/poll.h"
-#include "pw_async2/size_report/size_report.h"
-#include "pw_async2/task.h"
+#include "pw_async2/size_report/async2_baseline.h"
 #include "pw_async2/value_future.h"
-#include "pw_async2/waker.h"
 #include "pw_bloat/bloat_this_binary.h"
 
 namespace pw::async2::size_report {
-namespace {
-
-BasicDispatcher dispatcher;
-
-}  // namespace
 
 #ifdef _PW_ASYNC2_SIZE_REPORT_JOIN
 
 int SingleTypeJoin(uint32_t mask) {
+  BasicDispatcher& dispatcher = GetDispatcher();
   ValueFuture<int> value_1 = ValueFuture<int>::Resolved(47);
   ValueFuture<int> value_2 = ValueFuture<int>::Resolved(52);
   ValueFuture<int> value_3 = ValueFuture<int>::Resolved(57);
@@ -61,6 +56,7 @@ int SingleTypeJoin(uint32_t mask) {
 #ifdef _PW_ASYNC2_SIZE_REPORT_JOIN_INCREMENTAL
 
 int MultiTypeJoin(uint32_t mask) {
+  BasicDispatcher& dispatcher = GetDispatcher();
   ValueFuture<int> value_1 = ValueFuture<int>::Resolved(47);
   ValueFuture<uint32_t> value_2 = ValueFuture<uint32_t>::Resolved(0x00ff00ffu);
   ValueFuture<char> value_3 = ValueFuture<char>::Resolved('c');
@@ -89,6 +85,7 @@ int MultiTypeJoin(uint32_t mask) {
 // Ensure all ValueFuture types and their core operations (construct/move/Pend)
 // are in the base binary.
 void SetBaselineValueFutures(uint32_t mask) {
+  BasicDispatcher& dispatcher = GetDispatcher();
   ValueFuture<int> value_1 = ValueFuture<int>::Resolved(47);
   ValueFuture<uint32_t> value_2 = ValueFuture<uint32_t>::Resolved(0x00ff00ffu);
   ValueFuture<char> value_3 = ValueFuture<char>::Resolved('c');
@@ -115,27 +112,15 @@ void SetBaselineValueFutures(uint32_t mask) {
 
 int Measure() {
   volatile uint32_t mask = bloat::kDefaultMask;
-  SetBaseline(mask);
-
-  MockTask task;
-  dispatcher.Post(task);
-
-  // Move the waker onto the stack to call its operator= before waking the task.
-  Waker waker;
-  PW_BLOAT_EXPR((waker = std::move(task.last_waker)), mask);
-  waker.Wake();
-  dispatcher.RunToCompletion();
-
+  int result = SetAsync2Baseline(mask);
   SetBaselineValueFutures(mask);
 
-  int result = -1;
-
 #ifdef _PW_ASYNC2_SIZE_REPORT_JOIN
-  result = SingleTypeJoin(mask);
+  result += SingleTypeJoin(mask);
 
 #ifdef _PW_ASYNC2_SIZE_REPORT_JOIN_INCREMENTAL
   result += MultiTypeJoin(mask);
-#endif  //_PW_ASYNC2_SIZE_REPORT_JOIN_INCREMENTAL
+#endif  // _PW_ASYNC2_SIZE_REPORT_JOIN_INCREMENTAL
 
 #endif  // _PW_ASYNC2_SIZE_REPORT_JOIN
 

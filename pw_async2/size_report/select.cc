@@ -18,30 +18,23 @@
 #include <cstdint>
 #include <utility>
 
-#include "public/pw_async2/size_report/size_report.h"
-#include "pw_assert/check.h"
 #include "pw_async2/await.h"
 #include "pw_async2/basic_dispatcher.h"
-#include "pw_async2/dispatcher.h"
+#include "pw_async2/context.h"
 #include "pw_async2/func_task.h"
 #include "pw_async2/poll.h"
-#include "pw_async2/size_report/size_report.h"
+#include "pw_async2/size_report/async2_baseline.h"
 #include "pw_async2/task.h"
 #include "pw_async2/value_future.h"
-#include "pw_async2/waker.h"
 #include "pw_bloat/bloat_this_binary.h"
 #include "pw_log/log.h"
 
 namespace pw::async2::size_report {
-namespace {
-
-BasicDispatcher dispatcher;
-
-}
 
 #ifdef _PW_ASYNC2_SIZE_REPORT_SELECT
 
 int SingleTypeSelect(uint32_t mask) {
+  BasicDispatcher& dispatcher = GetDispatcher();
   ValueFuture<int> value_1 = ValueFuture<int>::Resolved(47);
   ValueFuture<int> value_2 = ValueFuture<int>::Resolved(52);
   ValueFuture<int> value_3 = ValueFuture<int>::Resolved(57);
@@ -74,6 +67,7 @@ int SingleTypeSelect(uint32_t mask) {
 #ifdef _PW_ASYNC2_SIZE_REPORT_SELECT_INCREMENTAL
 
 int MultiTypeSelect(uint32_t mask) {
+  BasicDispatcher& dispatcher = GetDispatcher();
   ValueFuture<int> value_1 = ValueFuture<int>::Resolved(47);
   ValueFuture<uint32_t> value_2 = ValueFuture<uint32_t>::Resolved(0xffffffff);
   ValueFuture<char> value_3 = ValueFuture<char>::Resolved('c');
@@ -154,7 +148,7 @@ class SelectComparisonTask : public Task {
         value_2_(ValueFuture<uint32_t>::Resolved(0xffffffff)),
         value_3_(ValueFuture<char>::Resolved('c')) {}
 
-  // Calls Select() with the pendables.
+  // Calls Select() with the futures.
   Poll<> DoPend(Context& cx) override {
     auto future =
         Select(std::move(value_1_), std::move(value_2_), std::move(value_3_));
@@ -181,6 +175,7 @@ class SelectComparisonTask : public Task {
 // Ensure all ValueFuture types and their core operations (construct/move/Pend)
 // are in the base binary.
 void SetBaselineValueFutures(uint32_t mask) {
+  BasicDispatcher& dispatcher = GetDispatcher();
   ValueFuture<int> value_1 = ValueFuture<int>::Resolved(47);
   ValueFuture<uint32_t> value_2 = ValueFuture<uint32_t>::Resolved(0x00ff00ffu);
   ValueFuture<char> value_3 = ValueFuture<char>::Resolved('c');
@@ -206,34 +201,23 @@ void SetBaselineValueFutures(uint32_t mask) {
 
 int Measure() {
   volatile uint32_t mask = bloat::kDefaultMask;
-  SetBaseline(mask);
+  int result = SetAsync2Baseline(mask);
   SetBaselineValueFutures(mask);
 
-  MockTask task;
-  dispatcher.Post(task);
-
-  // Move the waker onto the stack to call its operator= before waking the task.
-  Waker waker;
-  PW_BLOAT_EXPR((waker = std::move(task.last_waker)), mask);
-  waker.Wake();
-  dispatcher.RunToCompletion();
-
-  int result = -1;
-
 #ifdef _PW_ASYNC2_SIZE_REPORT_SELECT
-  result = SingleTypeSelect(mask);
+  result += SingleTypeSelect(mask);
 
 #ifdef _PW_ASYNC2_SIZE_REPORT_SELECT_INCREMENTAL
   result += MultiTypeSelect(mask);
-#endif  //_PW_ASYNC2_SIZE_REPORT_SELECT_INCREMENTAL
+#endif  // _PW_ASYNC2_SIZE_REPORT_SELECT_INCREMENTAL
 
 #endif  // _PW_ASYNC2_SIZE_REPORT_SELECT
 
 #if defined(_PW_ASYNC_2_SIZE_REPORT_COMPARE_SELECT_MANUAL) || \
     defined(_PW_ASYNC_2_SIZE_REPORT_COMPARE_SELECT_HELPER)
-  ValueFuture<int> pendable_int = ValueFuture<int>::Resolved(47);
-  FuncTask task2(
-      [&](Context& cx) { return pendable_int.Pend(cx).Readiness(); });
+  BasicDispatcher& dispatcher = GetDispatcher();
+  ValueFuture<int> value = ValueFuture<int>::Resolved(47);
+  FuncTask task2([&](Context& cx) { return value.Pend(cx).Readiness(); });
   dispatcher.Post(task2);
   dispatcher.RunUntilStalled();
 

@@ -15,29 +15,20 @@
 #include "pw_async2/value_future.h"
 
 #include <cstdint>
-#include <utility>
 
-#include "public/pw_async2/size_report/size_report.h"
-#include "pw_assert/check.h"
 #include "pw_async2/basic_dispatcher.h"
-#include "pw_async2/dispatcher.h"
+#include "pw_async2/context.h"
 #include "pw_async2/func_task.h"
 #include "pw_async2/poll.h"
-#include "pw_async2/size_report/size_report.h"
-#include "pw_async2/task.h"
-#include "pw_async2/waker.h"
+#include "pw_async2/size_report/async2_baseline.h"
 #include "pw_bloat/bloat_this_binary.h"
 
 namespace pw::async2::size_report {
-namespace {
-
-BasicDispatcher dispatcher;
-
-}  // namespace
 
 #ifdef _PW_ASYNC2_SIZE_REPORT_VALUE_FUTURE
 
 int SingleTypeValueFuture(uint32_t mask) {
+  BasicDispatcher& dispatcher = GetDispatcher();
   ValueProvider<int> provider;
   ValueFuture<int> future = provider.Get();
 
@@ -67,6 +58,7 @@ int SingleTypeValueFuture(uint32_t mask) {
 #ifdef _PW_ASYNC2_SIZE_REPORT_VALUE_FUTURE_INCREMENTAL
 
 int MultiTypeValueFuture(uint32_t mask) {
+  BasicDispatcher& dispatcher = GetDispatcher();
   ValueProvider<float> provider;
   ValueFuture<float> future = provider.Get();
 
@@ -99,6 +91,7 @@ int MultiTypeValueFuture(uint32_t mask) {
 #ifdef _PW_ASYNC2_SIZE_REPORT_VOID_FUTURE
 
 int VoidFutureReport(uint32_t mask) {
+  BasicDispatcher& dispatcher = GetDispatcher();
   ValueProvider<void> provider;
   ValueFuture<void> future = provider.Get();
 
@@ -124,20 +117,10 @@ int VoidFutureReport(uint32_t mask) {
 
 int Measure() {
   volatile uint32_t mask = bloat::kDefaultMask;
-  SetBaseline(mask);
-
-  MockTask task;
-  dispatcher.Post(task);
-
-  Waker waker;
-  PW_BLOAT_EXPR((waker = std::move(task.last_waker)), mask);
-  waker.Wake();
-  dispatcher.RunToCompletion();
-
-  int result = -1;
+  int result = SetAsync2Baseline(mask);
 
 #ifdef _PW_ASYNC2_SIZE_REPORT_VALUE_FUTURE
-  result = SingleTypeValueFuture(mask);
+  result += SingleTypeValueFuture(mask);
 
 #ifdef _PW_ASYNC2_SIZE_REPORT_VALUE_FUTURE_INCREMENTAL
   result += MultiTypeValueFuture(mask);
@@ -146,7 +129,7 @@ int Measure() {
 #endif  // _PW_ASYNC2_SIZE_REPORT_VALUE_FUTURE
 
 #ifdef _PW_ASYNC2_SIZE_REPORT_VOID_FUTURE
-  result = VoidFutureReport(mask);
+  result += VoidFutureReport(mask);
 #endif  // _PW_ASYNC2_SIZE_REPORT_VOID_FUTURE
 
   return result;

@@ -13,118 +13,61 @@
 // the License.
 
 #include <cstdint>
-#include <utility>
 
-#include "public/pw_async2/size_report/size_report.h"
-#include "pw_assert/check.h"
 #include "pw_async2/basic_dispatcher.h"
-#include "pw_async2/dispatcher.h"
-#include "pw_async2/func_task.h"
-#include "pw_async2/size_report/size_report.h"
-#include "pw_async2/task.h"
-#include "pw_async2/waker.h"
+#include "pw_async2/size_report/async2_baseline.h"
 #include "pw_bloat/bloat_this_binary.h"
 
 #ifdef _PW_ASYNC2_SIZE_REPORT_COROUTINE
-#include "pw_async2/coro.h"
-#include "pw_async2/future_task.h"
-#include "pw_status/status.h"
+#include "pw_async2/size_report/async2_coro_baseline.h"
 #endif  // _PW_ASYNC2_SIZE_REPORT_COROUTINE
 
 #ifdef _PW_ASYNC2_SIZE_REPORT_TIME_FUTURE
+#include "pw_async2/context.h"
+#include "pw_async2/func_task.h"
+#include "pw_async2/poll.h"
 #include "pw_async2/system_time_provider.h"
 #include "pw_async2/time_provider.h"
 #include "pw_chrono/system_clock.h"
 #endif  // _PW_ASYNC2_SIZE_REPORT_TIME_FUTURE
 
 namespace pw::async2::size_report {
-namespace {
-
-BasicDispatcher dispatcher;
-
-}  // namespace
-
-#ifdef _PW_ASYNC2_SIZE_REPORT_COROUTINE
-
-Coro<int> ImmediatelyReturnsFive(CoroContext) { co_return 5; }
-
-Coro<Status> StoresFiveThenReturns(CoroContext coro_cx, int& out) {
-  out = co_await ImmediatelyReturnsFive(coro_cx);
-  co_return OkStatus();
-}
-
-class ObjectWithCoroMethod {
- public:
-  ObjectWithCoroMethod(int x) : x_(x) {}
-  Coro<Status> CoroMethodStoresField(CoroContext, int& out) {
-    out = x_;
-    co_return OkStatus();
-  }
-
- private:
-  int x_;
-};
-
-#endif  // _PW_ASYNC2_SIZE_REPORT_COROUTINE
 
 int Measure() {
   volatile uint32_t mask = bloat::kDefaultMask;
-  SetBaseline(mask);
 
-  PendableInt value(47);
-
-  MockTask task;
-  dispatcher.Post(task);
+#ifdef _PW_ASYNC2_SIZE_REPORT_COROUTINE
+  int result = SetAsync2CoroBaseline(mask);
+#else
+  int result = SetAsync2Baseline(mask);
+#endif  // _PW_ASYNC2_SIZE_REPORT_COROUTINE
 
 #ifdef _PW_ASYNC2_SIZE_REPORT_INCREMENTAL_TASK
-
+  BasicDispatcher& dispatcher = GetDispatcher();
   MockTask task2;
   task2.should_complete = true;
   dispatcher.Post(task2);
-
+  dispatcher.RunToCompletion();
+  result += task2.polled;
 #endif  // _PW_ASYNC2_SIZE_REPORT_INCREMENTAL_TASK
 
-  dispatcher.RunUntilStalled();
-
-  FuncTask task3([&](Context& cx) { return value.Get(cx).Readiness(); });
-  dispatcher.Post(task3);
-  dispatcher.RunUntilStalled();
-
-  task.should_complete = true;
-  // Move the waker onto the stack to call its operator= before waking the task.
-  Waker waker;
-  PW_BLOAT_EXPR((waker = std::move(task.last_waker)), mask);
-  waker.Wake();
-  dispatcher.RunToCompletion();
-
-#ifdef _PW_ASYNC2_SIZE_REPORT_COROUTINE
-
-  int output = 0;
-  FutureTask future_task(
-      StoresFiveThenReturns(CoroContext(GetAllocator()), output));
-  dispatcher.Post(future_task);
-  PW_BLOAT_COND(dispatcher.RunUntilStalled(), mask);
-
-#endif  // _PW_ASYNC2_SIZE_REPORT_COROUTINE
-
 #ifdef _PW_ASYNC2_SIZE_REPORT_TIME_FUTURE
-
+  BasicDispatcher& dispatcher = GetDispatcher();
   TimeProvider<chrono::SystemClock>& time = GetSystemTimeProvider();
   TimeFuture<chrono::SystemClock> timeout =
       time.WaitFor(chrono::SystemClock::duration(mask));
-  // Complete naturally after polling `timeout` so `Task::Deregister()` (not in
-  // the `:async2_core` baseline) is not attributed to `TimeFuture`.
-  FuncTask timer_task([&](Context& cx) {
-    PW_BLOAT_COND(timeout.Pend(cx).IsReady(), mask);
-    return Ready();
+  FuncTask timer_task([&](Context& cx) -> Poll<> {
+    Poll<> poll = timeout.Pend(cx).Readiness();
+    PW_BLOAT_COND(poll.IsReady(), mask);
+    return poll;
   });
   dispatcher.Post(timer_task);
   PW_BLOAT_COND(dispatcher.RunUntilStalled(), mask);
   timeout = time.WaitFor(chrono::SystemClock::duration(mask));
-
+  timer_task.Deregister();
 #endif  // _PW_ASYNC2_SIZE_REPORT_TIME_FUTURE
 
-  return task.polled;
+  return result;
 }
 
 }  // namespace pw::async2::size_report

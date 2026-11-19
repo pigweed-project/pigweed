@@ -14,25 +14,23 @@
 
 #include <cstdint>
 #include <optional>
+#include <type_traits>
 
-#include "public/pw_async2/size_report/size_report.h"
 #include "pw_allocator/allocator.h"
 #include "pw_async2/basic_dispatcher.h"
 #include "pw_async2/channel.h"
-#include "pw_async2/dispatcher.h"
+#include "pw_async2/context.h"
 #include "pw_async2/func_task.h"
 #include "pw_async2/poll.h"
-#include "pw_async2/task.h"
+#include "pw_async2/size_report/async2_baseline.h"
+#include "pw_async2/size_report/size_report.h"
 #include "pw_bloat/bloat_this_binary.h"
 
 namespace pw::async2::size_report {
 
 template <typename T>
-int MeasureStatic() {
-  volatile uint32_t mask = bloat::kDefaultMask;
-  SetBaseline(mask);
-
-  BasicDispatcher dispatcher;
+int MeasureStatic(volatile uint32_t& mask) {
+  BasicDispatcher& dispatcher = GetDispatcher();
 
   ChannelStorage<T, 2> storage;
   auto channel = CreateMpmcChannel(storage);
@@ -85,11 +83,8 @@ struct MoveOnly {
   int val;
 };
 
-[[maybe_unused]] int MeasureDynamic() {
-  volatile uint32_t mask = bloat::kDefaultMask;
-  SetBaseline(mask);
-
-  BasicDispatcher dispatcher;
+[[maybe_unused]] int MeasureDynamic(volatile uint32_t& mask) {
+  BasicDispatcher& dispatcher = GetDispatcher();
   Allocator& alloc = GetAllocator();
 
   std::optional<MpmcChannelHandle<int>> channel =
@@ -127,29 +122,34 @@ struct MoveOnly {
   return static_cast<int>(mask);
 }
 
-}  // namespace pw::async2::size_report
+int Measure() {
+  volatile uint32_t mask = bloat::kDefaultMask;
+  int result = SetAsync2Baseline(mask);
 
-int main() {
 #if defined(PW_ASYNC2_CHANNEL_SIZE_REPORT_STATIC_INT)
-  pw::async2::size_report::MeasureStatic<int>();
+  result += MeasureStatic<int>(mask);
 #elif defined(PW_ASYNC2_CHANNEL_SIZE_REPORT_STATIC_INT_AND_UINT)
-  pw::async2::size_report::MeasureStatic<int>();
-  pw::async2::size_report::MeasureStatic<unsigned>();
+  result += MeasureStatic<int>(mask);
+  result += MeasureStatic<unsigned>(mask);
 #elif defined(PW_ASYNC2_CHANNEL_SIZE_REPORT_STATIC_INT_AND_MOVE_ONLY)
-  pw::async2::size_report::MeasureStatic<int>();
-  pw::async2::size_report::MeasureStatic<pw::async2::size_report::MoveOnly>();
+  result += MeasureStatic<int>(mask);
+  result += MeasureStatic<MoveOnly>(mask);
 #elif defined(PW_ASYNC2_CHANNEL_SIZE_REPORT_DYNAMIC_INT)
-  pw::async2::size_report::MeasureDynamic();
+  result += MeasureDynamic(mask);
 #elif defined(PW_ASYNC2_CHANNEL_SIZE_REPORT_DYNAMIC_STATIC_INT)
-  pw::async2::size_report::MeasureDynamic();
-  pw::async2::size_report::MeasureStatic<int>();
+  result += MeasureDynamic(mask);
+  result += MeasureStatic<int>(mask);
 #elif defined(PW_ASYNC2_CHANNEL_SIZE_REPORT_NOTIFICATION)
-  pw::async2::size_report::MeasureStatic<void>();
+  result += MeasureStatic<void>(mask);
 #elif defined(PW_ASYNC2_CHANNEL_SIZE_REPORT_STATIC_INT_AND_NOTIFICATION)
-  pw::async2::size_report::MeasureStatic<int>();
-  pw::async2::size_report::MeasureStatic<void>();
+  result += MeasureStatic<int>(mask);
+  result += MeasureStatic<void>(mask);
 #else
 #error "No size report macro was set!"
 #endif
-  return 0;
+  return result;
 }
+
+}  // namespace pw::async2::size_report
+
+int main() { return pw::async2::size_report::Measure(); }

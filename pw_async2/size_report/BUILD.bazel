@@ -28,19 +28,52 @@ cc_library(
     name = "size_report",
     srcs = ["size_report.cc"],
     hdrs = ["public/pw_async2/size_report/size_report.h"],
-    strip_include_prefix = "public",
-    deps = [
-        "//pw_allocator",
+    implementation_deps = [
         "//pw_allocator:first_fit",
-        "//pw_async2",
         "//pw_bloat:bloat_this_binary",
         "//pw_containers:intrusive_forward_list",
-        "//pw_log",
         "//pw_preprocessor",
         "//pw_sync:interrupt_spin_lock",
         "//pw_sync:mutex",
         "//pw_sync:thread_notification",
     ],
+    strip_include_prefix = "public",
+    deps = [
+        "//pw_allocator",
+    ],
+)
+
+cc_library(
+    name = "async2_baseline",
+    srcs = ["async2_baseline.cc"],
+    hdrs = ["public/pw_async2/size_report/async2_baseline.h"],
+    implementation_deps = [
+        ":size_report",
+        "//pw_bloat:bloat_this_binary",
+        "//pw_preprocessor",
+    ],
+    strip_include_prefix = "public",
+    deps = [
+        "//pw_async2",
+        "//pw_async2:basic_dispatcher",
+    ],
+)
+
+cc_library(
+    name = "async2_coro_baseline",
+    srcs = ["async2_coro_baseline.cc"],
+    hdrs = ["public/pw_async2/size_report/async2_coro_baseline.h"],
+    implementation_deps = [
+        ":async2_baseline",
+        ":size_report",
+        "//pw_async2",
+        "//pw_async2:basic_dispatcher",
+        "//pw_async2:coro",
+        "//pw_bloat:bloat_this_binary",
+        "//pw_preprocessor",
+        "//pw_status",
+    ],
+    strip_include_prefix = "public",
 )
 
 pw_cc_size_binary(
@@ -56,9 +89,7 @@ pw_cc_size_binary(
     name = "async2_core",
     srcs = ["async2_core.cc"],
     deps = [
-        ":size_report",
-        "//pw_assert:check",
-        "//pw_async2",
+        ":async2_baseline",
         "//pw_async2:basic_dispatcher",
         "//pw_bloat:bloat_this_binary",
     ],
@@ -69,9 +100,7 @@ pw_cc_size_binary(
     srcs = ["async2_core.cc"],
     defines = ["_PW_ASYNC2_SIZE_REPORT_INCREMENTAL_TASK=1"],
     deps = [
-        ":size_report",
-        "//pw_assert:check",
-        "//pw_async2",
+        ":async2_baseline",
         "//pw_async2:basic_dispatcher",
         "//pw_bloat:bloat_this_binary",
     ],
@@ -82,13 +111,10 @@ pw_cc_size_binary(
     srcs = ["async2_core.cc"],
     defines = ["_PW_ASYNC2_SIZE_REPORT_COROUTINE=1"],
     deps = [
-        ":size_report",
-        "//pw_assert:check",
-        "//pw_async2",
+        ":async2_baseline",
+        ":async2_coro_baseline",
         "//pw_async2:basic_dispatcher",
-        "//pw_async2:coro",
         "//pw_bloat:bloat_this_binary",
-        "//pw_status",
     ],
 )
 
@@ -97,8 +123,7 @@ pw_cc_size_binary(
     srcs = ["async2_core.cc"],
     defines = ["_PW_ASYNC2_SIZE_REPORT_TIME_FUTURE=1"],
     deps = [
-        ":size_report",
-        "//pw_assert:check",
+        ":async2_baseline",
         "//pw_async2",
         "//pw_async2:basic_dispatcher",
         "//pw_async2:system_time_provider",
@@ -113,8 +138,7 @@ pw_cc_size_binary(
     srcs = ["select.cc"],
     defines = [],
     deps = [
-        ":size_report",
-        "//pw_assert:check",
+        ":async2_baseline",
         "//pw_async2",
         "//pw_async2:basic_dispatcher",
         "//pw_async2:select",
@@ -129,8 +153,7 @@ pw_cc_size_binary(
     srcs = ["select.cc"],
     defines = ["_PW_ASYNC2_SIZE_REPORT_SELECT=1"],
     deps = [
-        ":size_report",
-        "//pw_assert:check",
+        ":async2_baseline",
         "//pw_async2",
         "//pw_async2:basic_dispatcher",
         "//pw_async2:select",
@@ -148,8 +171,7 @@ pw_cc_size_binary(
         "_PW_ASYNC2_SIZE_REPORT_SELECT_INCREMENTAL=1",
     ],
     deps = [
-        ":size_report",
-        "//pw_assert:check",
+        ":async2_baseline",
         "//pw_async2",
         "//pw_async2:basic_dispatcher",
         "//pw_async2:select",
@@ -164,8 +186,7 @@ pw_cc_size_binary(
     srcs = ["select.cc"],
     defines = ["_PW_ASYNC_2_SIZE_REPORT_COMPARE_SELECT_MANUAL=1"],
     deps = [
-        ":size_report",
-        "//pw_assert:check",
+        ":async2_baseline",
         "//pw_async2",
         "//pw_async2:basic_dispatcher",
         "//pw_async2:select",
@@ -180,8 +201,7 @@ pw_cc_size_binary(
     srcs = ["select.cc"],
     defines = ["_PW_ASYNC_2_SIZE_REPORT_COMPARE_SELECT_HELPER=1"],
     deps = [
-        ":size_report",
-        "//pw_assert:check",
+        ":async2_baseline",
         "//pw_async2",
         "//pw_async2:basic_dispatcher",
         "//pw_async2:select",
@@ -196,14 +216,12 @@ pw_cc_size_binary(
     srcs = ["join.cc"],
     defines = [],
     deps = [
-        ":size_report",
-        "//pw_assert:check",
+        ":async2_baseline",
         "//pw_async2",
         "//pw_async2:basic_dispatcher",
         "//pw_async2:join",
         "//pw_async2:value_future",
         "//pw_bloat:bloat_this_binary",
-        "//pw_log",
     ],
 )
 
@@ -212,14 +230,12 @@ pw_cc_size_binary(
     srcs = ["join.cc"],
     defines = ["_PW_ASYNC2_SIZE_REPORT_JOIN=1"],
     deps = [
-        ":size_report",
-        "//pw_assert:check",
+        ":async2_baseline",
         "//pw_async2",
         "//pw_async2:basic_dispatcher",
         "//pw_async2:join",
         "//pw_async2:value_future",
         "//pw_bloat:bloat_this_binary",
-        "//pw_log",
     ],
 )
 
@@ -231,14 +247,12 @@ pw_cc_size_binary(
         "_PW_ASYNC2_SIZE_REPORT_JOIN_INCREMENTAL=1",
     ],
     deps = [
-        ":size_report",
-        "//pw_assert:check",
+        ":async2_baseline",
         "//pw_async2",
         "//pw_async2:basic_dispatcher",
         "//pw_async2:join",
         "//pw_async2:value_future",
         "//pw_bloat:bloat_this_binary",
-        "//pw_log",
     ],
 )
 
@@ -247,8 +261,7 @@ pw_cc_size_binary(
     srcs = ["value_future.cc"],
     defines = ["_PW_ASYNC2_SIZE_REPORT_VALUE_FUTURE=1"],
     deps = [
-        ":size_report",
-        "//pw_assert:check",
+        ":async2_baseline",
         "//pw_async2",
         "//pw_async2:basic_dispatcher",
         "//pw_async2:value_future",
@@ -264,8 +277,7 @@ pw_cc_size_binary(
         "_PW_ASYNC2_SIZE_REPORT_VALUE_FUTURE_INCREMENTAL=1",
     ],
     deps = [
-        ":size_report",
-        "//pw_assert:check",
+        ":async2_baseline",
         "//pw_async2",
         "//pw_async2:basic_dispatcher",
         "//pw_async2:value_future",
@@ -278,8 +290,7 @@ pw_cc_size_binary(
     srcs = ["value_future.cc"],
     defines = ["_PW_ASYNC2_SIZE_REPORT_VOID_FUTURE=1"],
     deps = [
-        ":size_report",
-        "//pw_assert:check",
+        ":async2_baseline",
         "//pw_async2",
         "//pw_async2:basic_dispatcher",
         "//pw_async2:value_future",
@@ -404,6 +415,7 @@ pw_size_table(
 )
 
 CHANNEL_DEPS = [
+    ":async2_baseline",
     ":size_report",
     "//pw_allocator",
     "//pw_async2",
