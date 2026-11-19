@@ -21,6 +21,7 @@
 
 #include "pw_assert/check.h"
 #include "pw_bytes/span.h"
+#include "pw_containers/vector.h"
 #include "pw_grpc_private/hpack.h"
 #include "pw_log/log.h"
 #include "pw_numeric/checked_arithmetic.h"
@@ -1124,8 +1125,6 @@ void Connection::Reader::ProcessDataFramePosted(const FrameHeader& frame,
       !status.ok()) {
     PW_LOG_ERROR("ProcessDataFramePosted failed with status: %s", status.str());
     SendGoAway(Http2Error::INTERNAL_ERROR);
-    auto state = connection_.LockState();
-    state->Close();
   }
 }
 
@@ -1416,14 +1415,21 @@ Status Connection::SharedState::AddConnectionSendWindow(int32_t delta) {
 }
 
 Status Connection::SharedState::AddAllStreamsSendWindow(int32_t delta) {
-  for (size_t i = 0; i < streams_.size(); i++) {
-    if (streams_[i].id == 0) {
+  for (const Stream& stream : streams_) {
+    if (stream.id == 0) {
       continue;
     }
-    if (!CheckedIncrement(streams_[i].send_window, delta)) {
+    if (!CheckedAdd<int32_t>(stream.send_window, delta).has_value()) {
       return Status::Internal();
     }
-    streams_[i].SignalWindowAvailable();
+  }
+
+  for (Stream& stream : streams_) {
+    if (stream.id == 0) {
+      continue;
+    }
+    PW_CHECK(CheckedIncrement(stream.send_window, delta));
+    stream.SignalWindowAvailable();
   }
 
   DrainResponseQueues().IgnoreError();
@@ -1600,7 +1606,7 @@ Status Connection::Reader::ProcessSettingsFrame(const FrameHeader& frame,
         auto state = connection_.LockState();
         if (const auto status = state->AddAllStreamsSendWindow(delta);
             !status.ok()) {
-          SendGoAway(Http2Error::FLOW_CONTROL_ERROR);
+          SendGoAwayLocked(std::move(state), Http2Error::FLOW_CONTROL_ERROR);
           return Status::Internal();
         }
         initial_send_window_ = newval;
@@ -1703,45 +1709,39 @@ Status Connection::Reader::ProcessWindowUpdateFrame(const FrameHeader& frame) {
   int32_t delta = static_cast<int32_t>(builder.begin().ReadUint32(endian::big) &
                                        0x7fffffff);
 
-  auto state = connection_.LockState();
-  auto stream = state->LookupStream(frame.stream_id);
-
-  if (delta == 0) {
-    // RFC 9113 §6.9: "A receiver MUST treat a WINDOW_UPDATE frame with an
-    // increment of 0 as a stream error of type PROTOCOL_ERROR; errors on the
-    // connection flow-control window MUST be treated as a connection error."
-    if (frame.stream_id == 0) {
-      SendGoAway(Http2Error::PROTOCOL_ERROR);
-      return Status::Internal();
-    } else {
-      if (!stream) {
-        // Already closed
-        return OkStatus();
-      }
-      return SendRstStreamAndClose(state, stream, Http2Error::PROTOCOL_ERROR);
-    }
+  // RFC 9113 §6.9: "A receiver MUST treat a WINDOW_UPDATE frame with an
+  // increment of 0 as a stream error of type PROTOCOL_ERROR; errors on the
+  // connection flow-control window MUST be treated as a connection error."
+  if (frame.stream_id == 0 && delta == 0) {
+    SendGoAway(Http2Error::PROTOCOL_ERROR);
+    return Status::Internal();
   }
 
-  // RFC 9113 §6.9.1: "If a sender receives a WINDOW_UPDATE that causes a
-  // flow-control window to exceed 2^31-1 bytes, it MUST terminate either the
-  // stream or the connection, as appropriate ... with an error code of
-  // FLOW_CONTROL_ERROR"
+  auto state = connection_.LockState();
   if (frame.stream_id == 0) {
+    // RFC 9113 §6.9.1: "If a sender receives a WINDOW_UPDATE that causes a
+    // flow-control window to exceed 2^31-1 bytes, it MUST terminate either the
+    // stream or the connection, as appropriate ... with an error code of
+    // FLOW_CONTROL_ERROR"
     if (const auto status = state->AddConnectionSendWindow(delta);
         !status.ok()) {
-      SendGoAway(Http2Error::FLOW_CONTROL_ERROR);
+      SendGoAwayLocked(std::move(state), Http2Error::FLOW_CONTROL_ERROR);
       return Status::Internal();
     }
-  } else {
-    if (!stream) {
-      // Already closed
-      return OkStatus();
-    }
-    if (const auto status = state->AddStreamSendWindow(stream->id, delta);
-        !status.ok()) {
-      return SendRstStreamAndClose(
-          state, stream, Http2Error::FLOW_CONTROL_ERROR);
-    }
+    return OkStatus();
+  }
+
+  auto stream = state->LookupStream(frame.stream_id);
+  if (!stream) {
+    // Already closed
+    return OkStatus();
+  }
+  if (delta == 0) {
+    return SendRstStreamAndClose(state, stream, Http2Error::PROTOCOL_ERROR);
+  }
+  if (const auto status = state->AddStreamSendWindow(stream->id, delta);
+      !status.ok()) {
+    return SendRstStreamAndClose(state, stream, Http2Error::FLOW_CONTROL_ERROR);
   }
 
   return OkStatus();
@@ -1785,6 +1785,18 @@ void Connection::Reader::SendGoAway(Http2Error code) {
     return;
   }
 
+  SendGoAwayLocked(connection_.LockState(), code);
+}
+
+void Connection::Reader::SendGoAwayLocked(
+    sync::BorrowedPointer<SharedState>&& state, Http2Error code) {
+  if (!received_connection_preface_) {
+    // RFC 9113 §3.4: "A GOAWAY frame MAY be omitted in this case, since an
+    // invalid preface indicates that the peer is not using HTTP/2."
+    connection_.UnlockState(std::move(state));
+    return;
+  }
+
   PW_PACKED(struct) GoAwayFrame {
     WireFrameHeader header;
     uint32_t last_stream_id;
@@ -1801,12 +1813,22 @@ void Connection::Reader::SendGoAway(Http2Error code) {
       .error_code = ToNetworkOrder(code),
   };
 
-  {
-    auto state = connection_.LockState();
-    // Close all open streams.
-    state->ForAllStreams([this](Stream* stream) { CloseStream(stream); });
-    // Ignore errors since we're about to close the connection anyway.
-    state->SendBytes(ObjectAsBytes(frame)).IgnoreError();
+  // Collect open unlatched stream IDs before SharedState::Close() resets all
+  // streams, then invoke OnCancel() after releasing the lock.
+  pw::Vector<StreamId, internal::kMaxConcurrentStreams> canceled_streams;
+  state->ForAllStreams([&canceled_streams](Stream* stream) {
+    PW_LOG_DEBUG("Conn.CloseStream id=%" PRIu32, stream->id);
+    if (!stream->end_stream_latched) {
+      canceled_streams.push_back(stream->id);
+    }
+  });
+  state->Close();
+  // Ignore errors since we're about to close the connection anyway.
+  state->SendBytes(ObjectAsBytes(frame)).IgnoreError();
+  connection_.UnlockState(std::move(state));
+
+  for (StreamId id : canceled_streams) {
+    callbacks_.OnCancel(id);
   }
 
   if (connection_.close_connection_callback_) {

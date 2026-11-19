@@ -472,6 +472,8 @@ class Connection {
 
     // Send GOAWAY frame and signal connection should be closed.
     void SendGoAway(internal::Http2Error code);
+    void SendGoAwayLocked(sync::BorrowedPointer<SharedState>&& state,
+                          internal::Http2Error code);
     Status SendRstStreamAndClose(sync::BorrowedPointer<SharedState>& state,
                                  Stream* stream,
                                  internal::Http2Error code);

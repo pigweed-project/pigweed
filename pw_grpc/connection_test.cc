@@ -56,6 +56,7 @@ constexpr uint8_t kFrameTypeHeaders = 0x01;
 constexpr uint8_t kFrameTypeRstStream = 0x03;
 constexpr uint8_t kFrameTypeSettings = 0x04;
 constexpr uint8_t kFrameTypePing = 0x06;
+constexpr uint8_t kFrameTypeGoAway = 0x07;
 constexpr uint8_t kFrameTypeWindowUpdate = 0x08;
 
 constexpr uint8_t kFlagAck = 0x01;
@@ -63,6 +64,9 @@ constexpr uint8_t kFlagEndStream = 0x01;
 constexpr uint8_t kFlagEndHeaders = 0x04;
 
 constexpr uint16_t kSettingsInitialWindowSize = 0x0004;
+constexpr uint32_t kMaxFlowControlWindow = 0x7fffffffU;
+constexpr uint32_t kHttp2ErrorProtocolError = 0x01;
+constexpr uint32_t kHttp2ErrorFlowControlError = 0x03;
 constexpr uint32_t kHttp2ErrorCancel = 0x08;
 
 constexpr size_t kReaderBufferSize = 512;
@@ -415,10 +419,29 @@ class RecordingCallbacks : public Connection::RequestCallbacks {
   }
 
   void OnCancel(StreamId id) override PW_LOCKS_EXCLUDED(mutex_) {
-    std::lock_guard<sync::Mutex> lock(mutex_);
-    if (!canceled_streams_.full()) {
-      canceled_streams_.push_back(id);
+    Connection* reentry_connection = nullptr;
+    {
+      std::lock_guard<sync::Mutex> lock(mutex_);
+      if (!canceled_streams_.full()) {
+        canceled_streams_.push_back(id);
+      }
+      reentry_connection = on_cancel_reentry_connection_;
     }
+    if (reentry_connection != nullptr) {
+      const Status status =
+          reentry_connection->SendResponseComplete(id, OkStatus());
+      on_cancel_reentry_code_.store(status.code(), std::memory_order_release);
+    }
+  }
+
+  void EnableOnCancelReentry(Connection& connection) PW_LOCKS_EXCLUDED(mutex_) {
+    std::lock_guard<sync::Mutex> lock(mutex_);
+    on_cancel_reentry_connection_ = &connection;
+  }
+
+  Status on_cancel_reentry_status() const {
+    return Status(static_cast<pw_Status>(
+        on_cancel_reentry_code_.load(std::memory_order_acquire)));
   }
 
   size_t new_connection_count() const PW_LOCKS_EXCLUDED(mutex_) {
@@ -461,6 +484,11 @@ class RecordingCallbacks : public Connection::RequestCallbacks {
            canceled_streams_.end();
   }
 
+  size_t canceled_stream_count() const PW_LOCKS_EXCLUDED(mutex_) {
+    std::lock_guard<sync::Mutex> lock(mutex_);
+    return canceled_streams_.size();
+  }
+
  private:
   mutable sync::Mutex mutex_;
   size_t new_connection_count_ PW_GUARDED_BY(mutex_) = 0;
@@ -471,6 +499,8 @@ class RecordingCallbacks : public Connection::RequestCallbacks {
   Vector<StreamId, kMaxTrackedStreams> half_closed_streams_
       PW_GUARDED_BY(mutex_);
   Vector<StreamId, kMaxTrackedStreams> canceled_streams_ PW_GUARDED_BY(mutex_);
+  Connection* on_cancel_reentry_connection_ PW_GUARDED_BY(mutex_) = nullptr;
+  std::atomic<int> on_cancel_reentry_code_{PW_STATUS_UNKNOWN};
 };
 
 // Drives Connection::ProcessConnectionPreface() and ProcessFrame() on a
@@ -501,13 +531,20 @@ class ReaderRunner final : public thread::ThreadCore {
         static_cast<pw_Status>(preface_code_.load(std::memory_order_acquire)));
   }
 
+  Status frame_status() const {
+    return Status(
+        static_cast<pw_Status>(frame_code_.load(std::memory_order_acquire)));
+  }
+
  private:
   void Run() override {
     const Status preface = connection_.ProcessConnectionPreface();
     preface_code_.store(preface.code(), std::memory_order_release);
     if (preface.ok()) {
-      while (connection_.ProcessFrame().ok()) {
+      Status status = OkStatus();
+      while ((status = connection_.ProcessFrame()).ok()) {
       }
+      frame_code_.store(status.code(), std::memory_order_release);
     }
     reader_.MarkReaderExited();
   }
@@ -515,6 +552,7 @@ class ReaderRunner final : public thread::ThreadCore {
   Connection& connection_;
   BlockingInMemoryReader& reader_;
   std::atomic<int> preface_code_{PW_STATUS_UNKNOWN};
+  std::atomic<int> frame_code_{PW_STATUS_UNKNOWN};
   thread::test::TestThreadContext context_;
   thread::Thread thread_;
 };
@@ -582,13 +620,43 @@ struct ConnectionHarness {
   BlockingInMemoryReader reader;
   RecordingSendQueue send_queue;
   RecordingCallbacks callbacks;
+  std::atomic<size_t> close_connection_calls{0};
+  std::atomic<int> close_callback_reentry_code{PW_STATUS_UNKNOWN};
   Connection connection{reader,
                         send_queue,
                         callbacks,
                         /*message_assembly_allocator=*/nullptr,
-                        send_allocator};
+                        send_allocator,
+                        /*close_connection_callback=*/[this]() {
+                          close_connection_calls.fetch_add(
+                              1, std::memory_order_relaxed);
+                          const Status status = connection.SendResponseComplete(
+                              /*stream_id=*/1, OkStatus());
+                          close_callback_reentry_code.store(
+                              status.code(), std::memory_order_release);
+                        }};
   std::optional<ReaderRunner> reader_runner;
+
+  Status close_callback_reentry_status() const {
+    return Status(static_cast<pw_Status>(
+        close_callback_reentry_code.load(std::memory_order_acquire)));
+  }
 };
+
+void ExpectSingleGoAwayFrame(const Vector<RecordedFrame>& frames,
+                             StreamId expected_last_stream_id,
+                             uint32_t expected_error_code) {
+  ASSERT_EQ(frames.size(), 1U);
+  EXPECT_EQ(frames[0].type, kFrameTypeGoAway);
+  EXPECT_EQ(frames[0].flags, 0U);
+  EXPECT_EQ(frames[0].stream_id, 0U);
+  const ConstByteSpan payload = frames[0].payload();
+  ASSERT_EQ(payload.size(), 8U);
+  EXPECT_EQ(bytes::ReadInOrder<uint32_t>(endian::big, payload.data()),
+            expected_last_stream_id);
+  EXPECT_EQ(bytes::ReadInOrder<uint32_t>(endian::big, payload.data() + 4),
+            expected_error_code);
+}
 
 // Static storage keeps Connection (>16 KiB frame scratch), allocator pools,
 // and reader thread stack out of both the test stack and pw_unit_test's 16 KiB
@@ -846,6 +914,103 @@ TEST_F(ConnectionTest, NegativeWindowFromSettingsShrinkWaitsUntilRestored) {
   Vector<RecordedFrame, kMaxStreamFrames> sent;
   harness().send_queue.TakeStreamFrames(kStreamId, sent);
   EXPECT_EQ(sent.size(), 2U);
+}
+
+TEST_F(ConnectionTest, ZeroConnectionWindowUpdateSendsGoAwayWithoutDeadlock) {
+  StartConnection();
+  harness().callbacks.EnableOnCancelReentry(harness().connection);
+  harness().send_queue.ClearStreamFrames(/*stream_id=*/0);
+
+  constexpr StreamId kStreamId = 1;
+  OpenStream(kStreamId);
+
+  harness().reader.PushWindowUpdate(/*stream_id=*/0, /*increment=*/0);
+  harness().reader.WaitUntilIdle();
+  EXPECT_EQ(harness().reader_runner->frame_status(), Status::Internal());
+
+  EXPECT_EQ(harness().callbacks.canceled_stream_count(), 1U);
+  EXPECT_TRUE(harness().callbacks.WasCanceled(kStreamId));
+  EXPECT_EQ(harness().callbacks.on_cancel_reentry_status(), Status::NotFound());
+  EXPECT_EQ(harness().close_connection_calls.load(), 1U);
+  EXPECT_EQ(harness().close_callback_reentry_status(), Status::NotFound());
+
+  Vector<RecordedFrame, kMaxStreamFrames> control_frames;
+  harness().send_queue.TakeStreamFrames(/*stream_id=*/0, control_frames);
+  ExpectSingleGoAwayFrame(control_frames, kStreamId, kHttp2ErrorProtocolError);
+}
+
+TEST_F(ConnectionTest,
+       ConnectionWindowUpdateOverflowSendsGoAwayWithoutDeadlock) {
+  StartConnection();
+  harness().callbacks.EnableOnCancelReentry(harness().connection);
+  harness().send_queue.ClearStreamFrames(/*stream_id=*/0);
+
+  constexpr StreamId kStreamId = 1;
+  OpenStream(kStreamId);
+
+  constexpr uint32_t kMinOverflowIncrement =
+      kMaxFlowControlWindow - kDefaultInitialWindowSize + 1;
+  harness().reader.PushWindowUpdate(/*stream_id=*/0, kMinOverflowIncrement);
+  harness().reader.WaitUntilIdle();
+  EXPECT_EQ(harness().reader_runner->frame_status(), Status::Internal());
+
+  EXPECT_EQ(harness().callbacks.canceled_stream_count(), 1U);
+  EXPECT_TRUE(harness().callbacks.WasCanceled(kStreamId));
+  EXPECT_EQ(harness().callbacks.on_cancel_reentry_status(), Status::NotFound());
+  EXPECT_EQ(harness().close_connection_calls.load(), 1U);
+  EXPECT_EQ(harness().close_callback_reentry_status(), Status::NotFound());
+
+  Vector<RecordedFrame, kMaxStreamFrames> control_frames;
+  harness().send_queue.TakeStreamFrames(/*stream_id=*/0, control_frames);
+  ExpectSingleGoAwayFrame(
+      control_frames, kStreamId, kHttp2ErrorFlowControlError);
+}
+
+TEST_F(ConnectionTest,
+       SettingsInitialWindowOverflowSendsGoAwayWithoutDeadlock) {
+  StartConnectionWithWindow(/*initial_window=*/0);
+  harness().callbacks.EnableOnCancelReentry(harness().connection);
+  harness().send_queue.ClearStreamFrames(/*stream_id=*/0);
+
+  constexpr auto kPayload = bytes::Array<0x01, 0x02, 0x03, 0x04>();
+
+  // Open slot 0 at send_window == 0 and start a writer waiting for window.
+  constexpr StreamId kBlockedStream = 1;
+  OpenStream(kBlockedStream);
+
+  ResponseWriter blocked_writer(harness().connection, kBlockedStream, kPayload);
+  blocked_writer.WaitUntilStarted();
+
+  // Open slot 1 and raise its send_window above initial_send_window_ so
+  // SETTINGS_INITIAL_WINDOW_SIZE overflows slot 1 while fitting slot 0.
+  constexpr StreamId kRaisedStream = 3;
+  constexpr uint32_t kRaisedStreamIncrement = 16;
+  OpenStream(kRaisedStream);
+  harness().reader.PushWindowUpdate(kRaisedStream, kRaisedStreamIncrement);
+  harness().reader.WaitUntilIdle();
+
+  constexpr uint32_t kOverflowInitialWindow =
+      kMaxFlowControlWindow - kRaisedStreamIncrement + 1;
+  harness().reader.PushSettingsInitialWindow(kOverflowInitialWindow);
+  harness().reader.WaitUntilIdle();
+  EXPECT_EQ(harness().reader_runner->frame_status(), Status::Internal());
+
+  const Status blocked_status = blocked_writer.Join();
+  EXPECT_TRUE(blocked_status.IsUnavailable() || blocked_status.IsNotFound());
+  Vector<RecordedFrame, kMaxStreamFrames> blocked_frames;
+  harness().send_queue.TakeStreamFrames(kBlockedStream, blocked_frames);
+  EXPECT_TRUE(blocked_frames.empty());
+  EXPECT_EQ(harness().callbacks.canceled_stream_count(), 2U);
+  EXPECT_TRUE(harness().callbacks.WasCanceled(kBlockedStream));
+  EXPECT_TRUE(harness().callbacks.WasCanceled(kRaisedStream));
+  EXPECT_EQ(harness().callbacks.on_cancel_reentry_status(), Status::NotFound());
+  EXPECT_EQ(harness().close_connection_calls.load(), 1U);
+  EXPECT_EQ(harness().close_callback_reentry_status(), Status::NotFound());
+
+  Vector<RecordedFrame, kMaxStreamFrames> control_frames;
+  harness().send_queue.TakeStreamFrames(/*stream_id=*/0, control_frames);
+  ExpectSingleGoAwayFrame(
+      control_frames, kRaisedStream, kHttp2ErrorFlowControlError);
 }
 
 TEST_F(ConnectionTest, WaitingSendUnblocksOnResetOrDisconnect) {
