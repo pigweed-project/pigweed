@@ -431,6 +431,18 @@ class CallHandlesTest(unittest.TestCase):
         with self.assertRaises(pw_rpc2.StreamClosedError):
             call.write(val=7)
 
+    def test_client_streaming_finish_negative_timeout_does_not_send(
+        self,
+    ) -> None:
+        state = CallState(self.conn, _CLIENT_STREAM_METHOD, 4)
+        call = ClientStreamingCall(state, timeout=5.0)
+
+        with self.assertRaises(ValueError):
+            call.finish(timeout=-1)
+        self.assertEqual(self.conn.sent, [])
+        self.assertFalse(state.stream_finished)
+        self.assertFalse(call.completed)
+
     def test_bidirectional_streaming_call(self) -> None:
         state = CallState(self.conn, _BIDI_STREAM_METHOD, 5)
         call = BidirectionalStreamingCall(state, timeout=5.0)

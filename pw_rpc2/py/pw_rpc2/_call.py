@@ -646,8 +646,13 @@ class Call(BaseCall):
         self.cancel()
 
 
-class _ResponseStream(Call):
-    """A call that receives a stream of responses."""
+class Reader(Call):
+    """A call that receives a stream of responses.
+
+    Both :py:class:`ServerStreamingCall` and
+    :py:class:`BidirectionalStreamingCall` are readers, so functions that only
+    consume responses can annotate their parameter as ``Reader``.
+    """
 
     def read(self, timeout: float | None = None) -> Any | None:
         """Waits for the next response.
@@ -672,8 +677,13 @@ class _ResponseStream(Call):
             yield response
 
 
-class _RequestStream(Call):
-    """A call that sends a stream of requests."""
+class Writer(Call):
+    """A call that sends a stream of requests.
+
+    Both :py:class:`ClientStreamingCall` and
+    :py:class:`BidirectionalStreamingCall` are writers, so functions that only
+    send requests can annotate their parameter as ``Writer``.
+    """
 
     def __init__(self, state: CallState, timeout: float) -> None:
         super().__init__(state, timeout)
@@ -710,14 +720,14 @@ class UnaryCall(Call):
         return self._state.response(self._timeout_for(timeout))
 
 
-class ServerStreamingCall(_ResponseStream):
+class ServerStreamingCall(Reader):
     """A server streaming RPC.
 
     Iterate over the call, or call :py:meth:`read`, to receive responses.
     """
 
 
-class ClientStreamingCall(_RequestStream):
+class ClientStreamingCall(Writer):
     """A client streaming RPC.
 
     Send requests with :py:meth:`write`, then call :py:meth:`finish` to end the
@@ -737,14 +747,15 @@ class ClientStreamingCall(_RequestStream):
           DecodeError: The response or an incoming packet was malformed.
           SocketClosed: The connection was lost.
         """
+        resolved_timeout = self._timeout_for(timeout)
         try:
             self._state.finish_stream()
         except StreamClosedError:
             pass
-        return self._state.response(self._timeout_for(timeout))
+        return self._state.response(resolved_timeout)
 
 
-class BidirectionalStreamingCall(_RequestStream, _ResponseStream):
+class BidirectionalStreamingCall(Writer, Reader):
     """A bidirectional streaming RPC.
 
     Send requests with :py:meth:`write` and receive responses with

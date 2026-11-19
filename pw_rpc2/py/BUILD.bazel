@@ -42,6 +42,7 @@ pw_py_library(
     srcs = [
         "pw_rpc2/__init__.py",
         "pw_rpc2/_call.py",
+        "pw_rpc2/_client.py",
         "pw_rpc2/_connection.py",
         "pw_rpc2/_packets.py",
     ],
@@ -180,5 +181,18 @@ pw_py_test(
         ":test_utils",
         "//pw_rpc2:pw_rpc2_test_py_pb2",
         "//pw_transport/py:forwarding_socket",
+    ],
+)
+
+pw_py_test(
+    name = "client_test",
+    size = "small",
+    srcs = ["tests/client_test.py"],
+    deps = [
+        ":pw_rpc2",
+        ":test_utils",
+        "//pw_build:python_protobuf_runtime",
+        "//pw_rpc2:pw_rpc2_test_py_pb2",
+        "//pw_transport/py:pw_transport",
     ],
 )

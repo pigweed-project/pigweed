@@ -24,6 +24,7 @@ from __future__ import annotations
 import dataclasses
 import enum
 import inspect
+import keyword
 from types import ModuleType
 from typing import Any, Iterable, Iterator, Mapping, Union
 
@@ -157,12 +158,23 @@ class Method:
     def request_signature(self) -> inspect.Signature:
         """A signature that takes a request message or its fields as keywords.
 
-        This is for help text and IDEs; the annotations are strings.
+        This is for help text and IDEs; the annotations are strings. The
+        message parameter is named ``request``, with underscores appended if
+        the request type has a field with that name. Fields whose names are
+        Python keywords cannot be passed as keyword arguments and are omitted.
         """
         request = self.descriptor.input_type
+
+        # The message parameter is positional-only, so its name is only for
+        # display. A signature cannot have two parameters with the same name,
+        # so the fields, which are passed by name, take priority.
+        message_name = 'request'
+        while message_name in request.fields_by_name:
+            message_name += '_'
+
         parameters = [
             inspect.Parameter(
-                'request',
+                message_name,
                 inspect.Parameter.POSITIONAL_ONLY,
                 default=None,
                 annotation=f'{request.full_name} | None',
@@ -175,6 +187,8 @@ class Method:
                     annotation=_annotation(field),
                 )
                 for field in request.fields
+                if field.name.isidentifier()
+                and not keyword.iskeyword(field.name)
             ),
         ]
         return inspect.Signature(parameters)

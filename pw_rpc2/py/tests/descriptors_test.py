@@ -90,14 +90,25 @@ Response fields (pw.rpc2.test.proto2.TestMessage):
     env: str"""
 
 
-def dynamic_test_service(*extra_methods: str) -> descriptor_pool.DescriptorPool:
+def dynamic_test_service(
+    *extra_methods: str, extra_request_fields: tuple[str, ...] = ()
+) -> descriptor_pool.DescriptorPool:
     """Loads pw_rpc2_test.proto into a new pool, with extra unary methods.
 
     This mimics loading descriptors at runtime, rather than from generated
-    modules.
+    modules. The extra request fields are uint32 fields of EchoRequest.
     """
     file_proto = descriptor_pb2.FileDescriptorProto()
     pw_rpc2_test_pb2.DESCRIPTOR.CopyToProto(file_proto)
+
+    (request,) = [m for m in file_proto.message_type if m.name == 'EchoRequest']
+    for name in extra_request_fields:
+        request.field.add(
+            name=name,
+            number=len(request.field) + 1,
+            type=descriptor_pb2.FieldDescriptorProto.TYPE_UINT32,
+            label=descriptor_pb2.FieldDescriptorProto.LABEL_OPTIONAL,
+        )
 
     (service,) = [s for s in file_proto.service if s.name == 'TestEcho']
     for name in extra_methods:
@@ -287,6 +298,36 @@ class RequestTest(unittest.TestCase):
         self.assertIs(val.kind, inspect.Parameter.KEYWORD_ONLY)
         self.assertEqual(val.default, 0)
         self.assertEqual(val.annotation, 'int')
+
+    def test_request_signature_field_named_request(self) -> None:
+        pool = dynamic_test_service(extra_request_fields=('request',))
+        service = Service.from_descriptor(pool.FindServiceByName(_SERVICE))
+
+        signature = service.methods['EchoUnary'].request_signature()
+
+        self.assertEqual(
+            list(signature.parameters), ['request_', 'val', 'request']
+        )
+        self.assertIs(
+            signature.parameters['request_'].kind,
+            inspect.Parameter.POSITIONAL_ONLY,
+        )
+        self.assertIs(
+            signature.parameters['request'].kind,
+            inspect.Parameter.KEYWORD_ONLY,
+        )
+
+    def test_request_signature_skips_python_keywords(self) -> None:
+        pool = dynamic_test_service(extra_request_fields=('from', 'class'))
+        service = Service.from_descriptor(pool.FindServiceByName(_SERVICE))
+        method = service.methods['EchoUnary']
+
+        self.assertEqual(
+            list(method.request_signature().parameters), ['request', 'val']
+        )
+        description = method.describe()
+        self.assertIn('from: int = 0', description)
+        self.assertIn('class: int = 0', description)
 
     def test_request_signature_annotations(self) -> None:
         params = self.proto3_method.request_signature().parameters
