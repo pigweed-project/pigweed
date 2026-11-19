@@ -97,7 +97,13 @@ Entry {
   static_assert(kStringSize > 0u && kDomainSize > 0u,
                 "The string and domain must have at least a null terminator");
 
-  _pw_tokenizer_EntryHeader header_;
+  // header_ is part of the ELF section entry layout read by the detokenizer.
+  // GCC <= 10 warns that [[maybe_unused]] is ignored on non-static data members
+  // under -Werror=attributes.
+  PW_MODIFY_DIAGNOSTICS_PUSH();
+  PW_MODIFY_DIAGNOSTIC_GCC(ignored, "-Wattributes");
+  [[maybe_unused]] _pw_tokenizer_EntryHeader header_;
+  PW_MODIFY_DIAGNOSTICS_POP();
   std::array<char, kDomainSize> domain_;
   std::array<char, kStringSize> string_;
 };
