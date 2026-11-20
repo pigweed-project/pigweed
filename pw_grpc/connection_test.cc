@@ -73,6 +73,7 @@ constexpr uint32_t kMaxFlowControlWindow = 0x7fffffffU;
 constexpr uint32_t kHttp2ErrorProtocolError = 0x01;
 constexpr uint32_t kHttp2ErrorInternalError = 0x02;
 constexpr uint32_t kHttp2ErrorFlowControlError = 0x03;
+constexpr uint32_t kHttp2ErrorStreamClosed = 0x05;
 constexpr uint32_t kHttp2ErrorCancel = 0x08;
 constexpr uint32_t kHttp2ErrorEnhanceYourCalm = 0x0b;
 
@@ -1838,6 +1839,72 @@ TEST_F(ConnectionTest, CloseConnectionInvokesCallbackAtMostOnce) {
     caller_b.Join();
   }
   EXPECT_EQ(harness().close_connection_calls.load(), 1U);
+}
+
+TEST_F(ConnectionTest, RstStreamInvokesOnCancelWithoutHoldingLock) {
+  StartConnection();
+  harness().callbacks.EnableOnCancelReentry(harness().connection);
+
+  constexpr StreamId kCanceledStream = 1;
+  OpenStream(kCanceledStream);
+
+  harness().reader.PushRstStream(kCanceledStream, kHttp2ErrorCancel);
+  harness().reader.WaitUntilIdle();
+
+  EXPECT_EQ(harness().callbacks.canceled_stream_count(), 1U);
+  EXPECT_TRUE(harness().callbacks.WasCanceled(kCanceledStream));
+  EXPECT_EQ(harness().callbacks.on_cancel_reentry_status(), Status::NotFound());
+
+  constexpr StreamId kHealthyStream = 3;
+  constexpr auto kPayload = bytes::Array<0xab, 0xcd>();
+  OpenStream(kHealthyStream);
+  harness().reader.PushRequestData(
+      kHealthyStream, kPayload, /*end_stream=*/true);
+  harness().reader.WaitUntilIdle();
+  EXPECT_EQ(harness().callbacks.last_message_stream_id(), kHealthyStream);
+  EXPECT_TRUE(harness().callbacks.WasHalfClosed(kHealthyStream));
+}
+
+TEST_F(ConnectionTest, ZeroStreamWindowUpdateResetsStreamWithoutHoldingLock) {
+  StartConnection();
+  harness().callbacks.EnableOnCancelReentry(harness().connection);
+
+  constexpr StreamId kStreamId = 1;
+  OpenStream(kStreamId);
+
+  harness().reader.PushWindowUpdate(kStreamId, /*increment=*/0);
+  harness().reader.WaitUntilIdle();
+
+  EXPECT_EQ(harness().callbacks.canceled_stream_count(), 1U);
+  EXPECT_TRUE(harness().callbacks.WasCanceled(kStreamId));
+  EXPECT_EQ(harness().callbacks.on_cancel_reentry_status(), Status::NotFound());
+
+  Vector<RecordedFrame, kMaxStreamFrames> rst_frames;
+  harness().send_queue.TakeStreamFrames(kStreamId, rst_frames);
+  ExpectSingleRstStreamFrame(rst_frames, kStreamId, kHttp2ErrorProtocolError);
+}
+
+TEST_F(ConnectionTest, DataOnHalfClosedStreamResetsStreamWithoutHoldingLock) {
+  StartConnection();
+  harness().callbacks.EnableOnCancelReentry(harness().connection);
+
+  constexpr StreamId kStreamId = 1;
+  constexpr auto kPayload = bytes::Array<0x01, 0x02>();
+  OpenStream(kStreamId);
+  harness().reader.PushRequestData(kStreamId, kPayload, /*end_stream=*/true);
+  harness().reader.WaitUntilIdle();
+  ASSERT_TRUE(harness().callbacks.WasHalfClosed(kStreamId));
+
+  harness().reader.PushRequestData(kStreamId, kPayload, /*end_stream=*/false);
+  harness().reader.WaitUntilIdle();
+
+  EXPECT_EQ(harness().callbacks.canceled_stream_count(), 1U);
+  EXPECT_TRUE(harness().callbacks.WasCanceled(kStreamId));
+  EXPECT_EQ(harness().callbacks.on_cancel_reentry_status(), Status::NotFound());
+
+  Vector<RecordedFrame, kMaxStreamFrames> rst_frames;
+  harness().send_queue.TakeStreamFrames(kStreamId, rst_frames);
+  ExpectSingleRstStreamFrame(rst_frames, kStreamId, kHttp2ErrorStreamClosed);
 }
 
 }  // namespace

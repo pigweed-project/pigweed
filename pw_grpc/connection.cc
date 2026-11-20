@@ -19,6 +19,7 @@
 #include <string_view>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 
 #include "pw_assert/check.h"
 #include "pw_bytes/span.h"
@@ -1028,11 +1029,13 @@ void Connection::Reader::RunReadTask(pw::Status status) {
   }
 }
 
-void Connection::Reader::CloseStream(Connection::Stream* stream) {
-  StreamId id = stream->id;
-  bool was_latched = stream->end_stream_latched;
+void Connection::Reader::CloseStream(sync::BorrowedPointer<SharedState>&& state,
+                                     Connection::Stream* stream) {
+  const StreamId id = stream->id;
+  const bool was_latched = stream->end_stream_latched;
   PW_LOG_DEBUG("Conn.CloseStream id=%" PRIu32, id);
   stream->Reset();
+  connection_.UnlockState(std::move(state));
   if (!was_latched) {
     callbacks_.OnCancel(id);
   }
@@ -1168,7 +1171,8 @@ Status Connection::Reader::ProcessDataFrame(const FrameHeader& frame) {
         // RFC 9113 §6.1: "If a DATA frame is received whose stream is not in
         // the "open" or "half-closed (local)" state, the recipient MUST respond
         // with a stream error of type STREAM_CLOSED."
-        PW_TRY(SendRstStreamAndClose(state, stream, Http2Error::STREAM_CLOSED));
+        PW_TRY(SendRstStreamAndClose(
+            std::move(state), stream, Http2Error::STREAM_CLOSED));
       }
       return OkStatus();
     }
@@ -1253,8 +1257,8 @@ Status Connection::Reader::ProcessDataFrame(const FrameHeader& frame) {
       // RFC 9113 §6.9: error frames must always count towards flow-control
       PW_TRY(state->UpdateRecvWindow(stream, frame.payload_length));
       if (stream) {
-        PW_TRY(
-            SendRstStreamAndClose(state, stream, Http2Error::INTERNAL_ERROR));
+        PW_TRY(SendRstStreamAndClose(
+            std::move(state), stream, Http2Error::INTERNAL_ERROR));
       }
       return OkStatus();
     }
@@ -1298,7 +1302,8 @@ Status Connection::Reader::ProcessDataFramePayload(const FrameHeader& frame,
     // RFC 9113 §6.1: "If a DATA frame is received whose stream is not in
     // the "open" or "half-closed (local)" state, the recipient MUST respond
     // with a stream error of type STREAM_CLOSED."
-    PW_TRY(SendRstStreamAndClose(state, stream, Http2Error::STREAM_CLOSED));
+    PW_TRY(SendRstStreamAndClose(
+        std::move(state), stream, Http2Error::STREAM_CLOSED));
     return OkStatus();
   }
 
@@ -1331,8 +1336,8 @@ Status Connection::Reader::ProcessDataFramePayload(const FrameHeader& frame,
       message_length = it.ReadUint32(endian::big);
       if (message_compressed != 0) {
         PW_LOG_ERROR("Unsupported: grpc message is compressed");
-        PW_TRY(
-            SendRstStreamAndClose(state, stream, Http2Error::INTERNAL_ERROR));
+        PW_TRY(SendRstStreamAndClose(
+            std::move(state), stream, Http2Error::INTERNAL_ERROR));
         return OkStatus();
       }
 
@@ -1342,7 +1347,7 @@ Status Connection::Reader::ProcessDataFramePayload(const FrameHeader& frame,
                     message_length,
                     internal::kMaxGrpcMessageAssemblySize);
         PW_TRY(SendRstStreamAndClose(
-            state, stream, Http2Error::ENHANCE_YOUR_CALM));
+            std::move(state), stream, Http2Error::ENHANCE_YOUR_CALM));
         return OkStatus();
       }
 
@@ -1351,8 +1356,8 @@ Status Connection::Reader::ProcessDataFramePayload(const FrameHeader& frame,
         if (!state->message_assembly_allocator()) {
           PW_LOG_ERROR(
               "Unsupported: split grpc message without allocator provided");
-          PW_TRY(
-              SendRstStreamAndClose(state, stream, Http2Error::INTERNAL_ERROR));
+          PW_TRY(SendRstStreamAndClose(
+              std::move(state), stream, Http2Error::INTERNAL_ERROR));
           return OkStatus();
         }
 
@@ -1361,8 +1366,8 @@ Status Connection::Reader::ProcessDataFramePayload(const FrameHeader& frame,
                 message_length);
         if (stream->assembly_buffer == nullptr) {
           PW_LOG_ERROR("Partial message reassembly buffer allocation failed");
-          PW_TRY(
-              SendRstStreamAndClose(state, stream, Http2Error::INTERNAL_ERROR));
+          PW_TRY(SendRstStreamAndClose(
+              std::move(state), stream, Http2Error::INTERNAL_ERROR));
           return OkStatus();
         }
         stream->assembly.message.length = message_length;
@@ -1415,7 +1420,8 @@ Status Connection::Reader::ProcessDataFramePayload(const FrameHeader& frame,
     }
 
     if (!status.ok()) {
-      PW_TRY(SendRstStreamAndClose(state, stream, Http2Error::INTERNAL_ERROR));
+      PW_TRY(SendRstStreamAndClose(
+          std::move(state), stream, Http2Error::INTERNAL_ERROR));
       return OkStatus();
     }
   }
@@ -1473,8 +1479,8 @@ Status Connection::Reader::ProcessHeadersFrame(const FrameHeader& frame) {
         // grpc requests cannot contain trailers.
         // See:
         // https://github.com/grpc/grpc/blob/v1.60.x/doc/PROTOCOL-HTTP2.md.
-        PW_TRY(
-            SendRstStreamAndClose(state, stream, Http2Error::PROTOCOL_ERROR));
+        PW_TRY(SendRstStreamAndClose(
+            std::move(state), stream, Http2Error::PROTOCOL_ERROR));
       }
       return OkStatus();
     }
@@ -1559,7 +1565,8 @@ Status Connection::Reader::ProcessHeadersFrame(const FrameHeader& frame) {
     auto state = connection_.LockState();
     if (Stream* stream = state->LookupStream(frame.stream_id);
         stream != nullptr) {
-      return SendRstStreamAndClose(state, stream, Http2Error::INTERNAL_ERROR);
+      return SendRstStreamAndClose(
+          std::move(state), stream, Http2Error::INTERNAL_ERROR);
     }
   }
 
@@ -1708,7 +1715,7 @@ Status Connection::Reader::ProcessRstStreamFrame(const FrameHeader& frame) {
   auto state = connection_.LockState();
   if (Stream* stream = state->LookupStream(frame.stream_id);
       stream != nullptr) {
-    CloseStream(stream);
+    CloseStream(std::move(state), stream);
   }
   return OkStatus();
 }
@@ -1908,11 +1915,13 @@ Status Connection::Reader::ProcessWindowUpdateFrame(const FrameHeader& frame) {
     return OkStatus();
   }
   if (delta == 0) {
-    return SendRstStreamAndClose(state, stream, Http2Error::PROTOCOL_ERROR);
+    return SendRstStreamAndClose(
+        std::move(state), stream, Http2Error::PROTOCOL_ERROR);
   }
   if (const auto status = state->AddStreamSendWindow(stream->id, delta);
       !status.ok()) {
-    return SendRstStreamAndClose(state, stream, Http2Error::FLOW_CONTROL_ERROR);
+    return SendRstStreamAndClose(
+        std::move(state), stream, Http2Error::FLOW_CONTROL_ERROR);
   }
 
   return OkStatus();
@@ -2007,11 +2016,11 @@ void Connection::Reader::SendGoAwayLocked(
 
 // RFC 9113 §6.4
 Status Connection::Reader::SendRstStreamAndClose(
-    sync::BorrowedPointer<SharedState>& state,
+    sync::BorrowedPointer<SharedState>&& state,
     Stream* stream,
     Http2Error code) {
   state->SendRstStream(stream->id, code).IgnoreError();
-  CloseStream(stream);
+  CloseStream(std::move(state), stream);
   return OkStatus();
 }
 

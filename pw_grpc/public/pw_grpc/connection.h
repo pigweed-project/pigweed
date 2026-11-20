@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <optional>
 #include <type_traits>
+#include <utility>
 
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/synchronized_allocator.h"
@@ -532,7 +533,8 @@ class Connection {
       UniquePtr<std::byte[]> payload;
     };
 
-    void CloseStream(Stream* stream);
+    void CloseStream(sync::BorrowedPointer<SharedState>&& state,
+                     Stream* stream);
     void RunReadTask(pw::Status status) PW_LOCKS_EXCLUDED(read_mutex_);
 
     Status ProcessDataFrame(const internal::FrameHeader&);
@@ -552,7 +554,7 @@ class Connection {
     void SendGoAway(internal::Http2Error code);
     void SendGoAwayLocked(sync::BorrowedPointer<SharedState>&& state,
                           internal::Http2Error code);
-    Status SendRstStreamAndClose(sync::BorrowedPointer<SharedState>& state,
+    Status SendRstStreamAndClose(sync::BorrowedPointer<SharedState>&& state,
                                  Stream* stream,
                                  internal::Http2Error code);
 
