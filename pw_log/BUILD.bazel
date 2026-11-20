@@ -20,6 +20,7 @@ load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "host_backend_alias", "incompatible_with_mcu")
 load("//pw_build:copy_to_bin.bzl", "copy_to_bin")
 load("//pw_build:pw_facade.bzl", "pw_facade")
+load("//pw_enum:pw_cc_enum_library.bzl", "pw_cc_enum_library")
 load(
     "//pw_protobuf_compiler:pw_proto_library.bzl",
     "pwpb_proto_library",
@@ -39,10 +40,20 @@ alias(
     actual = "pw_log.facade",
 )
 
+cc_library(
+    name = "config",
+    hdrs = [
+        "public/pw_log/config.h",
+    ],
+    strip_include_prefix = "public",
+    deps = [
+        ":config_override",
+    ],
+)
+
 pw_facade(
     name = "pw_log",
     hdrs = [
-        "public/pw_log/config.h",
         "public/pw_log/levels.h",
         "public/pw_log/log.h",
         "public/pw_log/options.h",
@@ -52,7 +63,7 @@ pw_facade(
     backend = ":backend",
     strip_include_prefix = "public",
     deps = [
-        ":config_override",
+        ":config",
         "//pw_preprocessor",
     ],
 )
@@ -94,7 +105,10 @@ cc_library(
     strip_include_prefix = "public",
     deps = [
         ":args",
+        ":config",
+        "//pw_preprocessor",
         "//pw_status",
+        "//pw_status:message",
         "//pw_tokenizer",
     ],
 )
@@ -269,6 +283,13 @@ pw_cc_test(
     ],
 )
 
+pw_cc_enum_library(
+    name = "log_status_test_enum",
+    testonly = True,
+    enum_headers = ["test_enums/log_status_test_enum.h"],
+    strip_include_prefix = "test_enums",
+)
+
 pw_cc_test(
     name = "log_status_test",
     srcs = [
@@ -277,11 +298,13 @@ pw_cc_test(
     has_nc_test = True,
     deps = [
         ":args",
+        ":log_status_test_enum",
         ":status",
         "//pw_log",
         "//pw_preprocessor",
         "//pw_result",
         "//pw_status",
+        "//pw_status:message",
         "//pw_string:format",
         "//pw_string:string",
         "//pw_tokenizer",

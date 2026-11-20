@@ -50,4 +50,11 @@
   ((int32_t)(level) >= (int32_t)(verbosity))
 #endif  // PW_LOG_ENABLE_IF
 
+/// Size in bytes of the buffer that `PW_LOG_STATUS` formats a status into for
+/// non-tokenizing `pw_log` backends when status messages are enabled. Text
+/// that does not fit, including the null terminator, is truncated.
+#ifndef PW_LOG_STATUS_STRING_SIZE
+#define PW_LOG_STATUS_STRING_SIZE 128
+#endif  // PW_LOG_STATUS_STRING_SIZE
+
 /// @}

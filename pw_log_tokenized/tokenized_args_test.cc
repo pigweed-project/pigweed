@@ -18,9 +18,9 @@
 #include <string>
 #include <type_traits>
 
-#include "pw_log/status.h"
 #include "pw_result/result.h"
 #include "pw_span/span.h"
+#include "pw_status/message.h"
 #include "pw_status/status.h"
 #include "pw_status/status_base.h"
 #include "pw_status/status_with_size.h"
@@ -30,6 +30,17 @@
 #include "pw_tokenizer/tokenize.h"
 #include "pw_unit_test/constexpr.h"
 #include "pw_unit_test/framework.h"
+#include "tokenized_args_test_enum.h"
+
+// This test always uses the tokenizing pw_log macros. Status messages follow
+// the pw_log backend, so status logging can only be tested here if messages are
+// disabled or stored as tokens.
+#if PW_STATUS_CFG_MESSAGES != PW_STATUS_CFG_MESSAGES_STRING
+#define PW_LOG_TOKENIZED_TEST_STATUS_LOGGING 1
+#include "pw_log/status.h"
+#else
+#define PW_LOG_TOKENIZED_TEST_STATUS_LOGGING 0
+#endif  // PW_STATUS_CFG_MESSAGES != PW_STATUS_CFG_MESSAGES_STRING
 
 namespace this_is_a_test {
 
@@ -51,15 +62,6 @@ constexpr const char* PwEnumToString(I2cCode code) {
   return "UNKNOWN";
 }
 
-enum class Link : bool {
-  kDown = false,
-  kUp = true,
-};
-
-constexpr const char* PwEnumToString(Link link) {
-  return link == Link::kUp ? "UP" : "DOWN";
-}
-
 }  // namespace this_is_a_test
 
 _PW_TOKENIZE_ENUM_DOMAIN(::this_is_a_test::I2cCode,
@@ -68,19 +70,20 @@ _PW_TOKENIZE_ENUM_DOMAIN(::this_is_a_test::I2cCode,
                          (kNack, "NACK"),
                          (kTimeout, "TIMEOUT"));
 
-_PW_TOKENIZE_ENUM_DOMAIN(::this_is_a_test::Link,
-                         "::this_is_a_test::Link",
-                         (kDown, "DOWN"),
-                         (kUp, "UP"));
-
 namespace this_is_a_test {
 
-#define I2C_STATUS_FMT PW_LOG_STATUS_DOMAIN_FMT("::this_is_a_test::I2cCode")
+// I2cCode is not registered with PW_ENUM, so I2cStatus does not support
+// messages and its whole logged value is its code (32 bits).
+#define I2C_STATUS_FMT PW_LOG_STATUS_DOMAIN_FMT("::this_is_a_test::I2cCode", 32)
 
 using I2cStatus = pw::StatusOf<I2cCode::kOk>;
 
-// A status whose OK code is not zero.
-#define LINK_STATUS_FMT PW_LOG_STATUS_DOMAIN_FMT("::this_is_a_test::Link")
+// Link is registered with PW_ENUM in tokenized_args_test_enum.h, which
+// generates its token domain. It has a bit width of 1, so LinkStatus supports
+// messages and its code is the low bit of its logged value. Its OK code is not
+// zero.
+#define LINK_DOMAIN THIS_IS_A_TEST_LINK_DOMAIN
+#define LINK_STATUS_FMT PW_LOG_STATUS_DOMAIN_FMT(LINK_DOMAIN, 1)
 
 using LinkStatus = pw::StatusOf<Link::kUp>;
 
@@ -194,6 +197,8 @@ PW_CONSTEXPR_TEST(
           result.value);
     });
 
+#if PW_LOG_TOKENIZED_TEST_STATUS_LOGGING
+
 PW_CONSTEXPR_TEST(TokenizedArgs, LogEnumFromStatusAndCarriers_Tokenizing, {
   PW_TEST_EXPECT_EQ(static_cast<uint32_t>(PW_STATUS_NOT_FOUND),
                     PW_LOG_ENUM(pw::Status::NotFound()));
@@ -227,20 +232,68 @@ PW_CONSTEXPR_TEST(TokenizedArgs, LogEnumFromStatusAndCarriers_Tokenizing, {
                     sws_versioned.value);
 });
 
-// A status is logged as one argument: the token of its code.
-TEST(TokenizedArgs, LogStatusIsItsCode_TokenizingBackend) {
-  EXPECT_STREQ(I2C_STATUS_FMT, "${::this_is_a_test::I2cCode}#%08" PRIx32);
-  EXPECT_STREQ(LINK_STATUS_FMT, "${::this_is_a_test::Link}#%08" PRIx32);
-  EXPECT_STREQ(PW_STATUS_FMT, "${::pw::Status}#%08" PRIx32);
+#if PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_TOKENIZED
 
-  const I2cStatus nack(I2cCode::kNack);
-  const pw::Result<int, LinkStatus> link_up(0);
-  EXPECT_EQ(PW_LOG_STATUS(nack), 1u);
-  EXPECT_EQ(PW_LOG_STATUS(LinkStatus(Link::kDown)), 0u);
-  EXPECT_EQ(PW_LOG_STATUS(link_up), 1u);
+// With messages, a status is logged as one 32-bit word that holds the code in
+// its low bits and the message's token in the rest. The format is a
+// pw_tokenizer bit field token that names the domain of each part. Messages
+// are in the domain of the status's code followed by "::Message".
+TEST(TokenizedArgs, LogStatusIsCodeAndMessageInOneWord_TokenizingBackend) {
+  EXPECT_STREQ(PW_STATUS_FMT,
+               "${::pw::Status/5,::pw::Status::Message}#%08" PRIx32);
+  EXPECT_STREQ(LINK_STATUS_FMT,
+               "${" LINK_DOMAIN "/1," LINK_DOMAIN "::Message}#%08" PRIx32);
+  EXPECT_STREQ(
+      I2C_STATUS_FMT,
+      "${::this_is_a_test::I2cCode/32,::this_is_a_test::I2cCode::Message}"
+      "#%08" PRIx32);
+
   EXPECT_EQ(PW_LOG_STATUS(pw::Status::NotFound()), 5u);
   EXPECT_EQ(PW_LOG_STATUS(pw::StatusWithSize::ResourceExhausted(8)), 8u);
+
+  // pw_tokenizer's Python detokenizer tests decode this word as
+  // "NOT_FOUND: No such key".
+  const pw::Status not_found =
+      pw::Status::NotFound(PW_STATUS_MSG("No such key"));
+  EXPECT_EQ(PW_LOG_STATUS(not_found), 0xfe8fd645u);
+  EXPECT_EQ(PW_LOG_STATUS(pw::Result<int>(not_found)), 0xfe8fd645u);
+
+  // The message's token is that of its string, as logged, with the code's bits
+  // masked off.
+  const LinkStatus link_down(Link::kDown, PW_STATUS_MSG("Cable unplugged"));
+  EXPECT_EQ(PW_LOG_STATUS(link_down),
+            pw::tokenizer::Hash(": Cable unplugged") & 0xFFFFFFFEu);
+  EXPECT_EQ(PW_LOG_STATUS(LinkStatus()), 1u);
+
+  // Statuses that do not support messages are only their code.
+  EXPECT_EQ(PW_LOG_STATUS(I2cStatus(I2cCode::kTimeout)), 2u);
 }
+
+#else
+
+// Without messages, a status is logged as the token of its code.
+TEST(TokenizedArgs, LogStatusIsItsCode_TokenizingBackend) {
+  EXPECT_STREQ(PW_STATUS_FMT, "${::pw::Status}#%08" PRIx32);
+  EXPECT_STREQ(LINK_STATUS_FMT, "${" LINK_DOMAIN "}#%08" PRIx32);
+  EXPECT_STREQ(I2C_STATUS_FMT, "${::this_is_a_test::I2cCode}#%08" PRIx32);
+
+  const pw::Status not_found =
+      pw::Status::NotFound(PW_STATUS_MSG("No such key"));
+  EXPECT_EQ(PW_LOG_STATUS(not_found), 5u);
+  EXPECT_EQ(PW_LOG_STATUS(pw::StatusWithSize::ResourceExhausted(8)), 8u);
+  EXPECT_EQ(PW_LOG_STATUS(LinkStatus(Link::kDown)), 0u);
+  EXPECT_EQ(PW_LOG_STATUS(I2cStatus(I2cCode::kTimeout)), 2u);
+}
+
+#endif  // PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_TOKENIZED
+
+// A status can be logged in a constant expression, whether or not status
+// messages are enabled.
+PW_CONSTEXPR_TEST(TokenizedArgs, LogStatusIsConstexpr_TokenizingBackend, {
+  PW_TEST_EXPECT_EQ(PW_LOG_STATUS(pw::Status::NotFound()), 5u);
+  PW_TEST_EXPECT_EQ(PW_LOG_STATUS(LinkStatus(Link::kDown)), 0u);
+  PW_TEST_EXPECT_EQ(PW_LOG_STATUS(I2cStatus(I2cCode::kNack)), 1u);
+});
 
 TEST(TokenizedArgs, LogStatusEvaluatesArgumentOnce_TokenizingBackend) {
   int calls = 0;
@@ -250,6 +303,14 @@ TEST(TokenizedArgs, LogStatusEvaluatesArgumentOnce_TokenizingBackend) {
   };
   EXPECT_EQ(PW_LOG_STATUS(next_status()), 1u);
   EXPECT_EQ(calls, 1);
+
+  int message_calls = 0;
+  auto next_with_message = [&message_calls]() {
+    ++message_calls;
+    return LinkStatus(Link::kDown, PW_STATUS_MSG("Cable unplugged"));
+  };
+  static_cast<void>(PW_LOG_STATUS(next_with_message()));
+  EXPECT_EQ(message_calls, 1);
 }
 
 // Adds a line to a CSV token database. The text is quoted because bit field
@@ -265,9 +326,12 @@ void AddToken(std::string& csv,
 }
 
 // Statuses are logged like any other tokenized argument. The C++ detokenizer
-// resolves the code's token.
+// resolves a status that is only a code. It does not decode bit field tokens
+// yet, so it leaves a status that is logged with its message as text.
 TEST(TokenizedArgs, LogStatusDetokenizes_TokenizingBackend) {
   const pw::Status not_found = pw::Status::NotFound();
+  const pw::Status with_message =
+      pw::Status::NotFound(PW_STATUS_MSG("No such key"));
   const I2cStatus nack(I2cCode::kNack);
   const pw::Result<int, I2cStatus> result(nack);
 
@@ -306,12 +370,30 @@ TEST(TokenizedArgs, LogStatusDetokenizes_TokenizingBackend) {
                      "code=" PW_LOG_ENUM_VERSIONED_FMT(),
                      PW_LOG_ENUM_VERSIONED(result));
 
+#if PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_TOKENIZED
+  EXPECT_DETOKENIZED(
+      "i2c=${::this_is_a_test::I2cCode/32,::this_is_a_test::I2cCode::Message}"
+      "#00000001",
+      "i2c=" I2C_STATUS_FMT,
+      PW_LOG_STATUS(nack));
+  EXPECT_DETOKENIZED("pw=${::pw::Status/5,::pw::Status::Message}#00000005",
+                     "pw=" PW_STATUS_FMT,
+                     PW_LOG_STATUS(not_found));
+  EXPECT_DETOKENIZED("pw=${::pw::Status/5,::pw::Status::Message}#fe8fd645",
+                     "pw=" PW_STATUS_FMT,
+                     PW_LOG_STATUS(with_message));
+#else
   EXPECT_DETOKENIZED("i2c=NACK", "i2c=" I2C_STATUS_FMT, PW_LOG_STATUS(nack));
   EXPECT_DETOKENIZED(
       "pw=NOT_FOUND", "pw=" PW_STATUS_FMT, PW_LOG_STATUS(not_found));
+  EXPECT_DETOKENIZED(
+      "pw=NOT_FOUND", "pw=" PW_STATUS_FMT, PW_LOG_STATUS(with_message));
+#endif  // PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_TOKENIZED
 
 #undef EXPECT_DETOKENIZED
 }
+
+#endif  // PW_LOG_TOKENIZED_TEST_STATUS_LOGGING
 
 }  // namespace
 }  // namespace this_is_a_test

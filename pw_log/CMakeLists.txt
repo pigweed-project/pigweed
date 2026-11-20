@@ -13,6 +13,7 @@
 # the License.
 
 include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
+include($ENV{PW_ROOT}/pw_enum/pw_cc_enum_library.cmake)
 include($ENV{PW_ROOT}/pw_log/backend.cmake)
 include($ENV{PW_ROOT}/pw_protobuf_compiler/proto.cmake)
 
@@ -62,7 +63,10 @@ pw_add_library(pw_log.status INTERFACE
     public
   PUBLIC_DEPS
     pw_log.args
+    pw_log.config
+    pw_preprocessor
     pw_status
+    pw_status.message
     pw_tokenizer
 )
 
@@ -175,6 +179,13 @@ if(NOT "${pw_log_BACKEND}" STREQUAL "")
       pw_log
   )
 
+  pw_add_enum_library(pw_log.log_status_test_enum
+    ENUM_HEADERS
+      test_enums/log_status_test_enum.h
+    PUBLIC_INCLUDES
+      test_enums
+  )
+
   pw_add_test(pw_log.log_status_test
     SOURCES
       log_status_test.cc
@@ -182,10 +193,12 @@ if(NOT "${pw_log_BACKEND}" STREQUAL "")
       pw_compilation_testing._pigweed_only_negative_compilation
       pw_log
       pw_log.args
+      pw_log.log_status_test_enum
       pw_log.status
       pw_preprocessor
       pw_result
       pw_status
+      pw_status.message
       pw_string.format
       pw_string.string
       pw_tokenizer

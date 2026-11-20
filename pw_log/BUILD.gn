@@ -17,6 +17,7 @@ import("//build_overrides/pigweed.gni")
 import("$dir_pw_build/facade.gni")
 import("$dir_pw_build/module_config.gni")
 import("$dir_pw_chrono/backend.gni")
+import("$dir_pw_enum/pw_cc_enum_source_set.gni")
 import("$dir_pw_log/backend.gni")
 import("$dir_pw_protobuf_compiler/proto.gni")
 import("$dir_pw_unit_test/test.gni")
@@ -83,6 +84,9 @@ pw_source_set("status") {
   public_configs = [ ":public_include_path" ]
   public_deps = [
     ":args",
+    ":config",
+    "$dir_pw_status:message",
+    dir_pw_preprocessor,
     dir_pw_status,
     dir_pw_tokenizer,
   ]
@@ -201,13 +205,21 @@ pw_test("log_enum_test") {
   sources = [ "log_enum_test.cc" ]
 }
 
+pw_cc_enum_source_set("log_status_test_enum") {
+  enum_headers = [ "test_enums/log_status_test_enum.h" ]
+  include_dirs = [ "test_enums" ]
+  testonly = pw_unit_test_TESTONLY
+}
+
 pw_test("log_status_test") {
   enable_if = pw_log_BACKEND != ""
   negative_compilation_tests = true
   deps = [
     ":args",
+    ":log_status_test_enum",
     ":pw_log",
     ":status",
+    "$dir_pw_status:message",
     "$dir_pw_string:format",
     "$dir_pw_string:string",
     dir_pw_preprocessor,

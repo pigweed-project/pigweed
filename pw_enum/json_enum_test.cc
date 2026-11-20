@@ -23,6 +23,7 @@
 #include "pw_enum_private/toml_enums.h"
 #include "pw_log/status.h"
 #include "pw_log/tokenized_args.h"
+#include "pw_status/message.h"
 #include "pw_string/format.h"
 #include "pw_string/string.h"
 #include "pw_tokenizer/enum.h"
@@ -106,13 +107,24 @@ constexpr char kLoggedBusy[] =
 constexpr char kLoggedBusy[] = "BUSY";
 #endif  // __has_include("pw_log_backend/log_backend_uses_pw_tokenizer.h")
 
+// What logging TomlStatus::Busy() formats as. It is logged as its code is,
+// unless a tokenizing backend logs status messages. Then it is a bit field
+// token with the code, which needs five bits, in its low bits.
+#if PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_TOKENIZED
+constexpr char kLoggedBusyStatus[] =
+    "${" PW_ENUM_TEST_TOML_TOML_STATUS_DOMAIN "/5," PW_STATUS_MSG_DOMAIN(
+        PW_ENUM_TEST_TOML_TOML_STATUS_DOMAIN) "}#00000001";
+#else
+constexpr const char* kLoggedBusyStatus = kLoggedBusy;
+#endif  // PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_TOKENIZED
+
 TEST(PwEnumJsonTest, StatusFmtLogsStatusWithLogStatus) {
   const TomlStatus busy = TomlStatus::Busy();
 
-  pw::InlineString<128> logged;
+  pw::InlineString<256> logged;
   PW_TEST_ASSERT_OK(pw::string::Format(
       logged, PW_ENUM_TEST_TOML_TOML_STATUS_FMT, PW_LOG_STATUS(busy)));
-  EXPECT_STREQ(logged.c_str(), kLoggedBusy);
+  EXPECT_STREQ(logged.c_str(), kLoggedBusyStatus);
 }
 
 TEST(PwEnumJsonTest, StatusCodeFmtLogsCodeWithLogEnum) {

@@ -13,13 +13,39 @@
 // the License.
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
+#include "pw_log/config.h"
 #include "pw_log/tokenized_args.h"
+#include "pw_preprocessor/compiler.h"
+#include "pw_status/message.h"
 #include "pw_status/status.h"
 #include "pw_status/status_base.h"
 #include "pw_tokenizer/enum.h"
+#include "pw_tokenizer/nested_tokenization.h"
+#include "pw_tokenizer/tokenize.h"
+
+// Status messages are stored in the form the pw_log backend emits, so
+// PW_STATUS_CFG_MESSAGES must match the backend.
+#if PW_STATUS_CFG_MESSAGES != PW_STATUS_CFG_MESSAGES_NONE
+#if __has_include("pw_log_backend/log_backend_uses_pw_tokenizer.h")
+#if PW_STATUS_CFG_MESSAGES != PW_STATUS_CFG_MESSAGES_TOKENIZED
+#error \
+    "The pw_log backend tokenizes logs, but status messages are stored as \
+strings. Set PW_STATUS_CFG_MESSAGES to PW_STATUS_CFG_MESSAGES_TOKENIZED in \
+the pw_status config (in Bazel, --@pigweed//pw_status:messages=tokenized)."
+#endif  // PW_STATUS_CFG_MESSAGES != PW_STATUS_CFG_MESSAGES_TOKENIZED
+#elif PW_STATUS_CFG_MESSAGES != PW_STATUS_CFG_MESSAGES_STRING
+#error \
+    "Status messages are stored as tokens, but the pw_log backend does not \
+tokenize logs. Set PW_STATUS_CFG_MESSAGES to PW_STATUS_CFG_MESSAGES_STRING in \
+the pw_status config (in Bazel, --@pigweed//pw_status:messages=string)."
+#endif  // __has_include("pw_log_backend/log_backend_uses_pw_tokenizer.h")
+#endif  // PW_STATUS_CFG_MESSAGES != PW_STATUS_CFG_MESSAGES_NONE
 
 /// @submodule{pw_log,tokenized_args}
 
@@ -32,7 +58,7 @@
 
 /// Format specifier for logging a `pw::Status`, `pw::StatusWithSize`, or
 /// `pw::Result<T>` with `PW_LOG_STATUS`.
-#define PW_STATUS_FMT PW_LOG_STATUS_DOMAIN_FMT(PW_STATUS_DOMAIN)
+#define PW_STATUS_FMT PW_LOG_STATUS_DOMAIN_FMT(PW_STATUS_DOMAIN, 5)
 
 /// @endsubmodule
 
@@ -62,24 +88,59 @@ _PW_TOKENIZE_ENUM_DOMAIN(::pw_Status,
                          (PW_STATUS_UNAVAILABLE, "UNAVAILABLE"),
                          (PW_STATUS_DATA_LOSS, "DATA_LOSS"),
                          (PW_STATUS_UNAUTHENTICATED, "UNAUTHENTICATED"));
+
+// PW_STATUS_FMT states how many low bits of a logged pw::Status hold its code.
+static_assert(::pw::internal::kStatusCodeBits<pw_Status> == 5,
+              "Update the code width in PW_STATUS_FMT");
+static_assert(PW_LOG_STATUS_STRING_SIZE > 0,
+              "PW_LOG_STATUS_STRING_SIZE must be at least 1");
 /// @endcond
 
 /// @submodule{pw_log,tokenized_args}
 
+// The documented macros are in the first branch, which is also the one taken
+// if PW_STATUS_CFG_MESSAGES is not defined, as when Doxygen reads this file.
+#if PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_NONE
+
 /// Format specifier for logging a status with `PW_LOG_STATUS`. Generated
 /// `pw_enum` statuses define `<STATUS>_FMT` with this macro.
 ///
-/// Formats as the name of the status code.
+/// Formats as `"CODE"`, or as `"CODE: message"` if the status has a message.
 ///
 /// @param[in] domain String literal with the tokenizer domain of the status's
 /// code enum.
-#define PW_LOG_STATUS_DOMAIN_FMT(domain) PW_LOG_TOKEN_FMT(domain)
+///
+/// @param[in] code_bits Number of low bits that the status's code occupies when
+/// it shares a 32-bit word with a message token: the bit width of the code enum
+/// (`pw::EnumTraits<Code>::kBitWidth`), or 32 if the code enum does not support
+/// messages. Must be a decimal integer literal. If it is wrong, tokenized logs
+/// of the status cannot be decoded.
+#define PW_LOG_STATUS_DOMAIN_FMT(domain, code_bits) PW_LOG_TOKEN_FMT(domain)
 
-/// Expands to the argument needed to log a status with `<STATUS>_FMT`.
-/// Accepts `pw::Status`, other statuses with enum codes, `pw::StatusWithSize`,
-/// and `pw::Result`. Evaluates its argument once.
+/// Expands to the argument needed to log a status and its optional message
+/// with `<STATUS>_FMT` or `PW_STATUS_FMT`. Accepts `pw::Status`, other statuses
+/// with enum codes, `pw::StatusWithSize`, and `pw::Result`. Evaluates its
+/// argument once.
+///
+/// With a non-tokenizing `pw_log` backend and status messages enabled, the
+/// argument is a string in a temporary buffer that only exists until the end
+/// of the log statement.
 #define PW_LOG_STATUS(...) \
   PW_LOG_ENUM(::pw::log::internal::LoggedStatus(__VA_ARGS__))
+
+#elif PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_TOKENIZED
+
+#define PW_LOG_STATUS_DOMAIN_FMT(domain, code_bits) \
+  PW_TOKEN_BIT_FIELD_FMT(domain, code_bits, PW_STATUS_MSG_DOMAIN(domain))
+#define PW_LOG_STATUS(...) ::pw::log::internal::StatusWord(__VA_ARGS__)
+
+#else  // PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_STRING
+
+#define PW_LOG_STATUS_DOMAIN_FMT(domain, code_bits) "%s"
+#define PW_LOG_STATUS(...) \
+  ::pw::log::internal::StatusString(__VA_ARGS__).c_str()
+
+#endif  // PW_STATUS_CFG_MESSAGES
 
 /// @}
 
@@ -128,6 +189,79 @@ constexpr const T& LoggedStatus(const T& status) {
                 "PW_LOG_STATUS requires a status, StatusWithSize, or Result. "
                 "Log enums with PW_LOG_ENUM.");
   return status;
+}
+
+constexpr uint32_t MessageToken(uint32_t token) { return token; }
+constexpr uint32_t MessageToken(::pw::internal::EmptyStatusMessage) {
+  return 0u;
+}
+
+// Tokenizing backends log a status as one 32-bit word: the code in the low bits
+// and the message token in the rest. PW_TOKEN_BIT_FIELD_FMT tells the
+// detokenizer to look up the two fields.
+template <typename T>
+constexpr uint32_t StatusWord(const T& value) {
+  static_cast<void>(LoggedStatus(value));
+  if constexpr (!std::is_enum_v<T> && kHasEnumStatusCode<T>) {
+    const auto& status = ToStatus(value);
+    const auto code = status.code();
+    using Code = std::remove_const_t<decltype(code)>;
+    // A status without a message has message token 0. Define token 0 as an
+    // empty string in the message domain of the status code enum, so that such
+    // a status detokenizes as only its code.
+    if constexpr (::pw::internal::kStatusCodeBits<Code> != 0u) {
+      PW_TOKENIZER_DEFINE_TOKEN_ALWAYS(
+          0u, ::pw::internal::kStatusMessageDomain<Code>.chars, "");
+    }
+    return ::pw::tokenizer::EnumToToken(code) |
+           MessageToken(
+               ::pw::internal::StatusMessageAccess::Get(status.message()));
+  } else {
+    return ::pw::tokenizer::EnumToToken(LoggedEnum<T>::Get(value));
+  }
+}
+
+// A status without a message has a null string.
+constexpr const char* MessageString(const char* string) {
+  return string == nullptr ? "" : string;
+}
+constexpr const char* MessageString(::pw::internal::EmptyStatusMessage) {
+  return "";
+}
+
+// Non-tokenizing backends log a status as one string, "CODE: message". It is
+// formatted into this buffer, which is a temporary in the log statement, so
+// the backend must use the string before the statement ends.
+class StatusLogString {
+ public:
+  StatusLogString(std::string_view code, std::string_view message) noexcept {
+    const std::string_view parts[] = {code, message};
+    size_t size = 0;
+    for (std::string_view part : parts) {
+      size += part.copy(text_ + size, sizeof(text_) - 1 - size);
+    }
+    text_[size] = '\0';
+  }
+
+  const char* c_str() const PW_ATTRIBUTE_LIFETIME_BOUND { return text_; }
+
+ private:
+  char text_[PW_LOG_STATUS_STRING_SIZE];
+};
+
+template <typename T>
+StatusLogString StatusString(const T& value) {
+  static_cast<void>(LoggedStatus(value));
+  if constexpr (!std::is_enum_v<T> && kHasEnumStatusCode<T>) {
+    const auto& status = ToStatus(value);
+    // The message's string starts with ": ".
+    return StatusLogString(
+        ::pw::EnumToString(status.code()),
+        MessageString(
+            ::pw::internal::StatusMessageAccess::Get(status.message())));
+  } else {
+    return StatusLogString(::pw::EnumToString(LoggedEnum<T>::Get(value)), "");
+  }
 }
 
 }  // namespace pw::log::internal

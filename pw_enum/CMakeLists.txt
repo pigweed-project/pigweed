@@ -132,8 +132,10 @@ pw_add_test(pw_enum.json_enum_test
     pw_enum
     pw_enum._mixed_enum
     pw_enum._toml_enums_cc
+    pw_log
     pw_log.args
     pw_log.status
+    pw_status.message
     pw_string.format
     pw_string.string
     pw_tokenizer
@@ -155,6 +157,7 @@ pw_add_test(pw_enum.enum_test
     pw_log
     pw_log.args
     pw_log.status
+    pw_status.message
     pw_string.format
     pw_string.string
     pw_tokenizer

@@ -17,6 +17,7 @@ import("//build_overrides/pigweed.gni")
 import("$dir_pw_build/facade.gni")
 import("$dir_pw_build/module_config.gni")
 import("$dir_pw_build/target_types.gni")
+import("$dir_pw_enum/pw_cc_enum_source_set.gni")
 import("$dir_pw_log/backend.gni")
 import("$dir_pw_log_tokenized/backend.gni")
 import("$dir_pw_unit_test/test.gni")
@@ -216,6 +217,7 @@ pw_test_group("tests") {
     ":fields_test",
     ":log_tokenized_test",
     ":metadata_test",
+    ":status_token_test",
     ":tokenized_args_test",
   ]
 }
@@ -246,11 +248,40 @@ pw_test("metadata_test") {
   deps = [ ":metadata" ]
 }
 
+pw_test("status_token_test") {
+  deps = [
+    ":tokenized_args_test_enum",
+    ":tokenized_backend_indicator",
+    "$dir_pw_log:status",
+    "$dir_pw_status:message",
+    "$dir_pw_tokenizer:decoder",
+    "$dir_pw_tokenizer:detokenize_from_this_program",
+    dir_pw_bytes,
+    dir_pw_result,
+    dir_pw_status,
+  ]
+  sources = [ "status_token_test.cc" ]
+
+  # This test requires a linker script to load the tokenizer sections. This is
+  # currently only supported on Linux.
+  enable_if = current_os == "linux"
+
+  configs = [ "$dir_pw_tokenizer:detokenize_from_this_program_linker_script" ]
+}
+
+pw_cc_enum_source_set("tokenized_args_test_enum") {
+  enum_headers = [ "test_enums/tokenized_args_test_enum.h" ]
+  include_dirs = [ "test_enums" ]
+  testonly = pw_unit_test_TESTONLY
+}
+
 pw_test("tokenized_args_test") {
   deps = [
+    ":tokenized_args_test_enum",
     ":tokenized_backend_indicator",
     "$dir_pw_log:args",
     "$dir_pw_log:status",
+    "$dir_pw_status:message",
     "$dir_pw_tokenizer:decoder",
     "$dir_pw_unit_test:constexpr",
     dir_pw_result,

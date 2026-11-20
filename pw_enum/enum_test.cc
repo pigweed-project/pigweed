@@ -29,6 +29,7 @@
 #include "pw_enum_private/standalone_enum.h"
 #include "pw_log/status.h"
 #include "pw_log/tokenized_args.h"
+#include "pw_status/message.h"
 #include "pw_string/format.h"
 #include "pw_string/string.h"
 #include "pw_tokenizer/hash.h"
@@ -623,6 +624,17 @@ constexpr char kLoggedFailed[] =
 constexpr char kLoggedFailed[] = "FAILED";
 #endif  // __has_include("pw_log_backend/log_backend_uses_pw_tokenizer.h")
 
+// What logging PlainTestStatus::Failed() formats as. It is logged as its code
+// is, unless a tokenizing backend logs status messages. Then it is a bit field
+// token with the code, which needs one bit, in its low bits.
+#if PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_TOKENIZED
+constexpr char kLoggedFailedStatus[] =
+    "${" PW_TESTING_PLAIN_TEST_STATUS_DOMAIN "/1," PW_STATUS_MSG_DOMAIN(
+        PW_TESTING_PLAIN_TEST_STATUS_DOMAIN) "}#00000001";
+#else
+constexpr const char* kLoggedFailedStatus = kLoggedFailed;
+#endif  // PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_TOKENIZED
+
 TEST(PwEnumStatusTest, StatusDomainIsCodeEnumDomain) {
   EXPECT_STREQ(PW_TESTING_PLAIN_TEST_STATUS_DOMAIN,
                PW_TESTING_PLAIN_TEST_CODE_DOMAIN);
@@ -640,10 +652,10 @@ TEST(PwEnumStatusTest, StatusCodeFmtLogsCodeWithLogEnum) {
 TEST(PwEnumStatusTest, StatusFmtLogsStatusWithLogStatus) {
   constexpr auto kFailed = ::pw::testing::PlainTestStatus::Failed();
 
-  pw::InlineString<128> logged;
+  pw::InlineString<256> logged;
   PW_TEST_ASSERT_OK(pw::string::Format(
       logged, PW_TESTING_PLAIN_TEST_STATUS_FMT, PW_LOG_STATUS(kFailed)));
-  EXPECT_STREQ(logged.c_str(), kLoggedFailed);
+  EXPECT_STREQ(logged.c_str(), kLoggedFailedStatus);
 }
 
 }  // namespace

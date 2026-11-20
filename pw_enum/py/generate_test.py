@@ -607,7 +607,7 @@ class TestEnumGeneration(unittest.TestCase):
         )
         self.assertIn(
             "#define MY_NS_MY_STATUS_FMT "
-            f'PW_LOG_STATUS_DOMAIN_FMT("{enums[0].cc_versioned_name}")',
+            f'PW_LOG_STATUS_DOMAIN_FMT("{enums[0].cc_versioned_name}", 1)',
             footer,
         )
         # The status's MY_NS_MY_STATUS_CODE_FMT is the enum's
@@ -629,6 +629,54 @@ class TestEnumGeneration(unittest.TestCase):
         self.assertIn(
             "_PW_TOKENIZE_ENUM_DOMAIN(::my::ns::MyStatusCode,", footer
         )
+
+    def test_status_fmt_code_bits(self) -> None:
+        """<STATUS>_FMT states how many bits the status code occupies."""
+
+        def footer_for(*values: int) -> str:
+            names = ("kOk", "kFirst", "kSecond")
+            enums = [
+                EnumDescriptor(
+                    name="Code",
+                    scopes=(),
+                    cc_full_name="::Code",
+                    line=1,
+                    values=tuple(
+                        EnumValue(cc_name=name, value=value, name=name[1:])
+                        for name, value in zip(names, values)
+                    ),
+                    status=StatusInfo(
+                        name="Thing",
+                        scopes=(),
+                        cc_full_name="::Thing",
+                        ok_code="kOk",
+                    ),
+                )
+            ]
+            return "\n".join(generate_footer(enums)) + "\n"
+
+        def fmt(bits: int) -> str:
+            return (
+                r'#define THING_FMT PW_LOG_STATUS_DOMAIN_FMT\("[^"]+", '
+                rf"{bits}\)\n"
+            )
+
+        # The enum's bit width, if all values are 0 to 65535.
+        for values, bits in (
+            ((0,), 1),
+            ((0, 1), 1),
+            ((0, 1, 2), 2),
+            ((3, 16), 5),
+            ((0, 65535), 16),
+        ):
+            with self.subTest(values=values):
+                self.assertRegex(footer_for(*values), fmt(bits))
+
+        # Otherwise the status cannot carry a message, and its whole logged
+        # value is its code.
+        for values in ((0, 65536), (0, -1)):
+            with self.subTest(values=values):
+                self.assertRegex(footer_for(*values), fmt(32))
 
     def test_status_macro_conflicts_with_enum_macro(self) -> None:
         """Enum and status macros with one name must have one value."""

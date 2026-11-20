@@ -13,6 +13,7 @@
 # the License.
 
 include($ENV{PW_ROOT}/pw_build/pigweed.cmake)
+include($ENV{PW_ROOT}/pw_enum/pw_cc_enum_library.cmake)
 include($ENV{PW_ROOT}/pw_log_tokenized/backend.cmake)
 
 pw_add_module_config(pw_log_tokenized_CONFIG)
@@ -192,16 +193,25 @@ pw_add_test(pw_log_tokenized.fields_test
     pw_log_tokenized
 )
 
+pw_add_enum_library(pw_log_tokenized.tokenized_args_test_enum
+  ENUM_HEADERS
+    test_enums/tokenized_args_test_enum.h
+  PUBLIC_INCLUDES
+    test_enums
+)
+
 pw_add_test(pw_log_tokenized.tokenized_args_test
   SOURCES
     tokenized_args_test.cc
   PRIVATE_DEPS
     pw_log.args
     pw_log.status
+    pw_log_tokenized.tokenized_args_test_enum
     pw_log_tokenized.tokenized_backend_indicator
     pw_result
     pw_span
     pw_status
+    pw_status.message
     pw_tokenizer
     pw_tokenizer.decoder
     pw_unit_test.constexpr

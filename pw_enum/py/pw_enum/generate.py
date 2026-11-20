@@ -50,6 +50,29 @@ def _macro_names(scopes: Sequence[str], name: str) -> tuple[str, str]:
     return macro, legacy_macro
 
 
+# The most bits a status code may use when it shares a 32-bit word with a
+# message token. Must match pw::internal::kStatusCodeBits in pw_status.
+_MAX_STATUS_CODE_BITS = 16
+
+# A logged status that cannot share its word with a message token is only its
+# code, so the code occupies the whole 32-bit word.
+_STATUS_WORD_BITS = 32
+
+
+def _status_code_bits(enum_desc: EnumDescriptor) -> int:
+    """Returns the bits a status code needs to share a word with a token.
+
+    This is the enum's bit width (pw::EnumTraits<Code>::kBitWidth), or 0 if the
+    code cannot share a word, because it has negative values or needs too many
+    bits. Statuses with such codes do not support messages.
+    """
+    distinct_values = [value for value, _ in enum_desc.unique_values()]
+    if distinct_values[0].value < 0:
+        return 0
+    bits = _bit_width(distinct_values)
+    return bits if bits <= _MAX_STATUS_CODE_BITS else 0
+
+
 def _generate_macro_defs(enum_desc: EnumDescriptor) -> Iterator[str]:
     defined: dict[str, str] = {}
 
@@ -89,8 +112,11 @@ def _generate_macro_defs(enum_desc: EnumDescriptor) -> Iterator[str]:
             status.scopes, status.name
         )
         yield from define(f"{status_macro}_DOMAIN", f'"{domain}"')
+        # The format states how many low bits of a logged status hold its code.
+        code_bits = _status_code_bits(enum_desc) or _STATUS_WORD_BITS
         yield from define(
-            f"{status_macro}_FMT", f'PW_LOG_STATUS_DOMAIN_FMT("{domain}")'
+            f"{status_macro}_FMT",
+            f'PW_LOG_STATUS_DOMAIN_FMT("{domain}", {code_bits})',
         )
         yield from define(
             f"{status_macro}_CODE_FMT", f'PW_LOG_TOKEN_FMT("{domain}")'
