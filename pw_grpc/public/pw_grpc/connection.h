@@ -458,6 +458,8 @@ class Connection {
 
     Allocator& send_allocator() { return send_allocator_; }
     int32_t connection_send_window() const { return connection_send_window_; }
+    StreamId last_stream_id() const { return last_stream_id_; }
+    void set_last_stream_id(StreamId id) { last_stream_id_ = id; }
 
     void Close() {
       connection_closed_ = true;
@@ -488,6 +490,7 @@ class Connection {
 
     // Stream state
     std::array<Stream, internal::kMaxConcurrentStreams> streams_;
+    StreamId last_stream_id_ = 0;
     int32_t connection_send_window_ = kDefaultInitialWindowSize;
     int32_t connection_recv_window_ = kTargetConnectionWindowSize;
     bool connection_closed_ = false;
@@ -565,7 +568,6 @@ class Connection {
     bool received_connection_preface_ = false;
 
     std::array<std::byte, internal::kMaxFramePayloadSize> payload_scratch_{};
-    StreamId last_stream_id_ = 0;
 
     pw::async::Task read_task_;
     // Lock acquisition order:

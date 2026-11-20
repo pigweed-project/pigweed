@@ -274,7 +274,7 @@ class BlockingInMemoryReader : public stream::NonSeekableReader {
     while (true) {
       {
         std::lock_guard<sync::Mutex> lock(mutex_);
-        if (buffer_.empty() && (reader_waiting_ || reader_exited_)) {
+        if (reader_exited_ || (buffer_.empty() && reader_waiting_)) {
           return;
         }
       }
@@ -1748,6 +1748,49 @@ TEST_F(ConnectionTest, AsyncDataTeardownWaitsForInFlightOnMessageCallback) {
   output.clear_connection();
   g_harness.reset();
   dispatcher_runner.StopAndJoin();
+}
+
+TEST_F(ConnectionTest, StreamIdOrderingAndIdleRstStreamEchoLastStreamId) {
+  // 1. Out-of-order HEADERS stream ID sends GOAWAY with the highest opened
+  // stream ID.
+  StartConnection();
+  harness().send_queue.ClearStreamFrames(/*stream_id=*/0);
+
+  constexpr StreamId kFirstStream = 1;
+  constexpr StreamId kSecondStream = 5;
+  constexpr StreamId kRegressionStream = 3;
+  OpenStream(kFirstStream);
+  OpenStream(kSecondStream);
+
+  harness().reader.PushRequestHeaders(kRegressionStream);
+  harness().reader.WaitUntilIdle();
+  EXPECT_EQ(harness().reader_runner->frame_status(), Status::Internal());
+
+  {
+    Vector<RecordedFrame, kMaxStreamFrames> goaway_frames;
+    harness().send_queue.TakeStreamFrames(/*stream_id=*/0, goaway_frames);
+    ExpectSingleGoAwayFrame(
+        goaway_frames, kSecondStream, kHttp2ErrorProtocolError);
+  }
+
+  // 2. RST_STREAM on an idle stream (> last_stream_id) sends GOAWAY with
+  // last_stream_id.
+  ResetHarness(/*enable_assembly_allocator=*/false);
+  StartConnection();
+  harness().send_queue.ClearStreamFrames(/*stream_id=*/0);
+
+  constexpr StreamId kOpenedStream = 3;
+  constexpr StreamId kIdleStream = kOpenedStream + 2;
+  OpenStream(kOpenedStream);
+
+  harness().reader.PushRstStream(kIdleStream, kHttp2ErrorCancel);
+  harness().reader.WaitUntilIdle();
+  EXPECT_EQ(harness().reader_runner->frame_status(), Status::Internal());
+
+  Vector<RecordedFrame, kMaxStreamFrames> goaway_frames;
+  harness().send_queue.TakeStreamFrames(/*stream_id=*/0, goaway_frames);
+  ExpectSingleGoAwayFrame(
+      goaway_frames, kOpenedStream, kHttp2ErrorProtocolError);
 }
 
 }  // namespace

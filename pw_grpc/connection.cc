@@ -1426,27 +1426,24 @@ Status Connection::Reader::ProcessHeadersFrame(const FrameHeader& frame) {
                frame.stream_id,
                frame.payload_length);
 
-  if (frame.stream_id == 0) {
-    // RFC 9113 §6.2: "If a HEADERS frame is received whose Stream Identifier
-    // field is 0x00, the recipient MUST respond with a connection error of type
-    // PROTOCOL_ERROR."
+  if (frame.stream_id == 0 || frame.stream_id % 2 != 1) {
+    // RFC 9113 §5.1.1 and §6.2: Client-initiated stream IDs must be non-zero
+    // odd integers.
     SendGoAway(Http2Error::PROTOCOL_ERROR);
     return Status::Internal();
   }
-  if (frame.stream_id % 2 != 1 || frame.stream_id <= last_stream_id_) {
-    // RFC 9113 §5.1.1: "Streams initiated by a client MUST use odd-numbered
-    // stream identifiers ... The identifier of a newly established stream MUST
-    // be numerically greater than all streams that the initiating endpoint has
-    // opened ... An endpoint that receives an unexpected stream identifier MUST
-    // respond with a connection error of type PROTOCOL_ERROR."
-    SendGoAway(Http2Error::PROTOCOL_ERROR);
-    return Status::Internal();
-  }
-
-  last_stream_id_ = frame.stream_id;
 
   {
     auto state = connection_.LockState();
+    if (frame.stream_id <= state->last_stream_id()) {
+      // RFC 9113 §5.1.1: "The identifier of a newly established stream MUST be
+      // numerically greater than all streams that the initiating endpoint has
+      // opened ... An endpoint that receives an unexpected stream identifier
+      // MUST respond with a connection error of type PROTOCOL_ERROR."
+      SendGoAwayLocked(std::move(state), Http2Error::PROTOCOL_ERROR);
+      return Status::Internal();
+    }
+    state->set_last_stream_id(frame.stream_id);
     if (Stream* stream = state->LookupStream(frame.stream_id);
         stream != nullptr) {
       PW_LOG_DEBUG("Client sent HEADERS after the first stream message");
@@ -1668,12 +1665,15 @@ Status Connection::Reader::ProcessRstStreamFrame(const FrameHeader& frame) {
     SendGoAway(Http2Error::PROTOCOL_ERROR);
     return Status::Internal();
   }
-  if (frame.stream_id > last_stream_id_) {
-    // RFC 9113 §6.4: "If a RST_STREAM frame identifying an idle stream is
-    // received, the recipient MUST treat this as a connection error of type
-    // PROTOCOL_ERROR."
-    SendGoAway(Http2Error::PROTOCOL_ERROR);
-    return Status::Internal();
+  {
+    auto state = connection_.LockState();
+    if (frame.stream_id > state->last_stream_id()) {
+      // RFC 9113 §6.4: "If a RST_STREAM frame identifying an idle stream is
+      // received, the recipient MUST treat this as a connection error of type
+      // PROTOCOL_ERROR."
+      SendGoAwayLocked(std::move(state), Http2Error::PROTOCOL_ERROR);
+      return Status::Internal();
+    }
   }
   if (frame.payload_length != 4) {
     // RFC 9113 §6.4: "A RST_STREAM frame with a length other than 4 octets MUST
@@ -1964,7 +1964,7 @@ void Connection::Reader::SendGoAwayLocked(
           .flags = 0,
           .stream_id = 0,
       }),
-      .last_stream_id = ToNetworkOrder(last_stream_id_),
+      .last_stream_id = ToNetworkOrder(state->last_stream_id()),
       .error_code = ToNetworkOrder(code),
   };
 
