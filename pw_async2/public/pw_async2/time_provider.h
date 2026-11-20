@@ -33,10 +33,11 @@ namespace pw::async2 {
 
 namespace internal {
 
-// A lock which guards `TimeProvider`'s linked list.
+// A lock which guards `TimeProvider`'s linked list. Wrapped in NoDestructor so
+// an armed SystemTimer callback cannot race static destruction at process exit.
 inline pw::sync::InterruptSpinLock& time_lock() {
-  static pw::sync::InterruptSpinLock lock;
-  return lock;
+  static NoDestructor<pw::sync::InterruptSpinLock> lock;
+  return *lock;
 }
 
 // `Timer` objects must not outlive their `TimeProvider`.

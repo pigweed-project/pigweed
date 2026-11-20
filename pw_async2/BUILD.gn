@@ -560,17 +560,19 @@ pw_source_set("system_time_provider") {
   deps = [
     "$dir_pw_chrono:system_timer",
     "$dir_pw_memory:no_destructor",
+    "$dir_pw_sync:lock_annotations",
   ]
 }
 
 pw_test("system_time_provider_test") {
-  enable_if =
-      pw_chrono_SYSTEM_CLOCK_BACKEND != "" &&
-      pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" && pw_thread_YIELD_BACKEND != ""
+  enable_if = pw_chrono_SYSTEM_CLOCK_BACKEND != "" &&
+              pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != "" &&
+              pw_thread_SLEEP_BACKEND != "" && pw_thread_YIELD_BACKEND != ""
   sources = [ "system_time_provider_test.cc" ]
   deps = [
     ":system_time_provider",
     ":testing",
+    "$dir_pw_thread:sleep",
   ]
 }
 

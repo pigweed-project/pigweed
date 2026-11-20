@@ -23,6 +23,7 @@
 #include "pw_async2/task.h"
 #include "pw_async2/time_provider.h"
 #include "pw_chrono/system_clock.h"
+#include "pw_thread/sleep.h"
 #include "pw_unit_test/framework.h"
 
 namespace {
@@ -95,6 +96,54 @@ TEST(SystemTimeProvider, CancelThroughDestruction) {
 
   std::ignore = GetSystemTimeProvider().WaitFor(kRoundedArbitraryLongDuration);
   // TimeFuture destroyed here and not used.
+}
+
+TEST(SystemTimeProvider, InvokesTimerAfterCancelledEarlierTimer) {
+  SystemClock::time_point start_time = SystemClock().now();
+  // Arm and cancel a timer that would expire before the next one.
+  std::ignore = GetSystemTimeProvider().WaitUntil(start_time + 10ms);
+
+  SystemClock::time_point expected_completion = start_time + 50ms;
+  WaitTask task(GetSystemTimeProvider().WaitUntil(expected_completion));
+  DispatcherForTest dispatcher;
+  dispatcher.AllowBlocking();
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+  ASSERT_TRUE(task.time_completed_.IsReady());
+  EXPECT_GE(*task.time_completed_, expected_completion);
+}
+
+TEST(SystemTimeProvider, InvokesTimerBeforeCancelledLaterTimer) {
+  SystemClock::time_point start_time = SystemClock().now();
+  // Arm and cancel a timer that would expire after the next one.
+  std::ignore = GetSystemTimeProvider().WaitUntil(start_time + 10s);
+
+  SystemClock::time_point expected_completion = start_time + 50ms;
+  WaitTask task(GetSystemTimeProvider().WaitUntil(expected_completion));
+  DispatcherForTest dispatcher;
+  dispatcher.AllowBlocking();
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+  ASSERT_TRUE(task.time_completed_.IsReady());
+  EXPECT_GE(*task.time_completed_, expected_completion);
+  EXPECT_LT(*task.time_completed_, start_time + 10s);
+}
+
+TEST(SystemTimeProvider, InvokesTimerAfterCancelledTimerExpires) {
+  // Arm and cancel a short timer, then sleep past its deadline so the
+  // underlying SystemTimer fires with no pending TimeFutures.
+  std::ignore = GetSystemTimeProvider().WaitFor(10ms);
+  pw::this_thread::sleep_for(25ms);
+
+  // Verify that the provider re-arms the SystemTimer for a subsequent timer.
+  SystemClock::time_point expected_completion = SystemClock::now() + 20ms;
+  WaitTask task(GetSystemTimeProvider().WaitUntil(expected_completion));
+  DispatcherForTest dispatcher;
+  dispatcher.AllowBlocking();
+  dispatcher.Post(task);
+  dispatcher.RunToCompletion();
+  ASSERT_TRUE(task.time_completed_.IsReady());
+  EXPECT_GE(*task.time_completed_, expected_completion);
 }
 
 }  // namespace

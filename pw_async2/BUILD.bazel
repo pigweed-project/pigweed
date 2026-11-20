@@ -714,6 +714,7 @@ pw_cc_test(
         ":testing",
         ":time_provider",
         "//pw_chrono:system_clock",
+        "//pw_thread:sleep",
     ],
 )
 

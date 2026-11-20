@@ -486,6 +486,7 @@ pw_add_library(pw_async2.system_time_provider STATIC
   PRIVATE_DEPS
     pw_chrono.system_timer
     pw_memory.no_destructor
+    pw_sync.lock_annotations
   PUBLIC_INCLUDES
     public
 )
@@ -499,6 +500,7 @@ if((NOT "${pw_chrono.system_clock_BACKEND}" STREQUAL "") AND
       pw_async2.system_time_provider
       pw_async2.testing
       pw_chrono.system_clock
+      pw_thread.sleep
     GROUPS
       modules
       pw_async2
