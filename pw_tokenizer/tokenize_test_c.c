@@ -15,6 +15,7 @@
 // This function tests the C implementation of tokenization API. These functions
 // are called from the main C++ test file.
 
+#include "pw_tokenizer/nested_tokenization.h"
 #include "pw_tokenizer/tokenize.h"
 #include "pw_tokenizer_private/tokenize_test.h"
 
@@ -55,4 +56,8 @@ void pw_tokenizer_ToBufferTest_SequentialZigZag(void* buffer,
 
 void pw_tokenizer_ToBufferTest_Requires8(void* buffer, size_t* buffer_size) {
   PW_TOKENIZE_TO_BUFFER(buffer, buffer_size, TEST_FORMAT_REQUIRES_8, "hi", -7);
+}
+
+const char* pw_tokenizer_TokenBitFieldFormatTest(void) {
+  return PW_TOKEN_BIT_FIELD_FMT("low", TEST_BIT_FIELD_LOW_BITS, "high");
 }

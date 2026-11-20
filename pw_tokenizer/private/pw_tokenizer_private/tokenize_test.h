@@ -40,4 +40,9 @@ void pw_tokenizer_ToCallbackTest_SequentialZigZag(
 
 void pw_tokenizer_ToBufferTest_Requires8(void* buffer, size_t* buffer_size);
 
+// A macro, rather than a literal, to test that the bit count is expanded.
+#define TEST_BIT_FIELD_LOW_BITS 5
+
+const char* pw_tokenizer_TokenBitFieldFormatTest(void);
+
 PW_EXTERN_C_END

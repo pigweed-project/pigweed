@@ -272,6 +272,81 @@ tokenized.
      - ``%s``
      - ``$QA19pfEQ``
 
+.. _module-pw_tokenizer-bit-field-tokens:
+
+Bit field tokens
+----------------
+A nested token can hold two tokens from different domains in one 32-bit value,
+such as an enum value in the low bits and a masked token for a message in the
+high bits. Bit field tokens have the following format:
+
+.. code-block:: text
+
+   ${LOW_DOMAIN/BITS,HIGH_DOMAIN}[BASE]#TOKEN
+
+``BITS`` is a decimal integer from ``0`` to ``32`` without leading zeros (other
+than ``0``), giving the number of low bits of ``TOKEN`` that are looked up in
+``LOW_DOMAIN``. The remaining ``32 - BITS`` high bits are looked up in
+``HIGH_DOMAIN``. The detokenizer replaces the nested token with the low field's
+string followed immediately by the high field's string. For example, if ``0x5``
+is ``NOT_FOUND`` in the ``::pw::Status`` domain and ``0xfe8fd640`` is
+``: No such key`` in the ``pw_status_message`` domain,
+``${::pw::Status/5,pw_status_message}#fe8fd645`` is detokenized as
+``NOT_FOUND: No such key``.
+
+* **Domains**: ``LOW_DOMAIN`` and ``HIGH_DOMAIN`` each specify a
+  :ref:`domain <module-pw_tokenizer-domains>`: a domain name, empty (``""``) for
+  the default domain (e.g. ``${/5,}``), or a nested token with an empty or
+  literal domain (one level of domain nesting, such as
+  ``${${enum_domain}#%08x/5,pw_status_message}#%08x``). Deeper domain nesting is
+  not supported.
+* **Whitespace**: ASCII whitespace is allowed and stripped around ``{``, ``/``,
+  ``,``, and ``}``, and within domain names. Whitespace is not allowed between
+  ``$`` and ``{``, inside ``BITS``, after ``}``, or inside ``[BASE]#TOKEN``.
+* **Masking**: Fields are masked in place, not shifted. In the example above,
+  the low field's token is ``0x00000005`` and the high field's token is
+  ``0xfe8fd640``.
+* **Zero-width fields**: A field with no bits (``BITS`` is ``0`` or ``32``) is
+  inactive; it is not looked up and produces no output.
+* **Zero values**: An active field with a value of ``0`` is looked up like any
+  other token. To support a field that may be empty, such as an optional
+  message, add an entry for token ``0`` to the field's domain. The empty
+  string's token is ``0``, so tokenizing ``""`` in the domain adds an entry that
+  produces no output.
+* **Unresolved fields**: If one active field can be detokenized and the other
+  cannot, the unresolved field is written as a base-16 plain nested token
+  (``${DOMAIN}#xxxxxxxx`` using the configured prefix, whitespace-stripped
+  domain with ``{}`` retained even if empty, and 8 lowercase zero-padded hex
+  digits), regardless of the input base or whitespace:
+  ``NOT_FOUND${pw_status_message}#fe8fd640``. If no active field can be
+  detokenized (including when ``BITS`` is ``0`` or ``32`` and the single active
+  field is unresolved), the text is left unchanged.
+* **Base**: ``#`` is required. ``BASE`` may be ``16`` (or omitted, so ``#`` and
+  ``16#`` both expect 8 case-insensitive hex digits) or ``10`` (``10#`` followed
+  by 10 decimal digits for an unsigned 32-bit value ``<= 4294967295``). Base64
+  (with or without ``64#``) is not supported. Format strings should use
+  ``#%08x`` (as in :cc:`PW_TOKEN_BIT_FIELD_FMT`) or unsigned ``10#%010u`` rather
+  than ``10#%010d``, since signed ``%d`` formats tokens with bit 31 set using a
+  leading ``-`` that will not match 10 digits.
+
+The format may be expanded in the future to support more than two fields.
+
+Bit field tokens are currently only decoded by the Python detokenizer. Other
+detokenizers leave them as text.
+
+To pass a bit field token as an argument, tokenize the high field's string with
+:cc:`PW_TOKENIZE_STRING_MASK` so its low bits are zero, OR in a low field value
+that fits in ``BITS`` bits, and format the result with
+:cc:`PW_TOKEN_BIT_FIELD_FMT`. An enum tokenized with :cc:`PW_TOKENIZE_ENUM` can
+be used directly as the low field: its domain is the enum's fully qualified name
+and its tokens are the enum values.
+
+.. literalinclude:: tokenize_test.cc
+   :language: c++
+   :start-after: [pw_tokenizer-bit-field-token]
+   :end-before: [pw_tokenizer-bit-field-token]
+   :dedent:
+
 .. _module-pw_tokenizer-custom-macro:
 
 Tokenizing enums
@@ -293,7 +368,7 @@ All enum values in the enum declaration must be present in the macro, and the
 macro must be in the same namespace as the enum to be able to use the
 :cc:`EnumToString <pw::EnumToString>` function and avoid compiler errors.
 
-.. literalinclude: enum_test.cc
+.. literalinclude:: enum_test.cc
    :language: cpp
    :start-after: [pw_tokenizer-examples-enum]
    :end-before: [pw_tokenizer-examples-enum]
@@ -306,7 +381,7 @@ values. This macro will create database entries that include the domain name
 (fully qualified enum name), enum value, and a tokenized form of the custom
 string for the enum value.
 
-.. literalinclude: enum_test.cc
+.. literalinclude:: enum_test.cc
    :language: cpp
    :start-after: [pw_tokenizer-examples-enum-custom]
    :end-before: [pw_tokenizer-examples-enum-custom]

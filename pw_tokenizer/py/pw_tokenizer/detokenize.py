@@ -82,11 +82,18 @@ _BASE64_TOKEN_REGEX = (
     r'(?:[A-Za-z0-9+/\-_]{3}=|[A-Za-z0-9+/\-_]{2}==)?'
     r')'
 )
+_DOMAIN_REGEX = r'\s*|\s*[a-zA-Z_:][a-zA-Z0-9_:\s]*'
+
+# Plain nested tokens are 32-bit integers.
+_TOKEN_BITS = 32
+_MAX_TOKEN = (1 << _TOKEN_BITS) - 1
 
 
 def _token_regex(prefix: str) -> Pattern[bytes]:
     """Returns a regular expression for prefixed tokenized strings."""
     base_prefix = re.escape(encode.NESTED_TOKEN_BASE_PREFIX)
+    width_prefix = re.escape(encode.NESTED_BIT_FIELD_WIDTH_PREFIX)
+    field_separator = re.escape(encode.NESTED_BIT_FIELD_SEPARATOR)
 
     return re.compile(
         (
@@ -95,7 +102,13 @@ def _token_regex(prefix: str) -> Pattern[bytes]:
             # Optional domain specifier, e.g. '{domain}' (defaults to empty).
             fr'(?P<domainspec>('
             fr'{re.escape(encode.NESTED_DOMAIN_START_PREFIX)}'
-            fr'(?P<domain>\s*|\s*[a-zA-Z_:][a-zA-Z0-9_:\s]*)'
+            fr'(?P<domain>{_DOMAIN_REGEX})'
+            # Optional bit field specifier, e.g. '/5,high_domain': the low bits
+            # of the token are looked up in the first domain and the remaining
+            # high bits in the second. The bit count is at most two digits so
+            # that int() cannot reject it for having too many digits.
+            fr'(?:{width_prefix}\s*(?P<low_bits>0|[1-9][0-9]?)\s*'
+            fr'{field_separator}(?P<high_domain>{_DOMAIN_REGEX}))?'
             fr'{re.escape(encode.NESTED_DOMAIN_END_PREFIX)}'
             fr'))?'
             fr'(?:'
@@ -111,6 +124,15 @@ def _token_regex(prefix: str) -> Pattern[bytes]:
             fr')'
         ).encode()
     )
+
+
+def _domain_name(domain: bytes | None) -> str:
+    """Returns the name of a domain matched by the token regex."""
+    if domain is None:
+        return tokens.DEFAULT_DOMAIN
+
+    # Whitespace in domain names is ignored.
+    return ''.join(domain.decode().split())
 
 
 class DetokenizedString:
@@ -410,16 +432,15 @@ class Detokenizer:
         """Decodes prefixed tokens for one of multiple formats."""
         basespec = match.group('basespec')
         base = match.group('base')
-        domain = match.group('domain')
-
-        if domain is None:
-            domain = tokens.DEFAULT_DOMAIN
-        else:
-            domain = domain.decode()
-
-        domain = ''.join(domain.split())
+        domain = _domain_name(match.group('domain'))
+        low_bits = match.group('low_bits')
 
         if not basespec or (base == b'64'):
+            # Base64 messages may have arguments, so they cannot be split into
+            # bit fields.
+            if low_bits is not None:
+                return match.group(0)
+
             return self._detokenize_once_base64(
                 match.group(0), domain, match.group('base64')
             )
@@ -431,13 +452,28 @@ class Detokenizer:
         if not token:
             return match.group(0)
 
-        return self._detokenize_once_token(match.group(0), domain, token, base)
+        if low_bits is None:
+            return self._detokenize_once_token(
+                match.group(0), domain, token, base
+            )
+
+        return self._detokenize_once_bit_fields(
+            match.group(0),
+            domain,
+            int(low_bits),
+            _domain_name(match.group('high_domain')),
+            int(token, int(base)),
+        )
 
     def _detokenize_once_token(
         self, original: bytes, domain: str, token_str: bytes, base: bytes
     ) -> bytes:
         """Performs lookup on a plain token"""
-        token = int(token_str, int(base))
+        result = self._lookup_plain_token(domain, int(token_str, int(base)))
+        return original if result is None else result
+
+    def _lookup_plain_token(self, domain: str, token: int) -> bytes | None:
+        """Returns the string for a plain token, or None if it is not unique."""
         entries = self.database.domains[domain][token]
 
         # Detokenize if there is only one match, or if there are multiple
@@ -449,7 +485,58 @@ class Detokenizer:
         if len(active := [e for e in entries if e.date_removed is None]) == 1:
             return str(active[0]).encode()
 
-        return original
+        return None
+
+    def _detokenize_once_bit_fields(
+        self,
+        original: bytes,
+        low_domain: str,
+        low_bits: int,
+        high_domain: str,
+        token: int,
+    ) -> bytes:
+        """Performs lookups on the low and high bit fields of a plain token"""
+        # Only 32-bit tokens have bit fields. Base 10 tokens have enough digits
+        # to exceed 32 bits.
+        if low_bits > _TOKEN_BITS or token > _MAX_TOKEN:
+            return original
+
+        low_mask = (1 << low_bits) - 1
+        output: list[bytes] = []
+        resolved = False
+
+        for domain, mask in (
+            (low_domain, low_mask),
+            (high_domain, _MAX_TOKEN ^ low_mask),
+        ):
+            # A zero-width field has no value to look up or display.
+            if not mask:
+                continue
+
+            # Fields are masked in place rather than shifted, so the high field
+            # is a token that was masked when it was created (e.g. with
+            # PW_TOKENIZE_STRING_MASK) to leave room for the low field.
+            value = token & mask
+            text = self._lookup_plain_token(domain, value)
+
+            if text is None:
+                # Keep the field's value as a plain nested token so that it is
+                # not lost when only the other field can be detokenized.
+                text = self._format_plain_token(domain, value)
+            else:
+                resolved = True
+
+            output.append(text)
+
+        return b''.join(output) if resolved else original
+
+    def _format_plain_token(self, domain: str, token: int) -> bytes:
+        """Returns the token as a base 16 plain nested token."""
+        return (
+            f'{self._prefix}{encode.NESTED_DOMAIN_START_PREFIX}{domain}'
+            f'{encode.NESTED_DOMAIN_END_PREFIX}'
+            f'{encode.NESTED_TOKEN_BASE_PREFIX}{token:08x}'
+        ).encode()
 
     def _detokenize_once_base64(
         self,

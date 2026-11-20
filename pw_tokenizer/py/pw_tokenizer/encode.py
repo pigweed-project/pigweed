@@ -27,6 +27,11 @@ NESTED_TOKEN_PREFIX = '$'
 NESTED_TOKEN_BASE_PREFIX = '#'
 NESTED_DOMAIN_START_PREFIX = '{'
 NESTED_DOMAIN_END_PREFIX = '}'
+# In a bit field token, e.g. ${low_domain/5,high_domain}#01234567, the width
+# prefix separates the low domain from its bit count and the separator ends the
+# low field.
+NESTED_BIT_FIELD_WIDTH_PREFIX = '/'
+NESTED_BIT_FIELD_SEPARATOR = ','
 
 
 def _zig_zag_encode(value: int) -> int:

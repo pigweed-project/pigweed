@@ -55,6 +55,21 @@ class TestDetokenizeProtoFields(unittest.TestCase):
         detokenize_fields(_DETOKENIZER, proto)
         self.assertEqual(proto.message, b"This string has a recursive token")
 
+    def test_binary_with_bit_field_token(self) -> None:
+        detokenizer = detokenize.Detokenizer(
+            tokens.Database(
+                [
+                    tokens.TokenizedStringEntry(1, 'Read ${code/4,msg}#%08x'),
+                    tokens.TokenizedStringEntry(5, 'NOT_FOUND', 'code'),
+                    tokens.TokenizedStringEntry(0x20, ': No such key', 'msg'),
+                ]
+            )
+        )
+        # The argument is 0x25: code 5 in the low 4 bits and message 0x20.
+        proto = TheMessage(message=b'\x01\x00\x00\x00\x4a')
+        detokenize_fields(detokenizer, proto)
+        self.assertEqual(proto.message, b'Read NOT_FOUND: No such key')
+
     def test_base64(self) -> None:
         base64_msg = encode.prefixed_base64(b'\xDD\xCC\xBB\xAA\x07company')
         proto = TheMessage(message=base64_msg.encode())

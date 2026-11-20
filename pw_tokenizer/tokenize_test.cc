@@ -24,6 +24,7 @@
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_string/string.h"
 #include "pw_tokenizer/hash.h"
+#include "pw_tokenizer/nested_tokenization.h"
 #include "pw_tokenizer_private/tokenize_test.h"
 #include "pw_unit_test/framework.h"
 #include "pw_varint/varint.h"
@@ -477,6 +478,112 @@ TEST_F(TokenizeToBuffer, Mask) {
 
   ASSERT_EQ(expected.size(), message_size);
   EXPECT_EQ(std::memcmp(expected.data(), buffer_, expected.size()), 0);
+}
+
+TEST(TokenBitFieldFormat, ExpandsToBitFieldToken) {
+  EXPECT_STREQ(PW_TOKEN_BIT_FIELD_FMT("::pw::Status", 5, "pw_status_message"),
+               PW_TOKENIZER_NESTED_PREFIX_STR
+               "{::pw::Status/5,pw_status_message}#%08" PRIx32);
+}
+
+TEST(TokenBitFieldFormat, EmptyDomains) {
+  EXPECT_STREQ(PW_TOKEN_BIT_FIELD_FMT("", 5, ""),
+               PW_TOKENIZER_NESTED_PREFIX_STR "{/5,}#%08" PRIx32);
+}
+
+TEST(TokenBitFieldFormat, NestedDomains) {
+  EXPECT_STREQ(PW_TOKEN_BIT_FIELD_FMT(
+                   PW_TOKEN_FMT("enum_domain"), 5, "pw_status_message"),
+               PW_TOKENIZER_NESTED_PREFIX_STR
+               "{" PW_TOKENIZER_NESTED_PREFIX_STR "{enum_domain}#%08" PRIx32
+               "/5,pw_status_message}#%08" PRIx32);
+  EXPECT_STREQ(
+      PW_TOKEN_BIT_FIELD_FMT(PW_TOKEN_FMT(), 5, PW_TOKEN_FMT("high_domain")),
+      PW_TOKENIZER_NESTED_PREFIX_STR
+      "{" PW_TOKENIZER_NESTED_PREFIX_STR "#%08" PRIx32
+      "/5," PW_TOKENIZER_NESTED_PREFIX_STR "{high_domain}#%08" PRIx32
+      "}#%08" PRIx32);
+}
+
+TEST(TokenBitFieldFormat, NoLowBits) {
+  EXPECT_STREQ(PW_TOKEN_BIT_FIELD_FMT("low", 0, "high"),
+               PW_TOKENIZER_NESTED_PREFIX_STR "{low/0,high}#%08" PRIx32);
+}
+
+TEST(TokenBitFieldFormat, NoHighBits) {
+  EXPECT_STREQ(PW_TOKEN_BIT_FIELD_FMT("low", 32, "high"),
+               PW_TOKENIZER_NESTED_PREFIX_STR "{low/32,high}#%08" PRIx32);
+}
+
+TEST(TokenBitFieldFormat, C_LowBitsMacroIsExpanded) {
+  EXPECT_STREQ(pw_tokenizer_TokenBitFieldFormatTest(),
+               PW_TOKENIZER_NESTED_PREFIX_STR "{low/5,high}#%08" PRIx32);
+}
+
+[[maybe_unused]] void TokenBitFieldFormatForbidTooManyLowBits() {
+#if PW_NC_TEST(TokenBitFieldFormatForbidTooManyLowBits)
+  PW_NC_EXPECT("_PW_TOKEN_BITS_MUST_USE_PLAIN_INT_LITERAL_33");
+
+  [[maybe_unused]] const char* format =
+      PW_TOKEN_BIT_FIELD_FMT("low", 33, "high");
+#endif  // PW_NC_TEST
+}
+
+[[maybe_unused]] void TokenBitFieldFormatForbidLowBitsLeadingZero() {
+#if PW_NC_TEST(TokenBitFieldFormatForbidLowBitsLeadingZero)
+  PW_NC_EXPECT("_PW_TOKEN_BITS_MUST_USE_PLAIN_INT_LITERAL_05");
+
+  [[maybe_unused]] const char* format =
+      PW_TOKEN_BIT_FIELD_FMT("low", 05, "high");
+#endif  // PW_NC_TEST
+}
+
+[[maybe_unused]] void TokenBitFieldFormatForbidLowBitsSuffix() {
+#if PW_NC_TEST(TokenBitFieldFormatForbidLowBitsSuffix)
+  PW_NC_EXPECT("_PW_TOKEN_BITS_MUST_USE_PLAIN_INT_LITERAL_5u");
+
+  [[maybe_unused]] const char* format =
+      PW_TOKEN_BIT_FIELD_FMT("low", 5u, "high");
+#endif  // PW_NC_TEST
+}
+
+[[maybe_unused]] void TokenBitFieldFormatForbidLowBitsParentheses() {
+#if PW_NC_TEST(TokenBitFieldFormatForbidLowBitsParentheses)
+  PW_NC_EXPECT("pasting");
+
+  [[maybe_unused]] const char* format =
+      PW_TOKEN_BIT_FIELD_FMT("low", (5), "high");
+#endif  // PW_NC_TEST
+}
+
+// The message encoded by this test is detokenized in detokenize_test.py. Keep
+// the format string and argument in sync.
+TEST(TokenBitFieldFormat, BitFieldToken) {
+  // DOCSTAG: [pw_tokenizer-bit-field-token]
+  // The low 5 bits hold a status code. Masking the message's token leaves
+  // those bits clear, so the two can be combined into one 32-bit word.
+  constexpr uint32_t kNoSuchKey =
+      PW_TOKENIZE_STRING_MASK("pw_status_message", 0xFFFFFFE0, ": No such key");
+  constexpr uint32_t kNotFound = 5;
+  const uint32_t status = kNoSuchKey | kNotFound;
+
+  uint8_t buffer[32];
+  size_t size_bytes = sizeof(buffer);
+  PW_TOKENIZE_TO_BUFFER(buffer,
+                        &size_bytes,
+                        "Read failed: " PW_TOKEN_BIT_FIELD_FMT(
+                            "::pw::Status", 5, "pw_status_message"),
+                        status);
+  // DOCSTAG: [pw_tokenizer-bit-field-token]
+
+  EXPECT_EQ(status, 0xfe8fd645u);
+
+  constexpr std::array<uint8_t, 8> expected =
+      ExpectedData<0xF5, 0xA6, 0x81, 0x17>(
+          "Read failed: " PW_TOKENIZER_NESTED_PREFIX_STR
+          "{::pw::Status/5,pw_status_message}#%08" PRIx32);
+  ASSERT_EQ(expected.size(), size_bytes);
+  EXPECT_EQ(std::memcmp(expected.data(), buffer, expected.size()), 0);
 }
 
 TEST_F(TokenizeToBuffer, TruncateArgs) {

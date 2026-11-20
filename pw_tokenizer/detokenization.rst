@@ -115,6 +115,10 @@ When detokenizing nested tokens in text logs:
   there is exactly one match in the database, or if there are multiple matches
   but only one active (never-removed) match.
 
+* **Bit field nested tokens**: Each field of a
+  :ref:`bit field token <module-pw_tokenizer-bit-field-tokens>` is detokenized
+  separately, following the rule for plain nested tokens.
+
 ------------------------
 Detokenization in Python
 ------------------------
