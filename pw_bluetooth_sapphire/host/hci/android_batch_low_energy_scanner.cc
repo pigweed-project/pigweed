@@ -362,7 +362,7 @@ void AndroidBatchLowEnergyScanner::QueueReadCommand() {
           return;
         }
 
-        auto view = event.view<
+        auto view = event.unchecked_view<
             android_emb::LEBatchScanReadResultsCommandCompleteEventView>();
         if (!view.Ok()) {
           bt_log(WARN,

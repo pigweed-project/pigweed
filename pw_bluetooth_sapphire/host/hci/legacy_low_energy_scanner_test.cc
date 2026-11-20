@@ -306,13 +306,12 @@ TEST_F(LegacyLowEnergyScannerTest, ParseAdvertisingReportsTruncatedEvent) {
   ASSERT_TRUE(StartScan(true));
   RunUntilIdle();
 
-  // Construct an event packet that is smaller than the minimum size of
-  // LEAdvertisingReportSubevent.
-  auto event = hci::EventPacket::New(
-      pw::bluetooth::emboss::EventHeader::IntrinsicSizeInBytes() + 1);
-  auto header = event.view<pw::bluetooth::emboss::EventHeaderWriter>();
-  header.event_code_uint().Write(hci_spec::kLEMetaEventCode);
-  header.parameter_total_size().Write(1);
+  // Construct a 3-byte LE Meta Event with kLEAdvertisingReportSubeventCode and
+  // no num_reports byte so CommandChannel dispatches it to the scanner.
+  auto event = hci::EventPacket::New<pw::bluetooth::emboss::LEMetaEventWriter>(
+      hci_spec::kLEMetaEventCode);
+  event.view_t().subevent_code().Write(
+      hci_spec::kLEAdvertisingReportSubeventCode);
 
   test_device()->SendCommandChannelPacket(event.data());
 

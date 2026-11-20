@@ -512,13 +512,13 @@ TEST_F(ExtendedLowEnergyScannerTest,
 // (smaller than the minimum subevent size) is handled gracefully without
 // asserting or crashing.
 TEST_F(ExtendedLowEnergyScannerTest, ParseAdvertisingReportsTruncatedEvent) {
-  // Construct an event packet that is smaller than the minimum size of
-  // LEExtendedAdvertisingReportSubevent.
-  auto event = hci::EventPacket::New(
-      pw::bluetooth::emboss::EventHeader::IntrinsicSizeInBytes() + 1);
-  auto header = event.view<pw::bluetooth::emboss::EventHeaderWriter>();
-  header.event_code_uint().Write(hci_spec::kLEMetaEventCode);
-  header.parameter_total_size().Write(1);
+  // Construct a 3-byte LE Meta Event with
+  // kLEExtendedAdvertisingReportSubeventCode and no num_reports byte so
+  // CommandChannel dispatches it to the scanner.
+  auto event = hci::EventPacket::New<pw::bluetooth::emboss::LEMetaEventWriter>(
+      hci_spec::kLEMetaEventCode);
+  event.view_t().subevent_code().Write(
+      hci_spec::kLEExtendedAdvertisingReportSubeventCode);
 
   test_device()->SendCommandChannelPacket(event.data());
 

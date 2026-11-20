@@ -763,4 +763,57 @@ TEST_F(AndroidBatchLowEnergyScannerTest,
   EXPECT_TRUE(wake_alarm_provider().HasPendingAlarms());
 }
 
+TEST_F(AndroidBatchLowEnergyScannerTest,
+       ReadScanResultsTruncatedCommandCompleteEvent) {
+  EXPECT_EQ(0u, wake_alarm_provider().active_leases());
+
+  int batch_scan_cmd_count = 0;
+  test_device()->pause_responses_for_opcode(
+      android_hci::kLEBatchScan, [&](fit::closure resume) {
+        batch_scan_cmd_count++;
+        if (batch_scan_cmd_count == 2) {
+          resume();
+        } else if (batch_scan_cmd_count > 2) {
+          test_device()->RemovePeer(kPublicAddr1);
+          test_device()->RemovePeer(kPublicAddr2);
+          resume();
+        }
+      });
+
+  RunFor(AndroidBatchLowEnergyScanner::kMaxReadDelay);
+  ASSERT_EQ(1, batch_scan_cmd_count);
+  ASSERT_EQ(1u, wake_alarm_provider().active_leases());
+  ASSERT_FALSE(wake_alarm_provider().HasPendingAlarms());
+
+  // Send a Command Complete event with status SUCCESS that is shorter than
+  // LEBatchScanReadResultsCommandCompleteEvent::MinSizeInBytes().
+  auto truncated = hci::EventPacket::New<
+      pw::bluetooth::emboss::SimpleCommandCompleteEventWriter>(
+      hci_spec::kCommandCompleteEventCode);
+  truncated.view_t().command_complete().num_hci_command_packets().Write(1);
+  truncated.view_t().command_complete().command_opcode_uint().Write(
+      android_hci::kLEBatchScan);
+  truncated.view_t().status().Write(pw::bluetooth::emboss::StatusCode::SUCCESS);
+  ASSERT_FALSE(truncated.ToResult().is_error());
+  ASSERT_FALSE(
+      truncated
+          .unchecked_view<
+              android_emb::LEBatchScanReadResultsCommandCompleteEventView>()
+          .Ok());
+
+  test_device()->SendCommandChannelPacket(truncated.data());
+  RunUntilIdle();
+
+  EXPECT_TRUE(scanner()->IsActiveScanning());
+  EXPECT_EQ(1, batch_scan_cmd_count);
+  EXPECT_EQ(0u, wake_alarm_provider().active_leases());
+  EXPECT_TRUE(wake_alarm_provider().HasPendingAlarms());
+
+  int peers_found = 0;
+  set_peer_found_callback([&](const LowEnergyScanResult&) { peers_found++; });
+  RunFor(AndroidBatchLowEnergyScanner::kMaxReadDelay);
+  RunUntilIdle();
+  EXPECT_EQ(2, peers_found);
+}
+
 }  // namespace bt::hci
