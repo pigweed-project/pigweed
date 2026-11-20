@@ -622,6 +622,23 @@ class SphinxRenderTest(unittest.TestCase):
         self.assertIn("   core/index\n", rendered)
         self.assertIn("   OS abstraction <pw://os/index.html>\n", rendered)
 
+        # Category docnames placed in a hand-written toctree outside the
+        # generated block are omitted so authors can control sidebar order.
+        custom_existing = (
+            existing
+            + "\n.. toctree::\n   :hidden:\n\n"
+            + "   dependencies/index\n"
+            + "   os/index\n"
+        )
+        custom_rendered = sync.render_platform_rst(
+            meta, custom_existing, external_toctree_docnames={"os/index"}
+        )
+        gen_toctree = custom_rendered.split(".. categories-end")[0].split(
+            ".. toctree::"
+        )[1]
+        self.assertIn("   core/index\n", gen_toctree)
+        self.assertNotIn("os/index", gen_toctree)
+
     def test_render_parent_category_page_without_direct_modules(self) -> None:
         """Tests rendering a parent category landing page with subcategories."""
         data = copy.deepcopy(_SAMPLE_DATA)

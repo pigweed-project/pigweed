@@ -3,234 +3,177 @@
 ===============================================
 Manage external dependencies in a Bazel project
 ===============================================
-Bazel is both a build system, and a package manager. This combination is
-extremely powerful, but does introduce some complexity. This page explains
-the core constructs you'll need to understand to get started with a Bazel
-project.
+Bazel acts as both a build system and a package manager. This page explains the
+core Bzlmod constructs used to declare, configure, and debug external
+dependencies in a Bazel project. For Pigweed's broader dependency management
+philosophy and architecture, see :ref:`docs-dependencies` and
+:ref:`docs-build-dependency-architecture`.
 
 .. _docs-bazel-dependencies-declare:
 
 -----------------
 Declare a project
 -----------------
-In Bazel, projects are defined as `Bazel Modules
-<https://bazel.build/external/module>`__. A project can be started with a single
-line in a ``MODULE.bazel`` file.
+Bazel projects are defined as `Bazel modules
+<https://bazel.build/external/module>`__ via a ``MODULE.bazel`` file at the
+project root:
 
-**MODULE.bazel**
+.. code-block:: bazel
 
-.. code-block:: python
-
+   # MODULE.bazel
    module(name = "my_project", version = "0.0.1")
 
 .. note::
 
-   You may find some Bazel projects that use a ``WORKSPACE`` file to set up a
-   project. ``WORKSPACE`` is a deprecated, legacy system that is inferior to
-   using ``MODULE.bazel``.
+   Older Bazel projects may use a ``WORKSPACE`` file instead of
+   ``MODULE.bazel``. ``WORKSPACE`` is deprecated; new projects should use
+   ``MODULE.bazel``.
 
 .. _docs-bazel-dependencies-overview:
 
 --------
 Overview
 --------
-One of Bazel's most powerful features is that in addition to being a build
-system, it is also a package manager. Before tackling any significant project
-in Bazel, it's important to understand how to use—and properly constrain—Bazel's
-package management system.
-
-Bazel has **three** major systems for managing external resources:
+Every external resource—whether source code, language rules, or prebuilt
+binaries—should be declared in ``MODULE.bazel`` and exposed to the build as an
+isolated `repository <https://bazel.build/external/overview#repository>`__.
+Bazel provides three mechanisms for managing external repositories:
 
 - :ref:`docs-bazel-dependencies-overview-modules`
 - :ref:`docs-bazel-dependencies-overview-extensions`
 - :ref:`docs-bazel-dependencies-overview-repository-rules`
 
-Each of these systems play a crucial role in how projects are structured, and
-how various projects interact with each other. Each of these allow different
-resources (source code, Bazel extensions, or arbitrary binary data) to be
-exposed as sectioned-off `repositories
-<https://bazel.build/external/overview#repository>`__.
-
-If Bazel needs a resource that is not included in the source checkout, it should
-be expressed in a ``MODULE.bazel`` somewhere.
-
 .. _docs-bazel-dependencies-overview-modules:
 
 Bazel modules
 =============
-`Bazel Modules <https://bazel.build/external/module>`__ are the de-facto unit
-for a project. Bazel modules can express dependencies on other modules,
-configure/use module extensions, and instantiate any independent
-`repository_rule
-<https://bazel.build/rules/lib/globals/bzl.html#repository_rule>`__ they need to
-function properly.
+`Bazel modules <https://bazel.build/external/module>`__ are the standard unit of
+dependency composition in Bazel. A module can depend on other modules, configure
+module extensions, and instantiate repository rules.
 
-There are some important things you should know about modules:
+Key properties of Bazel modules:
 
-#. Under normal circumstances, there is a **single**, unified definition of each
-   Bazel module. Because of this, version resolution across transitive module
-   dependencies is used to determine which version is actually used. Once a
-   version is decided, all Bazel modules will use the same definition.
-#. Module dependencies propagate. If you depend on a module that depends on
-   other modules, you inherit the same ``bazel_dep`` entries in their
-   ``MODULE.bazel``. These transitive module dependencies are not, however,
-   directly accessible from your project unless you add an explicit
-   ``bazel_dep`` on them.
-#. Modules come from `registries <https://bazel.build/external/registry>`__.
-   The `Bazel Central Registry (BCR) <https://registry.bazel.build/>`__ is the
-   most prominent registry, and is the default registry enabled in Bazel.
+#. **Single resolved version**: Bazel resolves transitive module dependencies to
+   a **single** version of each module across the entire build graph.
+#. **Strict direct visibility**: Transitive ``bazel_dep`` dependencies propagate
+   automatically, but your project cannot reference targets in a transitive
+   module unless it declares its own ``bazel_dep`` on that module.
+#. **Registry resolution**: Modules are resolved from `registries
+   <https://bazel.build/external/registry>`__, defaulting to the `Bazel Central
+   Registry (BCR) <https://registry.bazel.build/>`__.
 
 Languages and integrations
 --------------------------
-While Bazel itself natively supports building a few programming languages, the
-ecosystem is gradually migrating everything to use Bazel's extensibility
-primitives to offer language support and other integrations.
+Language rules and core build utilities are distributed as Bazel modules rather
+than built into Bazel itself. Common examples include:
 
-Just like when you declare your own project in a ``MODULE.bazel``, build support
-for various programming languages are offered through other projects that have
-done the same. Here's some examples:
-
-* `rules_cc <https://registry.bazel.build/modules/rules_cc>`__: C/C++ support.
-* `rules_rust <https://registry.bazel.build/modules/rules_rust>`__: Rust
-  support.
+* `rules_cc <https://registry.bazel.build/modules/rules_cc>`__: C/C++ build
+  rules.
+* `rules_rust <https://registry.bazel.build/modules/rules_rust>`__: Rust build
+  rules.
 * `rules_python <https://registry.bazel.build/modules/rules_python>`__: Python
-  support.
-
-In addition to this, various modules in the ecosystem provide fundamental Bazel
-building blocks to address common needs. A few of the most prominent ones are:
-
-* `platforms <https://registry.bazel.build/modules/platforms>`__: Canonical
-  definitions for ecosystem-wide platform configuration axis.
-* `bazel_skylib <https://registry.bazel.build/modules/bazel_skylib>`__: Utility
-  module with an assortment of helpers and general-purpose rules.
-
-To do anything useful in Bazel, you'll need to use community-maintained modules.
+  build rules.
+* `platforms <https://registry.bazel.build/modules/platforms>`__: Standard
+  constraint definitions for OS and CPU target platforms.
+* `bazel_skylib <https://registry.bazel.build/modules/bazel_skylib>`__: Common
+  Starlark helpers and utility rules.
 
 Example: Using rules_cc
 -----------------------
-Using ``rules_cc`` requires just a single line in your ``MODULE.bazel`` file:
+Add a ``bazel_dep`` entry to ``MODULE.bazel`` to depend on ``rules_cc``:
 
-**MODULE.bazel**
+.. code-block:: bazel
 
-.. code-block:: python
-
+   # MODULE.bazel
    module(name = "my_project", version = "0.0.1")
 
    bazel_dep(name = "rules_cc", version = "0.2.4")
 
-After that, you can reference things from ``rules_cc`` with the form:
-``@rules_cc//path/to/directory:file_or_target``. There are some important
-things you should know about modules:
+Targets and files in ``rules_cc`` can then be referenced as
+``@rules_cc//path/to/directory:file_or_target``.
 
 When to use a module
 --------------------
-* You're starting a new project.
-* You need to express dependency relationships on other Bazel projects.
-* You want to define a repository rule or extension that can be used by other
-  projects.
+* Starting a new Bazel project.
+* Depending on other Bazel projects.
+* Publishing reusable build rules, repository rules, or module extensions for
+  other projects to consume.
 
 .. _docs-bazel-dependencies-overview-extensions:
 
 Module extensions
 =================
-Bazel modules use `module extensions <https://bazel.build/external/extension>`__
-to configure and unify more complex external repository definitions. One very
-common example use case for a module extension is bridging to  external package
-managers like `pip <https://pip.pypa.io/en/stable/>`__ or `cargo
-<https://doc.rust-lang.org/cargo/>`__. The underlying mechanism for module
-extensions is more widely applicable, though.
+`Module extensions <https://bazel.build/external/extension>`__ aggregate
+configuration across the module graph to generate external repositories—commonly
+to bridge external package managers such as `pip
+<https://pip.pypa.io/en/stable/>`__ or `Cargo
+<https://doc.rust-lang.org/cargo/>`__.
 
-The architecture of an extension is roughly as follows:
+An extension works in four steps:
 
-* An extension defines a configuration interface. From a user perspective, this
-  always looks like method calls on an object that specify parameters exposed by
-  the extension. Each user-facing method is technically called a `tag class
-  <https://bazel.build/rules/lib/globals/bzl#tag_class>`__.
-* Users of the extension inject metadata by calling the methods exposed by the
-  extension.
-* The implementation of the module extension scans the injected metadata from
-  all modules, and through coding and algorithms generates one or more
-  repositories.
-* Bazel modules can then expose any repository generated by the extension to
-  the current module/project scope.
+#. The extension defines a configuration schema made up of `tag classes
+   <https://bazel.build/rules/lib/globals/bzl#tag_class>`__.
+#. Modules pass configuration metadata by calling those tag methods in
+   ``MODULE.bazel``.
+#. The extension implementation reads the collected tags across all modules and
+   instantiates one or more external repositories.
+#. Modules call ``use_repo()`` to bring the generated repositories they directly
+   reference into scope.
 
 .. _docs-bazel-dependencies-overview-extensions-example:
 
 Example: libusb
 ---------------
-The following extension configures the ``libusb`` extension offered by the
-``rules_libusb`` module:
+The example below configures the ``libusb`` extension from ``rules_libusb``:
 
-**MODULE.bazel**
+.. code-block:: bazel
 
-.. code-block:: py
-
+   # MODULE.bazel
    module(name = "my_project", version = "0.0.1")
 
-   # In this example, the extension logic lives in `@rules_libusb`.
    bazel_dep(name = "rules_libusb", version = "0.1.0-rc2")
 
-   # Get access to the extension so it can be configured and used.
    libusb = use_extension("@rules_libusb//:extensions.bzl", "libusb")
 
-   # Inject metadata that declares a need for a minimum libusb version of
-   # 1.0.27 into the `source_release` tag class.
-   #
-   # NOTE: Sometimes this isn't necessary, and you can just rely on how other
-   #       modules have configured the extension.
+   # Optional if another module's default configuration is sufficient.
    libusb.source_release(min_version = "1.0.27")
 
-   # Expose the repository named `libusb` that is generated by the libusb
-   # extension.
-   #
-   # NOTE: If your project just needs to configure the extension but doesn't
-   #       need to directly reference @libusb, you can skip this.
+   # Required only if this module directly references @libusb targets.
    use_repo(libusb, "libusb")
 
 .. _docs-bazel-dependencies-overview-extensions-usage:
 
 When to use a module extension
 ------------------------------
-
-* You need to configure an external package manager that is integrated into
-  another project (like ``rules_python`` for ``pip``, or ``rules_rust`` for
-  ``cargo``).
-* You need to access a shared external package or resource that is defined by
-  a module extension.
-* You want to offer a configurable interface that results in one or more
-  repositories that contain downloaded resources or generated files that respond
-  to metadata injected by all users of the extension.
-* You want an external resource or generated repository to be shared and
-  accessible from multiple projects.
+* Integrating an external package manager (such as ``rules_python`` for ``pip``
+  or ``rules_rust`` for ``cargo``).
+* Consuming or authoring external repositories that must be shared across
+  multiple modules and resolved from combined cross-module metadata.
 
 .. _docs-bazel-dependencies-overview-repository-rules:
 
 Individual repository rules
 ===========================
-While repository rules are one of the building blocks for module extensions,
-they may also be directly used in a ``MODULE.bazel`` file through
-`use_repo_rule()
-<https://bazel.build/rules/lib/globals/module.html#use_repo_rule>`__. This
-is the only mechanism that declares a private resource. The repository
-will still work when your module is another module's dependency, but no other
-module will be able to *directly* reference its contents.
+`Repository rules <https://bazel.build/rules/lib/globals/bzl.html#repository_rule>`__
+can also be invoked directly in ``MODULE.bazel`` via `use_repo_rule()
+<https://bazel.build/rules/lib/globals/module.html#use_repo_rule>`__ to fetch a
+module-private resource. The repository remains functional when your module is
+consumed as a dependency, but no other module can reference it directly.
 
 .. caution::
 
-   If two Bazel modules make *exactly identical* repositories created through
-   ``use_repo_rule()``, they will exist as parallel duplicates.
+   If two modules instantiate identical repositories via ``use_repo_rule()``,
+   Bazel fetches and materializes them as separate duplicate repositories.
 
 Example: http_archive
 ---------------------
+.. code-block:: bazel
 
-.. code-block:: py
-
+   # MODULE.bazel
    module(name = "my_project", version = "0.0.1")
 
-   # Expose the repository rule for use.
    http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
-   # Create an isolated repository containing a toolchain.
    http_archive(
        name = "arm_gcc_linux-aarch64",
        build_file = "//bazel/toolchain:gcc_arm_none_eabi.BUILD",
@@ -241,100 +184,80 @@ Example: http_archive
 
 When to use individual repository rules
 ---------------------------------------
-
-* You want an isolated resource that can only be directly referenced
-  from within the module that called the repository rule.
+* Fetching an isolated external resource that only the declaring module needs to
+  reference.
 
 ---------------------------
 Debug external repositories
 ---------------------------
-
-Use a local version of an external resource/repository
-======================================================
-For Bazel modules:
-
-* Build with
-  ``--override_module=dep_to_override=/path/to/local/dep_to_override``
-
-For repositories created through a module extension or ``use_repo_rule()``:
-
-* Find the `canonical name
-  <https://bazel.build/external/overview#canonical-repo-name>`__:
+Override a dependency with a local directory
+============================================
+* **Bazel modules**: Pass
+  ``--override_module=dep_to_override=/path/to/local/dep_to_override``.
+* **Extension or repository-rule repos**: Look up the repository's `canonical
+  name <https://bazel.build/external/overview#canonical-repo-name>`__, then pass
+  ``--override_repository``:
 
   .. code-block:: console
 
-     $ bazel mod dump_repo_mapping "" | jq '.my_repo_to_override'
+     $ bazel mod dump_repo_mapping "" | jq -r '.my_repo_to_override'
      +_repo_rules5+my_repo_to_override
+     $ bazel build --override_repository=+_repo_rules5+my_repo_to_override=/path/to/local/repo //...
 
-* Build with
-  ``--override_repository=+_repo_rules5+my_repo_to_override=/path/to/local/my_repo_to_override``
+To check in persistent module overrides for a monorepo layout, configure a local
+Bazel registry via ``--registry``.
 
-If you want to check in overrides because you have a monorepo project layout,
-consider setting up a local in-tree Bazel registry.
-
-Locate the repository created by Bazel
-======================================
-In the ``external`` subdirectory of the ``output_base``. You can list the
-contents with the following command:
+Inspect materialized external repositories
+==========================================
+Bazel materializes external repositories under
+``$(bazel info output_base)/external``:
 
 .. code-block:: console
 
    $ ls $(bazel info output_base)/external
    rules_rust++rust+rust_toolchains
    rules_shell+
-   rules_shell++sh_configure+local_config_shell
    rules_uv+
    stardoc+
    toolchains_protoc+
 
 .. caution::
 
-   Do not modify the contents of these directories. Doing so puts Bazel into
-   an ill-defined state that may result in confusing errors.
+   Do not edit files inside ``output_base/external``; Bazel does not track
+   manual edits there and may produce inconsistent build results.
 
-Helpful flags
-=============
-* ``--override_module``: Overrides a module, pointing to a local path.
-* ``--override_repository``: Overrides a repository using its `canonical
-  repository name <https://bazel.build/external/overview#canonical-repo-name>`__
-  to point to a local path.
-* ``--registry``: Use a different registry for resolving modules. Can be a local
-  path.
-* ``--sandbox_debug``: If the build fails, retain Bazel's sandboxed view of the
-  failing action. This is extremely useful for debugging incorrect file paths,
-  or files that were not properly enumerated as inputs to the build.
+Additional debugging flags
+==========================
+* ``--registry``: Point module resolution to an alternate or ``file://`` Bazel
+  registry.
+* ``--sandbox_debug``: Retain the sandbox directory of failing build actions to
+  inspect missing or misconfigured inputs.
 
 ---------------------
 Avoid common pitfalls
 ---------------------
+Avoid duplicate repository definitions
+======================================
+Repository names introduced by ``bazel_dep``, ``use_repo``, and
+``use_repo_rule`` can coexist in parallel if given different apparent names,
+allowing the same dependency to enter a build twice under separate repositories.
 
-Prevent multiple definitions of the same repository
-===================================================
-In the situation where the same repository name is used by a bazel module,
-module extension, and repository created via ``use_repo_rule()``, all
-definitions will happily coexist **in parallel**. Be careful, as this
-can cause problems where the same resource enters the build through multiple
-paths.
+Do not use an ``external/`` directory
+=====================================
+``external/`` is reserved by Bazel (`bazelbuild/bazel#4508
+<https://github.com/bazelbuild/bazel/issues/4508>`__); do not place project
+files under a top-level ``external/`` directory.
 
-Don't place resources in an ``external/`` directory
-===================================================
-Do not place any Bazel resources in ``external/``. That directory name is
-silently reserved by Bazel. (`bazelbuild/bazel#4508
-<https://github.com/bazelbuild/bazel/issues/4508>`__)
-
-Properly ignore nested projects
-===============================
-Without additional configuration, Bazel will fail with inscrutable errors
-when a Bazel module lives within another module. You can use a ``.bazelignore``
-file to tell Bazel to ignore specific subdirectories. If you need wildcard
-expressions in ignore patterns, use `ignore_directories()
-<https://bazel.build/rules/lib/globals/repo#ignore_directories>`__ in a
-``REPO.bazel`` file placed adjacent to your project's ``MODULE.bazel`` file.
+Ignore nested Bazel workspaces
+==============================
+Nested ``MODULE.bazel`` projects inside a repository cause build errors unless
+excluded. Add fixed paths to ``.bazelignore``, or use `ignore_directories()
+<https://bazel.build/rules/lib/globals/repo#ignore_directories>`__ in
+``REPO.bazel`` when wildcard patterns are needed.
 
 ---------
 Resources
 ---------
-
 * `MODULE.bazel reference <https://bazel.build/rules/lib/globals/module>`__
 * `External dependencies overview <https://bazel.build/external/overview>`__
 * `Bazel modules <https://bazel.build/external/module>`__

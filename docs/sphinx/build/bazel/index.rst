@@ -65,6 +65,16 @@ Explore other Bazel topics
       A deep-dive into the Bazel patterns Pigweed uses to express that a build
       target is compatible with a platform
 
+.. grid:: 2
+
+   .. grid-item-card:: :octicon:`shield-check` Dependency architecture
+      :link: docs-build-dependency-architecture
+      :link-type: ref
+      :class-item: sales-pitch-cta-primary
+
+      Explore Pigweed's architecture for managing Bzlmod, crates.io, PyPI, and
+      CIPD dependencies across online, enterprise, and air-gapped environments.
+
 .. toctree::
    :maxdepth: 2
    :hidden:
@@ -74,6 +84,7 @@ Explore other Bazel topics
    quickstart
    integration/index
    dependencies
+   Dependency architecture <pw://build/dependency_architecture.html>
    mcu-setup
    compatibility
    ../../third_party/crates_io/docs

@@ -9,7 +9,7 @@ See :ref:`docs-concepts-build-system` for more information.
 -------
 General
 -------
-.. grid:: 1
+.. grid:: 2
 
    .. grid-item-card:: :octicon:`code-square` Overview
       :link: docs-build-systems-overview
@@ -17,6 +17,14 @@ General
       :class-item: sales-pitch-cta-secondary
 
       A high-level explanation of Pigweed's approach to build systems.
+
+   .. grid-item-card:: :octicon:`shield-check` Dependency architecture
+      :link: docs-build-dependency-architecture
+      :link-type: ref
+      :class-item: sales-pitch-cta-secondary
+
+      Pigweed's architecture for managing Bzlmod, crates.io, PyPI, and CIPD
+      dependencies across online, enterprise, and air-gapped workspaces.
 
 -----
 Bazel
@@ -91,6 +99,7 @@ CMake
 
    self
    Overview <overview>
+   Dependency architecture <dependency_architecture>
    bazel/index
    gn/index
    cmake/index

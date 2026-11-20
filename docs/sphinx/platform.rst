@@ -658,20 +658,29 @@ Learn more: :doc:`crypto/index`
    hw/index
    core/index
    test/index
-   build/index
-   toolchains/index
-   devtools/index
-   crypto/index
 
 .. +----------------------------------------------------------+
 .. | END OF AUTO-GENERATED SECTION                            |
 .. +----------------------------------------------------------+
 .. categories-end
 
+------------
+Dependencies
+------------
+External dependency governance, version control, and software supply chain
+security.
+
+Learn more: :doc:`dependencies/index`
+
 .. toctree::
    :maxdepth: 1
    :hidden:
 
+   Dependencies <dependencies/index>
+   build/index
+   toolchains/index
+   devtools/index
+   crypto/index
    Module index <modules>
    Module structure <module_structure>
    facades

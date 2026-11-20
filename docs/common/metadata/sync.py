@@ -1005,6 +1005,7 @@ def render_platform_rst(
 ) -> str:
     """Renders //docs/sphinx/platform.rst, the index of every module."""
     before, after = RST_MARKERS.split(existing, "//docs/sphinx/platform.rst")
+    local_toctree_docnames = _toctree_docnames_in_text(f"{before}\n{after}", "")
     lines = [
         RST_MARKERS.start,
         *RST_MARKERS.notice,
@@ -1030,6 +1031,10 @@ def render_platform_rst(
     for category_id in meta.top_level_categories():
         category = meta.categories[category_id]
         docname = meta.category_docname(category_id)
+        if any(
+            fnmatch.fnmatchcase(docname, pat) for pat in local_toctree_docnames
+        ):
+            continue
         if any(
             fnmatch.fnmatchcase(docname, pat)
             for pat in external_toctree_docnames
