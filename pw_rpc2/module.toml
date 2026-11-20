@@ -14,7 +14,7 @@
 
 status = "unstable"
 tagline = "Next gen, zero-copy async RPC with end-to-end backpressure"
-languages = ["C++"]
+languages = ["C++", "Python"]
 
 [category]
 id = "comms"

@@ -16,14 +16,14 @@
 This mirrors :py:class:`pw_rpc2.Client`, with coroutines in place of blocking
 operations:
 
-.. code-block:: python
+.. code-block:: py
 
    from pw_rpc2 import aio
    from pw_transport import framed_tcp
    from echo_pb import echo_pb2
 
    async with await aio.Client.connect(
-       lambda: framed_tcp.connect('localhost', 8080), [echo_pb2]
+       lambda: framed_tcp.connect('localhost', 8000), [echo_pb2]
    ) as client:
        echo = client.rpcs.examples.Echo
 
@@ -304,6 +304,7 @@ class MethodClient(BaseMethodClient):
         rpc2_timeout: float | None = None,
         **fields: Any,
     ) -> Any:
+        """Returns a response coroutine (unary) or call handle (streaming)."""
         if self._method.type is MethodType.UNARY:
             payload = self._initial_payload(request, fields)
             timeout = resolve_timeout(

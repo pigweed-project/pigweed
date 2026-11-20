@@ -489,6 +489,7 @@ sphinx_build_binary(
         "//pw_presubmit/py:pw_presubmit",
         "//pw_protobuf_compiler/py:pw_protobuf_compiler",
         "//pw_rpc/py:pw_rpc_benchmark",
+        "//pw_rpc2/py:pw_rpc2",
         "//pw_status/py:pw_status",
         "//pw_system/py:device_sim",
         "//pw_system/py:pw_system_benchmark_runner",

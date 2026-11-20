@@ -18,7 +18,8 @@ connection model, and zero-copy packet handling.
 
    ``pw_rpc2`` is under active development. C++ support includes a server and
    client, with support for making calls and defining services with either raw
-   or PWPB APIs, manual async state machines or coroutines.
+   or PWPB APIs, manual async state machines or coroutines. Python support
+   includes a synchronous and ``asyncio`` host client.
 
    Other language runtimes are planned.
 
@@ -68,6 +69,28 @@ C++ documentation
       **Testing services and clients.**
       Unit test ``pw_rpc2`` services and clients in-process with
       ``TestHarness``.
+
+--------------------
+Python documentation
+--------------------
+.. grid:: 2
+
+   .. grid-item-card:: :octicon:`terminal` Python client
+      :link: module-pw_rpc2-python
+      :link-type: ref
+      :class-item: sales-pitch-cta-primary
+
+      **Synchronous and asyncio host client.**
+      Connect to a ``pw_rpc2`` server, build service clients at runtime from
+      protobuf descriptors, and call unary and streaming RPCs.
+
+   .. grid-item-card:: :octicon:`book` Python API reference
+      :link: module-pw_rpc2-python-api
+      :link-type: ref
+      :class-item: sales-pitch-cta-primary
+
+      **Classes, calls, and exceptions.**
+      Generated reference for ``pw_rpc2`` and ``pw_rpc2.aio``.
 
 -------------------------
 Protocol and architecture
@@ -132,6 +155,8 @@ Evaluation and migration
    C++ client and server <cpp>
    C++ examples <examples>
    C++ Unit testing <testing>
+   Python client <python>
+   Python API reference <python_api>
    Wire protocol <protocol>
    Why RPC2? <why>
    RPC1 vs. RPC2 <comparison>

@@ -97,8 +97,9 @@ systems, some of which will be described in more detail in sections below.
 
    * - Language support
      - C++ (Nanopb, pwpb, raw), Python, TypeScript, Java.
-     - Initially C++ (raw and pwpb APIs, manual polling or C++20 coroutines),
-       with Rust (``no_std``, Embassy) and others planned.
+     - C++ (raw and pwpb APIs, manual polling or C++20 coroutines) and Python
+       (synchronous and ``asyncio`` client), with Rust (``no_std``, Embassy) and
+       others planned.
 
    * - :ref:`Coexistence and migration <module-pw_rpc2-comparison-migration>`
      - Existing C++ services (Nanopb, pwpb, raw) can run unmodified on an RPC2
@@ -198,12 +199,12 @@ Production readiness and ecosystem
   millions of production devices. It has mature host tooling, including an
   interactive Python REPL (:ref:`module-pw_console`), WebSerial/WebUSB clients
   in TypeScript, and Android/JVM clients in Java.
-* **RPC2** is new and under active development. The initial C++ implementation
-  has yet to ship in a product, while other languages are in various stages of
-  planning.
+* **RPC2** is new and under active development. The C++ implementation and
+  Python client have yet to ship in a product, while other languages (such as
+  Rust, TypeScript, and Java) are still planned.
 
-If you require stability, or need to communicate with devices written in other
-languages **today**, pick RPC1.
+If you require production stability, or need Nanopb, TypeScript, or Java support
+**today**, pick RPC1.
 
 .. _module-pw_rpc2-comparison-migration:
 

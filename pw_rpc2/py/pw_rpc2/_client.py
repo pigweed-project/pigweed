@@ -16,14 +16,14 @@
 Service and method clients are created at runtime from protobuf descriptors, so
 no code generation is needed:
 
-.. code-block:: python
+.. code-block:: py
 
    import pw_rpc2
    from pw_transport import framed_tcp
    from echo_pb import echo_pb2
 
    with pw_rpc2.Client(
-       framed_tcp.connect('localhost', 8080), [echo_pb2]
+       framed_tcp.connect('localhost', 8000), [echo_pb2]
    ) as client:
        echo = client.rpcs.examples.Echo
 
@@ -331,7 +331,7 @@ class BaseMethodClient:
 
     @property
     def type(self) -> MethodType:
-        """The method's :py:class:`MethodType` streaming mode."""
+        """The method's :py:class:`~pw_rpc2.MethodType` streaming mode."""
         return self._method.type
 
     @property
@@ -419,7 +419,7 @@ class MethodClient(BaseMethodClient):
     Requests are given either as a message or as keyword arguments for the
     request's fields:
 
-    .. code-block:: python
+    .. code-block:: py
 
        echo.Echo(EchoMessage(msg='hello'))
        echo.Echo(msg='hello')
@@ -441,6 +441,7 @@ class MethodClient(BaseMethodClient):
         rpc2_timeout: float | None = None,
         **fields: Any,
     ) -> Any:
+        """Calls the RPC: returns the response (unary) or call (streaming)."""
         call = self.invoke(request, rpc2_timeout=rpc2_timeout, **fields)
 
         if not isinstance(call, UnaryCall):

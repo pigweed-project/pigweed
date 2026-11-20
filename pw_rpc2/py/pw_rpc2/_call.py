@@ -616,7 +616,7 @@ class BaseCall:
 
     @property
     def status(self) -> RpcStatus | None:
-        """The :py:class:`RpcStatus` of the call, or ``None`` while active.
+        """The :py:class:`~pw_rpc2.RpcStatus`, or ``None`` while active.
 
         A call that ended due to a local error, such as a lost connection, has
         no status.
@@ -646,7 +646,7 @@ class Call(BaseCall):
     active, which ensures that the server does not keep working on a call that
     the client abandoned:
 
-    .. code-block:: python
+    .. code-block:: py
 
        with service.StreamThings() as stream:
            for thing in stream:

@@ -55,6 +55,8 @@ sphinx_docs_library(
         "examples.rst",
         "module.toml",
         "protocol.rst",
+        "python.rst",
+        "python_api.rst",
         "size_report.rst",
         "testing.rst",
         "why.rst",

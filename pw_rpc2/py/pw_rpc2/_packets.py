@@ -308,7 +308,7 @@ _PEER_ERROR_TO_RPC_STATUS: dict[ProtocolError, RpcStatus] = {
     ProtocolError.RECEIVED_PACKET_FOR_UNKNOWN_CALL: RpcStatus.PROTOCOL_ERROR,
     ProtocolError.RECEIVED_DUPLICATE_START: RpcStatus.PROTOCOL_ERROR,
 }
-# LINT.ThenChange(//pw_rpc2/cpp/connection_task.cc:cpp_rpc2_peer_error_mapping)
+# LINT.ThenChange(//pw_rpc2/python.rst:python_doc_rpc2_peer_error_mapping)
 
 
 _HEADER = struct.Struct('<IB')  # call_id, type
