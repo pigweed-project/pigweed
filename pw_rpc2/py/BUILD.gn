@@ -35,6 +35,7 @@ pw_python_package("py") {
     "pw_rpc2/_connection.py",
     "pw_rpc2/_descriptors.py",
     "pw_rpc2/_packets.py",
+    "pw_rpc2/aio.py",
     "pw_rpc2/codegen_common.py",
     "pw_rpc2/codegen_pwpb.py",
     "pw_rpc2/codegen_raw.py",

@@ -11,7 +11,11 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
-"""Python client for pw_rpc2."""
+"""Python client for pw_rpc2.
+
+:py:class:`Client` is a synchronous, thread-safe client;
+:py:class:`pw_rpc2.aio.Client` is its asyncio counterpart.
+"""
 
 from __future__ import annotations
 
@@ -23,6 +27,7 @@ __path__ = pkgutil.extend_path(__path__, __name__)
 
 from pw_transport import SocketClosed
 
+from pw_rpc2 import aio
 from pw_rpc2._call import (
     BidirectionalStreamingCall,
     Call,
@@ -69,4 +74,5 @@ __all__ = [
     'StreamClosedError',
     'UnaryCall',
     'Writer',
+    'aio',
 ]

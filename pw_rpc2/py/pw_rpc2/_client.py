@@ -516,8 +516,7 @@ class Client:
 
         Raises:
           HandshakeError: The server did not complete the handshake.
-          TypeError: ``socket`` is not a reliable socket, or something in
-            ``protos`` does not describe services.
+          TypeError: Something in ``protos`` does not describe services.
           ValueError: Services or methods with different names have the same ID,
             a service and a package share a name, or a timeout is negative.
         """

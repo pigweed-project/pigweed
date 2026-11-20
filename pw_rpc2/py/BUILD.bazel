@@ -45,6 +45,7 @@ pw_py_library(
         "pw_rpc2/_client.py",
         "pw_rpc2/_connection.py",
         "pw_rpc2/_packets.py",
+        "pw_rpc2/aio.py",
     ],
     imports = ["."],
     deps = [

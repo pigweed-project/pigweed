@@ -38,6 +38,7 @@ import asyncio
 import collections
 import enum
 import functools
+import inspect
 import math
 import threading
 import time
@@ -428,6 +429,16 @@ class CallState:  # pylint: disable=too-many-instance-attributes
         """Awaits the single response of a call."""
         return await self._wait_async(self._poll_response_locked, timeout)
 
+    def check_can_write(self) -> None:
+        """Raises the error :py:meth:`write` would if the call cannot send."""
+        with self._changed:
+            self._check_can_write_locked()
+
+    def check_can_finish(self) -> None:
+        """Raises StreamClosedError if the request stream is already closed."""
+        with self._changed:
+            self._check_can_finish_locked()
+
     def _check_can_write_locked(self) -> None:
         # A completed call reports how it ended, which is more useful than
         # noting that the request stream was finished.
@@ -566,9 +577,21 @@ def bind_write_signature(call: BaseCall) -> None:
     unbound = getattr(type(call), 'write')
     write = getattr(call, 'write')
 
-    @functools.wraps(unbound)
-    def write_with_signature(*args: Any, **kwargs: Any) -> Any:
-        return write(*args, **kwargs)
+    write_with_signature: Callable[..., Any]
+    if inspect.iscoroutinefunction(unbound):
+
+        @functools.wraps(unbound)
+        async def _async_write(*args: Any, **kwargs: Any) -> Any:
+            return await write(*args, **kwargs)
+
+        write_with_signature = _async_write
+    else:
+
+        @functools.wraps(unbound)
+        def _sync_write(*args: Any, **kwargs: Any) -> Any:
+            return write(*args, **kwargs)
+
+        write_with_signature = _sync_write
 
     # pylint: disable-next=protected-access
     signature = call._method.request_signature()

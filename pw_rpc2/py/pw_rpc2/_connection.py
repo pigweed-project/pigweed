@@ -244,10 +244,19 @@ class Connection:  # pylint: disable=too-many-instance-attributes
             call.abandon_send()
             raise
         except BaseException:
-            self._remove(call)
-            call.abandon_send()
+            self.abandon_request(call)
             raise
         call.finish_send()
+
+    def abandon_request(self, call: CallState) -> None:
+        """Drops a call whose request will not be sent.
+
+        The server never learns of the call, so an error packet that was
+        deferred until the request was sent (e.g. for a cancellation) is
+        dropped rather than sent.
+        """
+        self._remove(call)
+        call.abandon_send()
 
     def send(self, call: CallState, packet: Packet) -> None:
         """Sends a packet for a call.
