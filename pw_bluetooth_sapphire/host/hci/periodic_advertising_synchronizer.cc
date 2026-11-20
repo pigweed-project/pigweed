@@ -734,7 +734,22 @@ void PeriodicAdvertisingSynchronizer::OnSyncEstablished(
   std::optional<ParsedSyncEstablishedSubevent> parsed_event =
       ParseSyncEstablishedSubevent(event);
   if (!parsed_event.has_value()) {
-    bt_log(WARN, "hci", "ignoring malformed Sync Established event");
+    if (state_ != State::kCreateSyncPending &&
+        state_ != State::kCreateSyncCancelPending) {
+      bt_log(WARN,
+             "hci",
+             "ignoring malformed Sync Established event in state: %d",
+             static_cast<int>(state_));
+      return;
+    }
+    bt_log(WARN,
+           "hci",
+           "malformed Sync Established event, failing advertiser list "
+           "requests");
+    // Any Sync Established event, even a malformed one, ends the pending
+    // Create Sync (Core Spec v6.3, Vol 4, Part E, 7.8.68). Reset before
+    // failing requests, which may re-enter CreateSync.
+    state_ = State::kIdle;
     FailRequestsWithEntriesInAdvertiserList(Error(HostError::kPacketMalformed));
     MaybeUpdateAdvertiserList();
     return;
