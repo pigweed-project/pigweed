@@ -80,7 +80,7 @@ BrEdrConnection::BrEdrConnection(
       peer_,
       link_->GetWeakPtr(),
       std::move(legacy_pairing_state),
-      request_ && request_->AwaitingOutgoing(),
+      /*outgoing_connection=*/request_ && request_->HasOutgoing(),
       std::move(send_auth_request_cb),
       fit::bind_member<&BrEdrConnection::OnPairingStateStatus>(this),
       low_energy_address_delegate,

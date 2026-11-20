@@ -55,9 +55,9 @@ TEST_F(BrEdrConnectionRequestTests, IncomingRequestStatusTracked) {
   EXPECT_FALSE(req.HasIncoming());
 
   req.BeginIncoming();
-  // We should now have an incoming request, but still not an outgoing
+  // We should now have an incoming request, but still not an outgoing request
   EXPECT_TRUE(req.HasIncoming());
-  EXPECT_FALSE(req.AwaitingOutgoing());
+  EXPECT_FALSE(req.HasOutgoing());
 
   // A completed request is no longer incoming
   req.CompleteIncoming();
@@ -75,8 +75,8 @@ TEST_F(BrEdrConnectionRequestTests, CallbacksExecuted) {
           [&token_destroyed] { token_destroyed = true; }),
       [&callback_called](auto, auto) { callback_called = true; });
 
-  // A freshly created request with a callback is awaiting outgoing
-  EXPECT_TRUE(req.AwaitingOutgoing());
+  // A freshly created request with a callback has an outgoing request
+  EXPECT_TRUE(req.HasOutgoing());
   // Notifying callbacks triggers the callback
   req.NotifyCallbacks(fit::ok(), [&]() {
     EXPECT_TRUE(token_destroyed);

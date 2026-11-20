@@ -88,7 +88,10 @@ class BrEdrConnectionRequest final {
   void BeginIncoming() { has_incoming_.Set(true); }
   void CompleteIncoming() { has_incoming_.Set(false); }
   bool HasIncoming() const { return *has_incoming_; }
-  bool AwaitingOutgoing() { return !callbacks_->empty(); }
+
+  // Returns true if one or more clients are waiting for a response to a
+  // Connect() call for this peer.
+  bool HasOutgoing() const { return !callbacks_->empty(); }
 
   // Attach request inspect node as a child of |parent| named |name|.
   void AttachInspect(inspect::Node& parent, std::string name);

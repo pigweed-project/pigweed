@@ -1287,7 +1287,7 @@ void BrEdrConnectionManager::CompleteRequest(
 
   if (failed) {
     if (request.HasIncoming() ||
-        (!completes_outgoing_request && request.AwaitingOutgoing())) {
+        (!completes_outgoing_request && request.HasOutgoing())) {
       // This request failed, but we're still waiting on either:
       // * an in-progress incoming request or
       // * to attempt our own outgoing request
@@ -1462,7 +1462,8 @@ LegacyPairingState& BrEdrConnectionManager::GetOrCreatePreAclLegacyPairingState(
     request.set_legacy_pairing_state(
         std::make_unique<LegacyPairingState>(peer.GetWeakPtr(),
                                              pairing_delegate_,
-                                             request.AwaitingOutgoing(),
+                                             /*outgoing_connection=*/
+                                             request.HasOutgoing(),
                                              &dispatcher_));
   }
   return *request.legacy_pairing_state();
