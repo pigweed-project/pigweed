@@ -15,6 +15,7 @@
 #include "pw_tokenizer/enum.h"
 
 #include <array>
+#include <cinttypes>
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
@@ -615,6 +616,34 @@ TEST(EnumTraitsTest, RejectsHandWrittenSpecializations) {
   static_assert(!::pw::has_enum_to_string_v<UntaggedTraitsEnum>);
 }
 
+TEST(PwEnumStatusTest, Message) {
+  using ::pw::testing::PlainTestCode;
+  using ::pw::testing::PlainTestStatus;
+
+  constexpr PlainTestStatus kNoMessage = PlainTestStatus::Failed();
+  EXPECT_FALSE(kNoMessage.ok());
+  EXPECT_TRUE(kNoMessage.IsFailed());
+  EXPECT_FALSE(kNoMessage.has_message());
+  EXPECT_STREQ("FAILED", kNoMessage.str());
+
+  const PlainTestStatus from_factory =
+      PlainTestStatus::Failed(PW_STATUS_MSG("Bad baud rate"));
+  EXPECT_TRUE(from_factory.IsFailed());
+  EXPECT_EQ(from_factory.has_message(),
+            PW_STATUS_CFG_MESSAGES != PW_STATUS_CFG_MESSAGES_NONE);
+  EXPECT_EQ(from_factory, kNoMessage);  // Messages do not affect equality.
+
+  const PlainTestStatus from_constructor(PlainTestCode::kFailed,
+                                         PW_STATUS_MSG("From constructor"));
+  EXPECT_TRUE(from_constructor.IsFailed());
+  EXPECT_EQ(from_constructor.has_message(),
+            PW_STATUS_CFG_MESSAGES != PW_STATUS_CFG_MESSAGES_NONE);
+
+  auto message = PW_STATUS_MSG("Message");
+  static_assert(noexcept(PlainTestStatus::Failed(message)));
+  static_assert(noexcept(PlainTestStatus(PlainTestCode::kFailed, message)));
+}
+
 // What logging PlainTestCode::kFailed formats as. Tokenizing pw_log backends
 // log its token in the enum's domain; other backends log its name.
 #if __has_include("pw_log_backend/log_backend_uses_pw_tokenizer.h")
@@ -624,9 +653,9 @@ constexpr char kLoggedFailed[] =
 constexpr char kLoggedFailed[] = "FAILED";
 #endif  // __has_include("pw_log_backend/log_backend_uses_pw_tokenizer.h")
 
-// What logging PlainTestStatus::Failed() formats as. It is logged as its code
-// is, unless a tokenizing backend logs status messages. Then it is a bit field
-// token with the code, which needs one bit, in its low bits.
+// What logging PlainTestStatus::Failed() without a message formats as. It is
+// logged as its code is, unless a tokenizing backend logs status messages. Then
+// it is a bit field token with the code, which needs one bit, in its low bits.
 #if PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_TOKENIZED
 constexpr char kLoggedFailedStatus[] =
     "${" PW_TESTING_PLAIN_TEST_STATUS_DOMAIN "/1," PW_STATUS_MSG_DOMAIN(
@@ -641,11 +670,13 @@ TEST(PwEnumStatusTest, StatusDomainIsCodeEnumDomain) {
 }
 
 TEST(PwEnumStatusTest, StatusCodeFmtLogsCodeWithLogEnum) {
-  constexpr auto kFailed = ::pw::testing::PlainTestStatus::Failed();
+  // PW_LOG_ENUM does not log the message.
+  const auto failed =
+      ::pw::testing::PlainTestStatus::Failed(PW_STATUS_MSG("Bad baud rate"));
 
   pw::InlineString<128> logged;
   PW_TEST_ASSERT_OK(pw::string::Format(
-      logged, PW_TESTING_PLAIN_TEST_STATUS_CODE_FMT, PW_LOG_ENUM(kFailed)));
+      logged, PW_TESTING_PLAIN_TEST_STATUS_CODE_FMT, PW_LOG_ENUM(failed)));
   EXPECT_STREQ(logged.c_str(), kLoggedFailed);
 }
 
@@ -656,6 +687,30 @@ TEST(PwEnumStatusTest, StatusFmtLogsStatusWithLogStatus) {
   PW_TEST_ASSERT_OK(pw::string::Format(
       logged, PW_TESTING_PLAIN_TEST_STATUS_FMT, PW_LOG_STATUS(kFailed)));
   EXPECT_STREQ(logged.c_str(), kLoggedFailedStatus);
+}
+
+TEST(PwEnumStatusTest, StatusFmtLogsMessageWithLogStatus) {
+  const auto failed =
+      ::pw::testing::PlainTestStatus::Failed(PW_STATUS_MSG("Bad baud rate"));
+
+  pw::InlineString<256> logged;
+  PW_TEST_ASSERT_OK(pw::string::Format(
+      logged, PW_TESTING_PLAIN_TEST_STATUS_FMT, PW_LOG_STATUS(failed)));
+#if PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_TOKENIZED
+  constexpr uint32_t kExpectedWord =
+      (pw::tokenizer::Hash(": Bad baud rate") & 0xFFFFFFFEu) | 1u;
+  pw::InlineString<256> expected;
+  PW_TEST_ASSERT_OK(pw::string::Format(
+      expected,
+      "${" PW_TESTING_PLAIN_TEST_STATUS_DOMAIN "/1," PW_STATUS_MSG_DOMAIN(
+          PW_TESTING_PLAIN_TEST_STATUS_DOMAIN) "}#%08" PRIx32,
+      kExpectedWord));
+  EXPECT_STREQ(logged.c_str(), expected.c_str());
+#elif PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_STRING
+  EXPECT_STREQ(logged.c_str(), "FAILED: Bad baud rate");
+#else
+  EXPECT_STREQ(logged.c_str(), kLoggedFailedStatus);
+#endif  // PW_STATUS_CFG_MESSAGES
 }
 
 }  // namespace

@@ -98,6 +98,16 @@ PW_CONSTEXPR_TEST(PwEnumJsonTest, Status, {
   PW_TEST_EXPECT_STREQ(busy.str(), "BUSY");
 });
 
+TEST(PwEnumJsonTest, StatusWithMessage) {
+  const TomlStatus busy = TomlStatus::Busy(PW_STATUS_MSG("Still starting"));
+  EXPECT_FALSE(busy.ok());
+  EXPECT_TRUE(busy.IsBusy());
+  EXPECT_STREQ("BUSY", busy.str());
+  EXPECT_EQ(busy, TomlStatus::Busy());
+  EXPECT_EQ(busy.has_message(),
+            PW_STATUS_CFG_MESSAGES != PW_STATUS_CFG_MESSAGES_NONE);
+}
+
 // What logging TomlCode::kBusy formats as. Tokenizing pw_log backends log its
 // token in the enum's domain; other backends log its name.
 #if __has_include("pw_log_backend/log_backend_uses_pw_tokenizer.h")

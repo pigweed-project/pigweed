@@ -58,6 +58,10 @@
 /// status class. Otherwise, those declarations require a forward declaration
 /// of the status class (e.g. `namespace my_ns { class MyStatus; }`).
 ///
+/// Factories and the `(Code, Message)` constructor of generated statuses accept
+/// an optional `PW_STATUS_MSG("...")` (e.g.
+/// `MyStatus::NotFound(PW_STATUS_MSG("Missing key"))`).
+///
 /// @example{pw_enum/examples/private/enum_example/i2c_status.h,pw_enum-examples-status-enum}
 ///
 /// @param status_name The fully-qualified name of the status class to generate

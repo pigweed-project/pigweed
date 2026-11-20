@@ -160,6 +160,20 @@ with ``ok()``.
    :start-after: [pw_enum-examples-status-enum-usage]
    :end-before: [pw_enum-examples-status-enum-usage]
 
+Status messages
+---------------
+Generated factory functions and the ``(Code, Message)`` constructor accept an
+optional error message created with :cc:`PW_STATUS_MSG` (e.g.
+``I2cStatus::Nack(PW_STATUS_MSG("No ACK from sensor"))``).
+
+.. literalinclude:: examples/status_enum_test.cc
+   :language: cpp
+   :start-after: [pw_enum-examples-message-status-usage]
+   :end-before: [pw_enum-examples-message-status-usage]
+
+Messages are discarded at compile time unless the project enables them. See
+:ref:`module-pw_status-messages` for details.
+
 .. _module-pw_enum-status-logging:
 
 Logging statuses
@@ -167,7 +181,8 @@ Logging statuses
 For each status class, ``pw_enum`` generates:
 
 * ``<STATUS>_FMT`` (e.g. ``MY_DRIVER_I2C_STATUS_FMT``): Pair with
-  :cc:`PW_LOG_STATUS` to log the status.
+  :cc:`PW_LOG_STATUS` to log the status code together with its message, if it
+  has one (``"CODE: message"`` or ``"CODE"``).
 * ``<STATUS>_CODE_FMT`` (e.g. ``MY_DRIVER_I2C_STATUS_CODE_FMT``): Pair with
   :cc:`PW_LOG_ENUM` to log only the status code.
 * ``<STATUS>_DOMAIN`` (e.g. ``MY_DRIVER_I2C_STATUS_DOMAIN``): Alias for the
@@ -448,7 +463,8 @@ enumerator for success:
 Each language decides how to represent the status and its codes:
 
 * C++ generates the ``enum class SensorErrorCode`` and a ``SensorStatus``
-  class that wraps it, exactly like ``PW_ENUM_STATUS`` (see `Status enums`_).
+  class that wraps it, exactly like ``PW_ENUM_STATUS`` (see `Status enums`_),
+  including optional message support (see `Status messages`_).
 * Python does not distinguish between a status and its code, so it only
   generates ``class SensorStatus(enum.IntEnum)``. There is no
   ``SensorErrorCode`` class. ``SensorStatus`` has an ``ok()`` method, which

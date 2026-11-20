@@ -585,6 +585,13 @@ class TestEnumGeneration(unittest.TestCase):
             footer,
         )
         self.assertIn(
+            "[[nodiscard]] static constexpr MyStatus NotFound("
+            "Message message) noexcept {\n"
+            "    return MyStatus(Code::kNotFound, message);\n"
+            "  }",
+            footer,
+        )
+        self.assertIn(
             "  [[nodiscard]] constexpr bool IsNotFound() const noexcept {\n"
             "    return code() == Code::kNotFound;\n"
             "  }",
@@ -602,12 +609,25 @@ class TestEnumGeneration(unittest.TestCase):
             footer,
         )
         self.assertIn(
+            "constexpr MyStatus(Code code, Message message) noexcept\n"
+            "      : ::pw::StatusBase<MyStatus, MyStatusCode::kOk>("
+            "code, message) {}",
+            footer,
+        )
+        self.assertIn(
             f'#define MY_NS_MY_STATUS_DOMAIN "{enums[0].cc_versioned_name}"',
             footer,
         )
         self.assertIn(
             "#define MY_NS_MY_STATUS_FMT "
             f'PW_LOG_STATUS_DOMAIN_FMT("{enums[0].cc_versioned_name}", 1)',
+            footer,
+        )
+        self.assertIn(
+            "static_assert(::pw::internal::kStatusCodeBits<"
+            "::my::ns::MyStatusCode> == 1,\n"
+            '              "MY_NS_MY_STATUS_FMT has the wrong status code '
+            'width");',
             footer,
         )
         # The status's MY_NS_MY_STATUS_CODE_FMT is the enum's
@@ -671,12 +691,18 @@ class TestEnumGeneration(unittest.TestCase):
         ):
             with self.subTest(values=values):
                 self.assertRegex(footer_for(*values), fmt(bits))
+                self.assertIn(
+                    f"kStatusCodeBits<::Code> == {bits},", footer_for(*values)
+                )
 
         # Otherwise the status cannot carry a message, and its whole logged
         # value is its code.
         for values in ((0, 65536), (0, -1)):
             with self.subTest(values=values):
                 self.assertRegex(footer_for(*values), fmt(32))
+                self.assertIn(
+                    "kStatusCodeBits<::Code> == 0,", footer_for(*values)
+                )
 
     def test_status_macro_conflicts_with_enum_macro(self) -> None:
         """Enum and status macros with one name must have one value."""
@@ -759,7 +785,8 @@ class TestEnumGeneration(unittest.TestCase):
                     EnumValue(cc_name="kOk", value=0, name="OK"),
                     EnumValue(cc_name="notKStyle", value=1, name="notKStyle"),
                     EnumValue(cc_name="kCode", value=2, name="CODE"),
-                    EnumValue(cc_name="kSkip", value=3, name="SKIP"),
+                    EnumValue(cc_name="kMessage", value=3, name="MESSAGE"),
+                    EnumValue(cc_name="kSkip", value=4, name="SKIP"),
                 ),
                 status=StatusInfo(
                     name="Skip",
@@ -785,8 +812,14 @@ class TestEnumGeneration(unittest.TestCase):
             "a StatusBase member.",
             footer,
         )
+        self.assertIn(
+            "  // PW_ENUM_STATUS: No factory for kMessage: Message() conflicts "
+            "with a StatusBase member.",
+            footer,
+        )
         # Is*() functions are still generated when the factory is skipped.
         self.assertIn("constexpr bool IsCode() const", footer)
+        self.assertIn("constexpr bool IsMessage() const", footer)
         self.assertIn("constexpr bool IsSkip() const", footer)
         self.assertIn(
             "  // PW_ENUM_STATUS: No factory for kSkip: Skip() conflicts with "

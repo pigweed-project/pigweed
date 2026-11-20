@@ -73,6 +73,7 @@ pw_cc_test(
         "//pw_log:args",
         "//pw_log:status",
         "//pw_status",
+        "//pw_status:message",
     ],
 )
 

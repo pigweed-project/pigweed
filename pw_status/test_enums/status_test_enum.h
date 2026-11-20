@@ -64,9 +64,15 @@ enum class SeventeenBitGeneratedError : uint32_t {
 
 PW_ENUM(pw::status_test::GeneratedEnum, kOk, kNotFound, kPermissionDenied);
 PW_ENUM(pw::status_test::UnscopedGeneratedError, kUnscopedOk, kUnscopedFailed);
-PW_ENUM(pw::status_test::SignedGeneratedError, kOk, kNegative);
+PW_ENUM_STATUS(pw::status_test::SignedGeneratedStatus,
+               SignedGeneratedError::kOk,
+               kOk,
+               kNegative);
 PW_ENUM(pw::status_test::SixteenBitGeneratedError, kOk, kLast);
-PW_ENUM(pw::status_test::SeventeenBitGeneratedError, kOk, kLast);
+PW_ENUM_STATUS(pw::status_test::SeventeenBitGeneratedStatus,
+               SeventeenBitGeneratedError::kOk,
+               kOk,
+               kLast);
 PW_ENUM_STATUS(pw::status_test::TestStatus,
                TestStatusCode::kOk,
                kOk,

@@ -239,11 +239,16 @@ class [[nodiscard]] MyStatus final
   constexpr MyStatus() noexcept = default;
   explicit constexpr MyStatus(Code code) noexcept
       : ::pw::StatusBase<MyStatus, Code::kOk>(code) {}
+  constexpr MyStatus(Code code, Message message) noexcept
+      : ::pw::StatusBase<MyStatus, Code::kOk>(code, message) {}
 
   // PW_ENUM_STATUS: No factory for kOk: OK code; use MyStatus() instead.
 
   [[nodiscard]] static constexpr MyStatus Busy() noexcept {
     return MyStatus(Code::kBusy);
+  }
+  [[nodiscard]] static constexpr MyStatus Busy(Message message) noexcept {
+    return MyStatus(Code::kBusy, message);
   }
 
   // PW_ENUM_STATUS: No Is*() function for kOk: use ok() instead.
@@ -253,6 +258,9 @@ class [[nodiscard]] MyStatus final
   }
 };
 }  // namespace my::pkg
+
+static_assert(::pw::internal::kStatusCodeBits<::my::pkg::Code> == 1,
+              "MY_PKG_MY_STATUS_FMT has the wrong status code width");
 """
 
 

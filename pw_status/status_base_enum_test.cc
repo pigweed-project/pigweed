@@ -59,6 +59,10 @@ static_assert(
 static_assert(
     sizeof(::pw::StatusOf<::pw::status_test::SignedGeneratedError::kOk>) ==
     sizeof(::pw::status_test::SignedGeneratedError));
+static_assert(sizeof(::pw::status_test::SeventeenBitGeneratedStatus) ==
+              sizeof(::pw::status_test::SeventeenBitGeneratedError));
+static_assert(sizeof(::pw::status_test::SignedGeneratedStatus) ==
+              sizeof(::pw::status_test::SignedGeneratedError));
 
 static_assert(sizeof(PwEnumStatus) ==
               (PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_NONE
@@ -292,6 +296,22 @@ TEST(StatusBaseTest, Message_PwEnum) {
   EXPECT_EQ(result.status().has_message(), kMessagesEnabled);
 }
 
+PW_CONSTEXPR_TEST(StatusBaseTest, StatusEnumWithoutMessageSupport, {
+  using ::pw::status_test::SeventeenBitGeneratedStatus;
+  using ::pw::status_test::SignedGeneratedStatus;
+
+  SeventeenBitGeneratedStatus seventeen_bit =
+      SeventeenBitGeneratedStatus::Last();
+  PW_TEST_EXPECT_FALSE(seventeen_bit.ok());
+  PW_TEST_EXPECT_TRUE(seventeen_bit.IsLast());
+  PW_TEST_EXPECT_FALSE(seventeen_bit.has_message());
+
+  SignedGeneratedStatus signed_status = SignedGeneratedStatus::Negative();
+  PW_TEST_EXPECT_FALSE(signed_status.ok());
+  PW_TEST_EXPECT_TRUE(signed_status.IsNegative());
+  PW_TEST_EXPECT_FALSE(signed_status.has_message());
+});
+
 // GeneratedEnum has values 0 to 2, so its code uses the low 2 bits of the word.
 PW_CONSTEXPR_TEST(StatusStorageTest, Token_GeneratedEnum, {
   using ::pw::status_test::GeneratedEnum;
@@ -400,6 +420,14 @@ PW_CONSTEXPR_TEST(StatusStorageTest, Token_OutOfRangeCodeIsNeverOk, {
 #elif PW_NC_TEST(StatusEnumNoOkFactory)
   PW_NC_EXPECT("Ok");
   std::ignore = ::pw::status_test::TestStatus::Ok();
+#elif PW_NC_TEST(StatusEnumRejectsSeventeenBitMessage)
+  PW_NC_EXPECT("This status type cannot carry a message");
+  std::ignore = ::pw::status_test::SeventeenBitGeneratedStatus::Last(
+      PW_STATUS_MSG("Nope"));
+#elif PW_NC_TEST(StatusEnumRejectsSignedMessage)
+  PW_NC_EXPECT("This status type cannot carry a message");
+  std::ignore =
+      ::pw::status_test::SignedGeneratedStatus::Negative(PW_STATUS_MSG("Nope"));
 #endif  // PW_NC_TEST
 }
 

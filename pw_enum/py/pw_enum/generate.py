@@ -293,7 +293,17 @@ def _generate_tokenization(
 
 
 _STATUS_BASE_MEMBERS = frozenset(
-    ("Code", "ok", "code", "Update", "IgnoreError", "str")
+    (
+        "Code",
+        "Message",
+        "ok",
+        "code",
+        "has_message",
+        "message",
+        "Update",
+        "IgnoreError",
+        "str",
+    )
 )
 
 
@@ -350,6 +360,12 @@ def _generate_status_members(
         )
         yield f"    return {status.name}(Code::{v.cc_name});"
         yield "  }"
+        yield (
+            f"  [[nodiscard]] static constexpr {status.name}"
+            f" {fn_name}(Message message) noexcept {{"
+        )
+        yield f"    return {status.name}(Code::{v.cc_name}, message);"
+        yield "  }"
 
     # Is*() functions are generated for every code, including OK codes, except
     # for codes named OK, since IsOk() would duplicate ok().
@@ -399,11 +415,29 @@ def _generate_status_class(enum_desc: EnumDescriptor) -> Iterator[str]:
     yield f"  constexpr {status.name}() noexcept = default;"
     yield f"  explicit constexpr {status.name}(Code code) noexcept"
     yield f"      : {base_type}(code) {{}}"
+    yield f"  constexpr {status.name}(Code code, Message message) noexcept"
+    yield f"      : {base_type}(code, message) {{}}"
     yield from _generate_status_members(enum_desc, status)
     yield "};"
 
     if status.scopes:
         yield cpp.namespace_close("::".join(status.scopes))
+
+
+def _generate_status_code_bits_check(
+    enum_desc: EnumDescriptor,
+) -> Iterator[str]:
+    """Checks that the code width in <STATUS>_FMT matches the C++ library."""
+    status = enum_desc.status
+    assert status is not None
+    status_macro, _ = _macro_names(status.scopes, status.name)
+    yield (
+        "static_assert(::pw::internal::kStatusCodeBits<"
+        f"{enum_desc.cc_full_name}> == {_status_code_bits(enum_desc)},"
+    )
+    yield (
+        f'              "{status_macro}_FMT has the wrong status code width");'
+    )
 
 
 def _generate_single_enum_footer(enum_desc: EnumDescriptor) -> Iterator[str]:
@@ -418,6 +452,8 @@ def _generate_single_enum_footer(enum_desc: EnumDescriptor) -> Iterator[str]:
     if enum_desc.status is not None:
         yield ""
         yield from _generate_status_class(enum_desc)
+        yield ""
+        yield from _generate_status_code_bits_check(enum_desc)
 
 
 def _footer_includes(enums: Sequence[EnumDescriptor]) -> list[str]:

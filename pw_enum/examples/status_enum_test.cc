@@ -18,6 +18,7 @@
 #include "pw_log/log.h"
 #include "pw_log/status.h"
 #include "pw_log/tokenized_args.h"
+#include "pw_status/message.h"
 #include "pw_status/try.h"
 #include "pw_unit_test/framework.h"
 
@@ -47,9 +48,20 @@ bool ShouldRetry(I2cStatus status) {
 }
 // DOCSTAG: [pw_enum-examples-status-enum-usage]
 
+// DOCSTAG: [pw_enum-examples-message-status-usage]
+I2cStatus ReadSensor(bool ack) {
+  if (!ack) {
+    return I2cStatus::Nack(PW_STATUS_MSG("No ACK from sensor"));
+  }
+  return I2cStatus();
+}
+// DOCSTAG: [pw_enum-examples-message-status-usage]
+
 // DOCSTAG: [pw_enum-examples-status-enum-logging]
 void LogI2cStatus(const I2cStatus& status) {
-  // Log the status: pair <STATUS>_FMT with PW_LOG_STATUS.
+  // Log the status and its message: pair <STATUS>_FMT with PW_LOG_STATUS. Logs
+  // "OK" or "NACK: No ACK from sensor" (just "NACK" unless
+  // PW_STATUS_CFG_MESSAGES enables messages).
   PW_LOG_INFO("I2C result: " MY_DRIVER_I2C_STATUS_FMT, PW_LOG_STATUS(status));
 
   // Log only the status code: pair <STATUS>_CODE_FMT with PW_LOG_ENUM.
@@ -92,6 +104,21 @@ TEST(StatusEnumExample, Logging) {
   LogI2cStatus(I2cStatus());
   LogI2cStatus(I2cStatus::Timeout());
   LogStatusCode(I2cStatus::Nack());
+}
+
+TEST(StatusEnumExample, MessageStatus) {
+  I2cStatus ok = ReadSensor(true);
+  PW_TEST_EXPECT_OK(ok);
+  EXPECT_FALSE(ok.has_message());
+  LogI2cStatus(ok);
+
+  I2cStatus err = ReadSensor(false);
+  EXPECT_FALSE(err.ok());
+  EXPECT_TRUE(err.IsNack());
+  // The message is only stored if PW_STATUS_CFG_MESSAGES enables messages.
+  EXPECT_EQ(err.has_message(),
+            PW_STATUS_CFG_MESSAGES != PW_STATUS_CFG_MESSAGES_NONE);
+  LogI2cStatus(err);
 }
 
 }  // namespace
