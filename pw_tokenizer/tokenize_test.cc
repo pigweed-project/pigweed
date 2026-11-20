@@ -26,6 +26,7 @@
 #include "pw_tokenizer/hash.h"
 #include "pw_tokenizer/nested_tokenization.h"
 #include "pw_tokenizer_private/tokenize_test.h"
+#include "pw_unit_test/constexpr.h"
 #include "pw_unit_test/framework.h"
 #include "pw_varint/varint.h"
 
@@ -265,6 +266,73 @@ TEST(TokenizeString, MultipleTokenizationsInOneMacroExpansionExpr) {
   // that the tokenizations make it to the final token database.
   THREE_FOR_ONE_EXPR("hello", "yes", "something");
 }
+
+// These tests verify that PW_TOKENIZER_DEFINE_TOKEN_ALWAYS compiles and can be
+// evaluated in a constant expression. The test bodies are macro arguments, so
+// they also test using it within another macro.
+//
+// detokenize_from_this_program_test.cc tests that its entries make it to the
+// token database.
+
+PW_CONSTEXPR_TEST(DefineTokenAlways, StringLiterals, {
+  PW_TOKENIZER_DEFINE_TOKEN_ALWAYS(
+      0x12345678u, "TEST_DOMAIN", "String literals");
+});
+
+PW_CONSTEXPR_TEST(DefineTokenAlways, TokenFromLocalVariable, {
+  constexpr uint32_t kToken = pw::tokenizer::Hash("From a local variable");
+  PW_TOKENIZER_DEFINE_TOKEN_ALWAYS(
+      kToken, "TEST_DOMAIN", "From a local variable");
+});
+
+constexpr char kGlobalDomain[] = "TEST_DOMAIN";
+constexpr char kGlobalString[] = "From a char array";
+
+PW_CONSTEXPR_TEST(DefineTokenAlways, DomainAndStringFromCharArrays, {
+  PW_TOKENIZER_DEFINE_TOKEN_ALWAYS(0x12345678u, kGlobalDomain, kGlobalString);
+});
+
+PW_CONSTEXPR_TEST(DefineTokenAlways, MultipleInOneScope, {
+  PW_TOKENIZER_DEFINE_TOKEN_ALWAYS(1u, "TEST_DOMAIN", "First");
+  PW_TOKENIZER_DEFINE_TOKEN_ALWAYS(2u, "TEST_DOMAIN", "Second");
+});
+
+template <uint32_t kToken>
+constexpr uint32_t DefineTokenInFunctionTemplate() {
+  PW_TOKENIZER_DEFINE_TOKEN_ALWAYS(
+      kToken, "TEST_DOMAIN", "In a function template");
+  return kToken;
+}
+
+PW_CONSTEXPR_TEST(DefineTokenAlways, InFunctionTemplate, {
+  PW_TEST_EXPECT_EQ(DefineTokenInFunctionTemplate<1u>(), 1u);
+  PW_TEST_EXPECT_EQ(DefineTokenInFunctionTemplate<2u>(), 2u);
+});
+
+PW_CONSTEXPR_TEST(DefineTokenAlways, InGenericLambda, {
+  constexpr auto define_token = [](auto value) {
+    constexpr uint32_t kToken = 0x100u + sizeof(value);
+    PW_TOKENIZER_DEFINE_TOKEN_ALWAYS(kToken, "TEST_DOMAIN", "In a lambda");
+    return kToken;
+  };
+  PW_TEST_EXPECT_EQ(define_token('a'), 0x101u);
+});
+
+PW_CONSTEXPR_TEST(DefineTokenAlways, SingleStatementInUnbracedIf, {
+  constexpr bool kFlag = true;
+  if constexpr (kFlag)
+    PW_TOKENIZER_DEFINE_TOKEN_ALWAYS(3u, "TEST_DOMAIN", "Unbraced true");
+  else
+    PW_TOKENIZER_DEFINE_TOKEN_ALWAYS(4u, "TEST_DOMAIN", "Unbraced false");
+});
+
+constexpr char domain_value[] = "TEST_DOMAIN";
+constexpr char string_value[] = "Common caller names";
+
+PW_CONSTEXPR_TEST(DefineTokenAlways, NoShadowingOfCallerVariables, {
+  constexpr uint32_t token_value = 5u;
+  PW_TOKENIZER_DEFINE_TOKEN_ALWAYS(token_value, domain_value, string_value);
+});
 
 class TokenizeToBuffer : public ::testing::Test {
  public:

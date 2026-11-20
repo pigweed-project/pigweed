@@ -365,16 +365,132 @@ PW_EXTERN_C_END
 /// values are stored as an entry in the ELF section. As a note for tokenized
 /// enum support, the enum name should be used as the string, and the enum value
 /// as the token.
-#define PW_TOKENIZER_DEFINE_TOKEN(token, domain, string)                     \
+///
+/// In a function, the entry is a static variable of the function, which may
+/// only be emitted if the function is emitted. Use
+/// `PW_TOKENIZER_DEFINE_TOKEN_ALWAYS` in functions that might not be emitted,
+/// such as functions that are only called in constant expressions.
+#define PW_TOKENIZER_DEFINE_TOKEN(token, domain, string) \
+  _PW_TOKENIZER_DEFINE_TOKEN_ENTRY(                      \
+      _PW_TOKENIZER_UNIQUE(_pw_tokenizer_string_entry_), \
+      token,                                             \
+      domain,                                            \
+      string)
+
+/// Records a token, domain and string like `PW_TOKENIZER_DEFINE_TOKEN`, whether
+/// or not the function it is used in is ever called at run time. Requires C++.
+///
+/// `PW_TOKENIZER_DEFINE_TOKEN` in a function defines a static variable in it.
+/// Clang only emits the variable if it emits the function, so the entries of
+/// functions that are only called in constant expressions are lost. A
+/// `constexpr` function also cannot define a static variable before C++23.
+///
+/// This macro is a statement that defines the entry outside of the function.
+/// The entry is emitted whenever the statement is compiled: always, except in
+/// templates that are never instantiated and in discarded `if constexpr`
+/// branches. The statement adds no code, and may be used in `constexpr`
+/// functions in C++17 and later.
+///
+/// @code{.cpp}
+///   constexpr uint32_t HelloToken() {
+///     constexpr uint32_t kToken = 0x12345678;
+///     PW_TOKENIZER_DEFINE_TOKEN_ALWAYS(kToken, "my_domain", "Hello");
+///     return kToken;
+///   }
+/// @endcode
+///
+/// The entry has internal linkage, so each translation unit that compiles the
+/// statement has its own copy of the entry. The token database tools merge
+/// them.
+///
+/// @param[in] token Constant expression for the token.
+///
+/// @param[in] domain String literal or `constexpr` char array with static
+/// storage duration.
+///
+/// @param[in] string String literal, `constexpr` char array with static storage
+/// duration, or `__func__`.
+///
+/// @warning With GCC in C++17, this macro does not compile in a lambda in the
+/// initializer of a static data member, unless the member is in a class
+/// template.
+#define PW_TOKENIZER_DEFINE_TOKEN_ALWAYS(token, domain, string) \
+  _PW_TOKENIZER_DEFINE_TOKEN_ALWAYS(token, domain, string)
+
+/// @}
+
+// Whether the compiler supports class types as non-type template parameters
+// (C++20 P0732R2 / P1907R1). Checking __cplusplus >= 202002L is not enough
+// because compilers with incomplete C++20 support (such as Clang 10 /
+// xt-clang++ with -std=c++20) set __cplusplus >= 202002L without supporting
+// class types as template parameters.
+//
+// GCC and MSVC define __cpp_nontype_template_args >= 201911L (or
+// __cpp_nontype_template_parameter_class >= 201806L in GCC 9). Clang leaves
+// __cpp_nontype_template_args at 201411L, so also check its
+// __has_extension(cxx_generalized_nttp) (Clang 18+ in C++20 and later).
+#if (defined(__cpp_nontype_template_args) &&            \
+     __cpp_nontype_template_args >= 201911L) ||         \
+    (defined(__cpp_nontype_template_parameter_class) && \
+     __cpp_nontype_template_parameter_class >= 201806L)
+#define _PW_TOKENIZER_CLASS_NTTP_SUPPORTED 1
+#elif defined(__has_extension)
+#if __has_extension(cxx_generalized_nttp)
+#define _PW_TOKENIZER_CLASS_NTTP_SUPPORTED 1
+#else
+#define _PW_TOKENIZER_CLASS_NTTP_SUPPORTED 0
+#endif  // __has_extension(cxx_generalized_nttp)
+#else
+#define _PW_TOKENIZER_CLASS_NTTP_SUPPORTED 0
+#endif
+
+#if _PW_TOKENIZER_CLASS_NTTP_SUPPORTED
+
+// The entry is a static member of a class template that has the token, domain
+// and string as template arguments. Taking its address instantiates it.
+#define _PW_TOKENIZER_DEFINE_TOKEN_ALWAYS(token, domain, string)      \
+  do {                                                                \
+    static_cast<void>(&::pw::tokenizer::internal::AlwaysDefinedEntry< \
+                      (token),                                        \
+                      ::pw::tokenizer::internal::EntryString(domain), \
+                      ::pw::tokenizer::internal::EntryString(         \
+                          string)>::_pw_tokenizer_string_entry_);     \
+  } while (0)
+
+#else
+
+// Strings cannot be template arguments without class-type NTTP support, so the
+// class template instead gets the token, domain and string from a local class.
+// The values are default member initializers, which are evaluated in the scope
+// of the function that uses the macro. They must NOT be returned from member
+// functions of the class: __func__ would then be the name of the member
+// function.
+#define _PW_TOKENIZER_DEFINE_TOKEN_LOCAL_CLASS(args, token, domain, string) \
+  do {                                                                      \
+    struct args {                                                           \
+      ::pw_tokenizer_Token _pw_tokenizer_token = token;                     \
+      decltype((domain)) _pw_tokenizer_domain = domain;                     \
+      decltype((string)) _pw_tokenizer_string = string;                     \
+    };                                                                      \
+    static_cast<void>(&::pw::tokenizer::internal::AlwaysDefinedEntry<       \
+                      args>::_pw_tokenizer_string_entry_);                  \
+  } while (0)
+
+#define _PW_TOKENIZER_DEFINE_TOKEN_ALWAYS(token, domain, string) \
+  _PW_TOKENIZER_DEFINE_TOKEN_LOCAL_CLASS(                        \
+      _PW_TOKENIZER_UNIQUE(_pw_tokenizer_entry_args_), token, domain, string)
+
+#endif  // _PW_TOKENIZER_CLASS_NTTP_SUPPORTED
+
+// Defines a token entry as a static constexpr variable with the provided name.
+#define _PW_TOKENIZER_DEFINE_TOKEN_ENTRY(name, token, domain, string)        \
   static_assert(::pw::tokenizer::internal::ValidDomain(domain),              \
                 "pw_tokenizer domains may only contain alphanumeric "        \
                 "characters, underscore, or colon, and cannot start with a " \
                 "number; space characters are ignored");                     \
   alignas(1) static constexpr auto _PW_TOKENIZER_SECTION PW_NO_SANITIZE(     \
-      "address") _PW_TOKENIZER_UNIQUE(_pw_tokenizer_string_entry_) =         \
+      "address") name =                                                      \
       ::pw::tokenizer::internal::MakeEntry(token, domain, string)
-
-/// @}
 
 // Validates the format string provided to PW_TOKENIZE_FORMAT_STRING and
 // friends.
@@ -492,3 +608,65 @@ constexpr bool Contains(const char* haystack, const char* needle) {
 #define _PW_TOKENIZER_SECTION \
   PW_KEEP_IN_SECTION(PW_STRINGIFY(_PW_TOKENIZER_UNIQUE(.pw_tokenizer.entries.)))
 #endif  // __APPLE__
+
+#ifdef __cplusplus
+
+namespace pw::tokenizer::internal {
+
+#if _PW_TOKENIZER_CLASS_NTTP_SUPPORTED
+
+// A string as a template argument.
+template <size_t kSize>
+struct EntryString {
+  explicit constexpr EntryString(const char (&string)[kSize]) {
+    for (size_t i = 0; i < kSize; ++i) {
+      chars[i] = string[i];
+    }
+  }
+
+  char chars[kSize] = {};
+};
+
+template <size_t kSize>
+EntryString(const char (&)[kSize]) -> EntryString<kSize>;
+
+#endif  // _PW_TOKENIZER_CLASS_NTTP_SUPPORTED
+
+// The entries that PW_TOKENIZER_DEFINE_TOKEN_ALWAYS defines. A static member
+// of a class template is emitted whenever it is instantiated, unlike a static
+// variable in a function, and instantiating it adds no code.
+//
+// The class template is in an unnamed namespace so that its entries have
+// internal linkage. Do NOT give them external linkage, which loses entries with
+// GCC. The entries all have the same section name, and GCC puts every COMDAT
+// variable that has the same section name in the COMDAT group of the first. A
+// translation unit's entries are then one group, and the linker keeps the group
+// of only one of the translation units that define that first entry.
+namespace {  // NOLINT(google-build-namespaces)
+
+#if _PW_TOKENIZER_CLASS_NTTP_SUPPORTED
+
+template <Token kToken, auto kDomain, auto kString>
+struct AlwaysDefinedEntry {
+  _PW_TOKENIZER_DEFINE_TOKEN_ENTRY(_pw_tokenizer_string_entry_,
+                                   kToken,
+                                   kDomain.chars,
+                                   kString.chars);
+};
+
+#else
+
+template <typename Args>
+struct AlwaysDefinedEntry {
+  _PW_TOKENIZER_DEFINE_TOKEN_ENTRY(_pw_tokenizer_string_entry_,
+                                   Args()._pw_tokenizer_token,
+                                   Args()._pw_tokenizer_domain,
+                                   Args()._pw_tokenizer_string);
+};
+
+#endif  // _PW_TOKENIZER_CLASS_NTTP_SUPPORTED
+
+}  // namespace
+}  // namespace pw::tokenizer::internal
+
+#endif  // __cplusplus

@@ -329,9 +329,11 @@ pw_cc_test(
     # currently only supported on Linux.
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
+        ":decoder",
         ":detokenize_from_this_program",
         ":pw_tokenizer",
         "//pw_bytes",
+        "//pw_result",
     ],
 )
 
@@ -408,6 +410,7 @@ pw_cc_test(
         ":pw_tokenizer",
         "//pw_preprocessor",
         "//pw_string:string",
+        "//pw_unit_test:constexpr",
         "//pw_varint",
     ],
 )

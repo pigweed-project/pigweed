@@ -278,6 +278,7 @@ pw_add_test(pw_tokenizer.tokenize_test
     pw_compilation_testing._pigweed_only_negative_compilation
     pw_string.string
     pw_tokenizer
+    pw_unit_test.constexpr
     pw_varint
   GROUPS
     modules

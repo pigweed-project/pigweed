@@ -326,9 +326,11 @@ pw_test("detokenize_test") {
 pw_test("detokenize_from_this_program_test") {
   sources = [ "detokenize_from_this_program_test.cc" ]
   deps = [
+    ":decoder",
     ":detokenize_from_this_program",
     ":pw_tokenizer",
     dir_pw_bytes,
+    dir_pw_result,
   ]
 
   # This test requires a linker script to load the tokenizer sections. This is
@@ -378,6 +380,7 @@ pw_test("tokenize_test") {
   deps = [
     ":pw_tokenizer",
     "$dir_pw_string:string",
+    "$dir_pw_unit_test:constexpr",
     "$dir_pw_varint",
   ]
   negative_compilation_tests = true
