@@ -35,6 +35,7 @@
 #include "pw_bytes/span.h"
 #include "pw_containers/inline_deque.h"
 #include "pw_containers/vector.h"
+#include "pw_function/function.h"
 #include "pw_grpc/grpc_channel_output.h"
 #include "pw_grpc/send_queue.h"
 #include "pw_rpc/internal/packet.h"
@@ -104,6 +105,15 @@ void AppendFrameHeader(ByteBuilder& out,
   out.PutUint8(type);
   out.PutUint8(flags);
   out.PutUint32(stream_id & 0x7fffffffU, endian::big);
+}
+
+void AppendLengthPrefixedChunk(ByteBuilder& out,
+                               uint32_t declared_message_length,
+                               ConstByteSpan chunk) {
+  constexpr uint8_t kUncompressedFlag = 0;
+  out.PutUint8(kUncompressedFlag);
+  out.PutUint32(declared_message_length, endian::big);
+  out.append(chunk);
 }
 
 // Blocking in-memory reader that parks the reader thread on a
@@ -244,6 +254,16 @@ class BlockingInMemoryReader : public stream::NonSeekableReader {
     Push(partial_payload);
   }
 
+  void PushDataFrameHeader(StreamId stream_id,
+                           uint32_t payload_length,
+                           bool end_stream) PW_LOCKS_EXCLUDED(mutex_) {
+    PushFrameHeaderWithPartialPayload(payload_length,
+                                      kFrameTypeData,
+                                      end_stream ? kFlagEndStream : 0,
+                                      stream_id,
+                                      ConstByteSpan());
+  }
+
   void PushLengthPrefixAndChunk(StreamId stream_id,
                                 uint32_t declared_message_length,
                                 ConstByteSpan initial_chunk,
@@ -256,9 +276,7 @@ class BlockingInMemoryReader : public stream::NonSeekableReader {
                       kFrameTypeData,
                       end_stream ? kFlagEndStream : 0,
                       stream_id);
-    constexpr uint8_t kUncompressedFlag = 0;
-    prefix.PutUint8(kUncompressedFlag);
-    prefix.PutUint32(declared_message_length, endian::big);
+    AppendLengthPrefixedChunk(prefix, declared_message_length, ConstByteSpan());
     ASSERT_EQ(prefix.status(), OkStatus());
     Push(prefix);
     Push(initial_chunk);
@@ -401,8 +419,8 @@ class RecordingSendQueue : public SendQueue {
   bool QueueSend(UniquePtr<std::byte[]>&& buffer) override
       PW_LOCKS_EXCLUDED(mutex_) {
     std::lock_guard<sync::Mutex> lock(mutex_);
-    if (buffer == nullptr || buffer.size() < kFrameHeaderSize ||
-        frames_.full()) {
+    if (reject_sends_ || buffer == nullptr ||
+        buffer.size() < kFrameHeaderSize || frames_.full()) {
       return false;
     }
     const uint32_t length = (static_cast<uint32_t>(buffer[0]) << 16) |
@@ -427,8 +445,21 @@ class RecordingSendQueue : public SendQueue {
   }
 
   void set_on_error(ErrorHandler&& /*error_handler*/) override {}
+  void set_on_space_available(SpaceAvailableCallback&& callback) override
+      PW_LOCKS_EXCLUDED(mutex_) {
+    std::lock_guard<sync::Mutex> lock(mutex_);
+    on_space_available_ = std::move(callback);
+  }
   void Run() override {}
   void RequestStop() override {}
+
+  void SetRejectSends(bool reject) PW_LOCKS_EXCLUDED(mutex_) {
+    std::lock_guard<sync::Mutex> lock(mutex_);
+    reject_sends_ = reject;
+    if (!reject && on_space_available_ != nullptr) {
+      on_space_available_();
+    }
+  }
 
   void TakeStreamFrames(StreamId stream_id, Vector<RecordedFrame>& out)
       PW_LOCKS_EXCLUDED(mutex_) {
@@ -462,6 +493,8 @@ class RecordingSendQueue : public SendQueue {
  private:
   mutable sync::Mutex mutex_;
   InlineDeque<RecordedFrame, kMaxRecordedFrames> frames_ PW_GUARDED_BY(mutex_);
+  SpaceAvailableCallback on_space_available_ PW_GUARDED_BY(mutex_);
+  bool reject_sends_ PW_GUARDED_BY(mutex_) = false;
 };
 
 class MessageGate {
@@ -498,6 +531,7 @@ class RecordingCallbacks : public Connection::RequestCallbacks {
   Status OnMessage(StreamId id, ByteSpan message) override
       PW_LOCKS_EXCLUDED(mutex_) {
     MessageGate* gate = nullptr;
+    Function<Status(StreamId, ByteSpan)> callback;
     Status status = OkStatus();
     {
       std::lock_guard<sync::Mutex> lock(mutex_);
@@ -508,9 +542,13 @@ class RecordingCallbacks : public Connection::RequestCallbacks {
       status = last_message_.status();
       gate = message_gate_;
       message_gate_ = nullptr;
+      callback = std::move(on_message_callback_);
     }
     if (gate != nullptr) {
       gate->EnterAndWait();
+    }
+    if (callback != nullptr) {
+      return callback(id, message);
     }
     return status;
   }
@@ -546,6 +584,12 @@ class RecordingCallbacks : public Connection::RequestCallbacks {
   void SetNextOnMessageGate(MessageGate& gate) PW_LOCKS_EXCLUDED(mutex_) {
     std::lock_guard<sync::Mutex> lock(mutex_);
     message_gate_ = &gate;
+  }
+
+  void SetNextOnMessageCallback(Function<Status(StreamId, ByteSpan)>&& callback)
+      PW_LOCKS_EXCLUDED(mutex_) {
+    std::lock_guard<sync::Mutex> lock(mutex_);
+    on_message_callback_ = std::move(callback);
   }
 
   Status on_cancel_reentry_status() const {
@@ -616,6 +660,8 @@ class RecordingCallbacks : public Connection::RequestCallbacks {
   Vector<StreamId, kMaxTrackedStreams> canceled_streams_ PW_GUARDED_BY(mutex_);
   Connection* on_cancel_reentry_connection_ PW_GUARDED_BY(mutex_) = nullptr;
   MessageGate* message_gate_ PW_GUARDED_BY(mutex_) = nullptr;
+  Function<Status(StreamId, ByteSpan)> on_message_callback_
+      PW_GUARDED_BY(mutex_);
   std::atomic<int> on_cancel_reentry_code_{PW_STATUS_UNKNOWN};
 };
 
@@ -850,9 +896,13 @@ class DispatcherRunner final : public thread::ThreadCore {
 
 struct ConnectionHarness {
   explicit ConnectionHarness(bool enable_assembly_allocator = false,
-                             async::Dispatcher* read_dispatcher = nullptr)
+                             async::Dispatcher* read_dispatcher = nullptr,
+                             bool use_owned_read_dispatcher = false)
       : assembly_allocator(raw_assembly_allocator),
         sync_assembly_allocator(assembly_allocator),
+        active_read_dispatcher(use_owned_read_dispatcher
+                                   ? &owned_read_dispatcher
+                                   : read_dispatcher),
         connection(
             reader,
             send_queue,
@@ -869,8 +919,8 @@ struct ConnectionHarness {
                                                 std::memory_order_release);
             },
             /*read_allocator=*/
-            read_dispatcher != nullptr ? &read_allocator : nullptr,
-            read_dispatcher) {}
+            active_read_dispatcher != nullptr ? &read_allocator : nullptr,
+            active_read_dispatcher) {}
 
   std::array<std::byte, kSendAllocatorPoolSize> send_pool{};
   std::array<std::byte, kAssemblyAllocatorPoolSize> assembly_pool{};
@@ -888,6 +938,8 @@ struct ConnectionHarness {
   BlockingInMemoryReader reader;
   RecordingSendQueue send_queue;
   RecordingCallbacks callbacks;
+  async::BasicDispatcher owned_read_dispatcher;
+  async::Dispatcher* active_read_dispatcher = nullptr;
   std::atomic<size_t> close_connection_calls{0};
   std::atomic<int> close_callback_reentry_code{PW_STATUS_UNKNOWN};
   Connection connection;
@@ -898,6 +950,33 @@ struct ConnectionHarness {
         close_callback_reentry_code.load(std::memory_order_acquire)));
   }
 };
+
+void ExpectUnaryResponseFrames(RecordingSendQueue& send_queue,
+                               StreamId expected_stream_id,
+                               ConstByteSpan expected_payload) {
+  Vector<RecordedFrame, kMaxStreamFrames> sent;
+  send_queue.TakeStreamFrames(expected_stream_id, sent);
+  ASSERT_EQ(sent.size(), 3U);
+  EXPECT_EQ(sent[0].type, kFrameTypeHeaders);
+  EXPECT_EQ(sent[0].flags & kFlagEndStream, 0);
+
+  EXPECT_EQ(sent[1].type, kFrameTypeData);
+  EXPECT_EQ(sent[1].flags & kFlagEndStream, 0);
+  const ConstByteSpan data_payload = sent[1].payload();
+  ASSERT_EQ(data_payload.size(),
+            kLengthPrefixedMessageHdrSize + expected_payload.size());
+  EXPECT_EQ(data_payload[0], std::byte{0});
+  EXPECT_EQ(bytes::ReadInOrder<uint32_t>(endian::big, data_payload.data() + 1),
+            static_cast<uint32_t>(expected_payload.size()));
+  EXPECT_TRUE(
+      std::equal(expected_payload.begin(),
+                 expected_payload.end(),
+                 data_payload.begin() +
+                     static_cast<ptrdiff_t>(kLengthPrefixedMessageHdrSize)));
+
+  EXPECT_EQ(sent[2].type, kFrameTypeHeaders);
+  EXPECT_NE(sent[2].flags & kFlagEndStream, 0);
+}
 
 void ExpectSingleRstStreamFrame(const Vector<RecordedFrame>& frames,
                                 StreamId expected_stream_id,
@@ -950,6 +1029,20 @@ class ConnectionTest : public ::testing::Test {
       g_harness.reset();
     }
     g_harness.emplace(enable_assembly_allocator, read_dispatcher);
+    std::fill(g_harness->drain_scratch.begin(),
+              g_harness->drain_scratch.end(),
+              std::byte{0x5a});
+    g_harness->reader_runner.emplace(g_harness->connection, g_harness->reader);
+  }
+
+  void ResetHarnessWithReadDispatcher(bool enable_assembly_allocator = false) {
+    if (g_harness.has_value()) {
+      StopReader();
+      g_harness.reset();
+    }
+    g_harness.emplace(enable_assembly_allocator,
+                      /*read_dispatcher=*/nullptr,
+                      /*use_owned_read_dispatcher=*/true);
     std::fill(g_harness->drain_scratch.begin(),
               g_harness->drain_scratch.end(),
               std::byte{0x5a});
@@ -2079,6 +2172,188 @@ TEST_F(ConnectionTest,
   harness().send_queue.TakeStreamFrames(/*stream_id=*/0, control_frames);
   ExpectSingleGoAwayFrame(
       control_frames, kClosedStream, kHttp2ErrorFrameSizeError);
+}
+
+TEST_F(ConnectionTest,
+       LatchedStreamInOnMessageSuppressesTrailingPayloadAndHalfClose) {
+  ResetHarnessWithReadDispatcher(/*enable_assembly_allocator=*/true);
+  StartConnection();
+  harness().send_queue.ClearStreamFrames(/*stream_id=*/0);
+
+  constexpr StreamId kStreamId = 1;
+  constexpr auto kFirstRequest = bytes::Array<0x01, 0x02>();
+  constexpr auto kSecondRequest = bytes::Array<0x03, 0x04>();
+  constexpr auto kFragmentChunk = bytes::Array<0xaa>();
+  constexpr uint32_t kFragmentedLength = 20;
+  static constexpr auto kResponsePayload = bytes::Array<0xde, 0xad>();
+
+  harness().callbacks.SetNextOnMessageCallback([this](StreamId id,
+                                                      ByteSpan /*message*/) {
+    EXPECT_EQ(harness().connection.SendResponseMessage(id, kResponsePayload),
+              OkStatus());
+    harness().send_queue.SetRejectSends(/*reject=*/true);
+    EXPECT_EQ(harness().connection.SendResponseComplete(id, OkStatus()),
+              Status::Unavailable());
+    return OkStatus();
+  });
+
+  OpenStream(kStreamId);
+  ByteBuffer<kFrameScratchSize> coalesced_payload;
+  AppendLengthPrefixedChunk(coalesced_payload,
+                            static_cast<uint32_t>(kFirstRequest.size()),
+                            kFirstRequest);
+  AppendLengthPrefixedChunk(coalesced_payload,
+                            static_cast<uint32_t>(kSecondRequest.size()),
+                            kSecondRequest);
+  AppendLengthPrefixedChunk(
+      coalesced_payload, kFragmentedLength, kFragmentChunk);
+  ASSERT_EQ(coalesced_payload.status(), OkStatus());
+  harness().reader.PushRawDataFrame(
+      kStreamId, coalesced_payload, /*end_stream=*/true);
+  harness().reader.WaitUntilIdle();
+
+  harness().owned_read_dispatcher.RunUntilIdle();
+  EXPECT_EQ(harness().callbacks.message_count(), 1U);
+  EXPECT_EQ(harness().assembly_allocator.allocate_calls(), 0U);
+  EXPECT_EQ(harness().raw_assembly_allocator.GetAllocated(), 0U);
+  EXPECT_FALSE(harness().callbacks.WasHalfClosed(kStreamId));
+  EXPECT_FALSE(harness().callbacks.WasCanceled(kStreamId));
+
+  harness().send_queue.SetRejectSends(/*reject=*/false);
+  harness().owned_read_dispatcher.RunUntilIdle();
+
+  ExpectUnaryResponseFrames(harness().send_queue, kStreamId, kResponsePayload);
+}
+
+TEST_F(ConnectionTest, LatchedStreamInOnMessageIgnoresCallbackErrorWithoutRst) {
+  ResetHarnessWithReadDispatcher(/*enable_assembly_allocator=*/false);
+  StartConnection();
+  harness().send_queue.ClearStreamFrames(/*stream_id=*/0);
+
+  constexpr StreamId kStreamId = 1;
+  constexpr auto kRequestPayload = bytes::Array<0x10, 0x20>();
+  static constexpr auto kResponsePayload = bytes::Array<0x30, 0x40>();
+
+  // Re-open the send queue before returning Status::Internal() while
+  // drain_task_ is still queued behind RunReadTask() on owned_read_dispatcher,
+  // proving ProcessDataFramePayload() does not emit RST_STREAM on a latched
+  // stream.
+  harness().callbacks.SetNextOnMessageCallback([this](StreamId id,
+                                                      ByteSpan /*message*/) {
+    EXPECT_EQ(harness().connection.SendResponseMessage(id, kResponsePayload),
+              OkStatus());
+    harness().send_queue.SetRejectSends(/*reject=*/true);
+    EXPECT_EQ(harness().connection.SendResponseComplete(id, OkStatus()),
+              Status::Unavailable());
+    harness().send_queue.SetRejectSends(/*reject=*/false);
+    return Status::Internal();
+  });
+
+  OpenStream(kStreamId);
+  harness().reader.PushRequestData(
+      kStreamId, kRequestPayload, /*end_stream=*/false);
+  harness().reader.WaitUntilIdle();
+  harness().owned_read_dispatcher.RunUntilIdle();
+
+  EXPECT_FALSE(harness().callbacks.WasCanceled(kStreamId));
+  ExpectUnaryResponseFrames(harness().send_queue, kStreamId, kResponsePayload);
+}
+
+TEST_F(ConnectionTest,
+       DataOnHalfClosedStreamLatchedDuringIgnoredReadPreservesResponse) {
+  ResetHarnessWithReadDispatcher(/*enable_assembly_allocator=*/false);
+  StartConnection();
+  harness().send_queue.ClearStreamFrames(/*stream_id=*/0);
+
+  constexpr StreamId kStreamId = 1;
+  constexpr auto kRequestPayload = bytes::Array<0x01, 0x02>();
+  constexpr auto kIgnoredPayload = bytes::Array<0x99, 0x98, 0x97, 0x96>();
+  constexpr auto kResponsePayload = bytes::Array<0xab, 0xcd>();
+
+  OpenStream(kStreamId);
+  harness().reader.PushRequestData(
+      kStreamId, kRequestPayload, /*end_stream=*/true);
+  harness().reader.WaitUntilIdle();
+  harness().owned_read_dispatcher.RunUntilIdle();
+  ASSERT_TRUE(harness().callbacks.WasHalfClosed(kStreamId));
+
+  // Push only the extra DATA header so ProcessDataFrame enters the half-closed
+  // branch, unlocks SharedState, and blocks inside ProcessIgnoredFrame().
+  harness().reader.PushDataFrameHeader(
+      kStreamId,
+      static_cast<uint32_t>(kIgnoredPayload.size()),
+      /*end_stream=*/false);
+  harness().reader.WaitUntilIdle();
+
+  ASSERT_EQ(
+      harness().connection.SendResponseMessage(kStreamId, kResponsePayload),
+      OkStatus());
+  harness().send_queue.SetRejectSends(/*reject=*/true);
+  ASSERT_EQ(harness().connection.SendResponseComplete(kStreamId, OkStatus()),
+            Status::Unavailable());
+  harness().send_queue.SetRejectSends(/*reject=*/false);
+
+  harness().reader.Push(kIgnoredPayload);
+  harness().reader.WaitUntilIdle();
+  harness().owned_read_dispatcher.RunUntilIdle();
+
+  EXPECT_FALSE(harness().callbacks.WasCanceled(kStreamId));
+  ExpectUnaryResponseFrames(harness().send_queue, kStreamId, kResponsePayload);
+}
+
+TEST_F(ConnectionTest,
+       AsyncReadAllocFailureAfterStreamLatchedPreservesResponse) {
+  ResetHarnessWithReadDispatcher(/*enable_assembly_allocator=*/false);
+  StartConnection();
+  harness().send_queue.ClearStreamFrames(/*stream_id=*/0);
+
+  constexpr StreamId kStreamId = 1;
+  constexpr StreamId kFillStreamId = 3;
+  constexpr size_t kFillFrameBytes = kReaderBufferSize - kFrameHeaderSize;
+  constexpr size_t kFillMessageBytes =
+      kFillFrameBytes - kLengthPrefixedMessageHdrSize;
+  constexpr auto kResponsePayload = bytes::Array<0x55, 0x66>();
+
+  OpenStream(kStreamId);
+  OpenStream(kFillStreamId);
+
+  const ConstByteSpan fill_message(harness().drain_scratch.data(),
+                                   kFillMessageBytes);
+  while (harness().raw_read_allocator.GetMaxAllocatable() >= kFillFrameBytes) {
+    const size_t prev_allocated = harness().raw_read_allocator.GetAllocated();
+    harness().reader.PushRequestData(
+        kFillStreamId, fill_message, /*end_stream=*/false);
+    harness().reader.WaitUntilIdle();
+    ASSERT_GT(harness().raw_read_allocator.GetAllocated(), prev_allocated);
+  }
+
+  // Push only the DATA header on kStreamId so ProcessDataFrame passes the
+  // initial unlatched check, unlocks SharedState, and waits in
+  // ReadFramePayload().
+  const ConstByteSpan dropped_payload(harness().drain_scratch.data(),
+                                      kFillFrameBytes);
+  harness().reader.PushDataFrameHeader(
+      kStreamId,
+      static_cast<uint32_t>(dropped_payload.size()),
+      /*end_stream=*/false);
+  harness().reader.WaitUntilIdle();
+
+  ASSERT_EQ(
+      harness().connection.SendResponseMessage(kStreamId, kResponsePayload),
+      OkStatus());
+  harness().send_queue.SetRejectSends(/*reject=*/true);
+  ASSERT_EQ(harness().connection.SendResponseComplete(kStreamId, OkStatus()),
+            Status::Unavailable());
+  harness().send_queue.SetRejectSends(/*reject=*/false);
+
+  // Supplying the payload triggers read_allocator exhaustion (!alloc_ok) after
+  // kStreamId has already latched END_STREAM.
+  harness().reader.Push(dropped_payload);
+  harness().reader.WaitUntilIdle();
+  harness().owned_read_dispatcher.RunUntilIdle();
+
+  EXPECT_FALSE(harness().callbacks.WasCanceled(kStreamId));
+  ExpectUnaryResponseFrames(harness().send_queue, kStreamId, kResponsePayload);
 }
 
 }  // namespace

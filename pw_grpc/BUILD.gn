@@ -156,6 +156,7 @@ pw_test("connection_test") {
     "$dir_pw_bytes",
     "$dir_pw_containers:inline_deque",
     "$dir_pw_containers:vector",
+    "$dir_pw_function",
     "$dir_pw_rpc",
     "$dir_pw_status",
     "$dir_pw_stream",

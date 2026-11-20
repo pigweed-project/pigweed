@@ -1166,6 +1166,9 @@ Status Connection::Reader::ProcessDataFrame(const FrameHeader& frame) {
       PW_TRY(ProcessIgnoredFrame(frame));
       state = connection_.LockState();
       stream = state->LookupStream(frame.stream_id);
+      if (stream && stream->end_stream_latched) {
+        stream = nullptr;
+      }
       // RFC 9113 §6.9: error frames must always count towards flow-control
       PW_TRY(state->UpdateRecvWindow(stream, frame.payload_length));
       if (stream) {
@@ -1255,6 +1258,9 @@ Status Connection::Reader::ProcessDataFrame(const FrameHeader& frame) {
       PW_LOG_ERROR("Data frame payload allocation failed");
       auto state = connection_.LockState();
       Stream* stream = state->LookupStream(frame.stream_id);
+      if (stream && stream->end_stream_latched) {
+        stream = nullptr;
+      }
       // RFC 9113 §6.9: error frames must always count towards flow-control
       PW_TRY(state->UpdateRecvWindow(stream, frame.payload_length));
       if (stream) {
@@ -1416,7 +1422,7 @@ Status Connection::Reader::ProcessDataFramePayload(const FrameHeader& frame,
       return OkStatus();
     }
     stream = state->LookupStream(frame.stream_id);
-    if (!stream) {
+    if (!stream || stream->end_stream_latched) {
       return OkStatus();
     }
 

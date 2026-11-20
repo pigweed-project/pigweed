@@ -231,6 +231,7 @@ pw_cc_test(
         "//pw_bytes",
         "//pw_containers:inline_deque",
         "//pw_containers:vector",
+        "//pw_function",
         "//pw_rpc",
         "//pw_status",
         "//pw_stream",
