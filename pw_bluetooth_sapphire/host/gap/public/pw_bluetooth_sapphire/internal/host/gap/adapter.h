@@ -491,10 +491,12 @@ class Adapter {
 
     // Initiate an outbound connection. A request will be queued if a
     // connection is already in progress. On error, |callback| will be called
-    // with an error result. The error will be |kCanceled| if a connection was
-    // never attempted, or |kFailed| if establishing a connection failed.
-    // Returns a handle that will cancel the request when dropped (if connection
-    // establishment has not started). If a BR/EDR connection with the peer does
+    // with an error result. The error will be |kCanceled| if the request was
+    // canceled, or |kFailed| if establishing a connection failed. Returns a
+    // handle that will cancel the request when dropped. If connection
+    // establishment is already in progress when canceled, |callback| will be
+    // called immediately with |kCanceled| and the connection will be
+    // disconnected once it completes. If a BR/EDR connection with the peer does
     // not exist, returns nullopt.
     using ScoRequestHandle = BrEdrConnection::ScoRequestHandle;
     virtual std::optional<ScoRequestHandle> OpenScoConnection(
@@ -512,9 +514,11 @@ class Adapter {
     // On error, |callback| will be called with an error result. If another
     // Open/Accept request is made before a connection request is received, this
     // request will be canceled (with error |kCanceled|). Returns a handle that
-    // will cancel the request when destroyed (if connection establishment has
-    // not started). If a BR/EDR connection with the peer does not exist,
-    // returns nullopt.
+    // will cancel the request when destroyed. If connection establishment is
+    // already in progress when canceled, |callback| will be called immediately
+    // with |kCanceled| and the connection will be disconnected once it
+    // completes. If a BR/EDR connection with the peer does not exist, returns
+    // nullopt.
     virtual std::optional<ScoRequestHandle> AcceptScoConnection(
         PeerId peer_id,
         std::vector<bt::StaticPacket<

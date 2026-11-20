@@ -62,12 +62,13 @@ class ScoConnectionManager final {
   // Closes connections and cancels connection requests.
   ~ScoConnectionManager();
 
-  // Initiate and outbound connection. A request will be queued if a connection
+  // Initiate an outbound connection. A request will be queued if a connection
   // is already in progress. On error, |callback| will be called with an error
-  // result. The error will be |kCanceled| if a connection was never attempted,
-  // or |kFailed| if establishing a connection failed. Returns a handle that
-  // will cancel the request when dropped (if connection establishment has not
-  // started).
+  // result. The error will be |kCanceled| if the request was canceled, or
+  // |kFailed| if establishing a connection failed. Returns a handle that will
+  // cancel the request when dropped. If connection establishment is already in
+  // progress when canceled, |callback| will be called immediately with
+  // |kCanceled| and the connection will be disconnected once it completes.
   using OpenConnectionResult = fit::result<HostError, ScoConnection::WeakPtr>;
   using OpenConnectionCallback = fit::callback<void(OpenConnectionResult)>;
   RequestHandle OpenConnection(
@@ -84,7 +85,9 @@ class ScoConnectionManager final {
   // will be called with an error result. If another Open/Accept request is made
   // before a connection request is received, this request will be canceled
   // (with error |kCanceled|). Returns a handle that will cancel the request
-  // when destroyed (if connection establishment has not started).
+  // when destroyed. If connection establishment is already in progress when
+  // canceled, |callback| will be called immediately with |kCanceled| and the
+  // connection will be disconnected once it completes.
   using AcceptConnectionResult = fit::result<
       HostError,
       std::pair<ScoConnection::WeakPtr, size_t /*index of parameters used*/>>;
@@ -129,6 +132,8 @@ class ScoConnectionManager final {
       }
     }
 
+    bool canceled() const { return !callback; }
+
     ScoRequestId id;
     bool initiator;
     bool received_request;
@@ -136,6 +141,8 @@ class ScoConnectionManager final {
     std::vector<bt::StaticPacket<
         pw::bluetooth::emboss::SynchronousConnectionParametersWriter>>
         parameters;
+    // Set to nullptr once invoked, which also serves as the sentinel for a
+    // request canceled while awaiting a controller response.
     ConnectionCallback callback;
   };
 
@@ -174,8 +181,8 @@ class ScoConnectionManager final {
   void SendRejectConnectionCommand(DeviceAddressBytes addr,
                                    pw::bluetooth::emboss::StatusCode reason);
 
-  // If either the queued or in progress request has the given id and can be
-  // cancelled, cancel it. Called when a RequestHandle is dropped.
+  // If either the queued or in progress request has the given id, cancel it.
+  // Called when a RequestHandle is dropped.
   void CancelRequestWithId(ScoRequestId);
 
   // The id that should be associated with the next request. Incremented when

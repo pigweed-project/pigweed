@@ -100,7 +100,9 @@ ScoConnectionManager::~ScoConnectionManager() {
     // destroying the RequestHandle).
     ConnectionRequest request = std::move(in_progress_request_.value());
     in_progress_request_.reset();
-    request.callback(fit::error(HostError::kCanceled));
+    if (request.callback) {
+      request.callback(fit::error(HostError::kCanceled));
+    }
   }
 }
 
@@ -219,6 +221,20 @@ ScoConnectionManager::OnSynchronousConnectionComplete(
     return hci::CommandChannel::EventCallbackResult::kContinue;
   }
 
+  if (in_progress_request_->canceled()) {
+    bt_log(INFO,
+           "gap-sco",
+           "SCO connection completed for canceled request, disconnecting "
+           "(handle: %#.4x, peer: %s)",
+           connection_handle,
+           bt_str(peer_id_));
+    // Send HCI_Disconnect for the link before starting any queued request
+    // (the queued request does not wait for Disconnection Complete).
+    link.reset();
+    CompleteRequest(fit::error(HostError::kCanceled));
+    return hci::CommandChannel::EventCallbackResult::kContinue;
+  }
+
   fit::closure deactivated_cb = [this, connection_handle] {
     PW_CHECK(connections_.erase(connection_handle));
   };
@@ -262,7 +278,8 @@ ScoConnectionManager::OnConnectionRequest(const hci::EventPacket& event) {
     return hci::CommandChannel::EventCallbackResult::kContinue;
   }
 
-  if (!in_progress_request_ || in_progress_request_->initiator) {
+  if (!in_progress_request_ || in_progress_request_->initiator ||
+      in_progress_request_->received_request) {
     bt_log(INFO,
            "sco",
            "reject unexpected %s connection request (peer: %s)",
@@ -273,6 +290,11 @@ ScoConnectionManager::OnConnectionRequest(const hci::EventPacket& event) {
         pw::bluetooth::emboss::StatusCode::CONNECTION_REJECTED_BAD_BD_ADDR);
     return hci::CommandChannel::EventCallbackResult::kContinue;
   }
+
+  // Mark the request as having received an incoming Connection Request before
+  // either rejecting or accepting, because the controller will emit
+  // HCI_Synchronous_Connection_Complete in both cases.
+  in_progress_request_->received_request = true;
 
   // Skip to the next parameters that support the requested link type. The
   // controller rejects parameters that don't include packet types for the
@@ -330,8 +352,6 @@ ScoConnectionManager::OnConnectionRequest(const hci::EventPacket& event) {
         // after Connection_Accept_Timeout with status
         // kConnectionAcceptTimeoutExceeded.
       });
-
-  in_progress_request_->received_request = true;
 
   return hci::CommandChannel::EventCallbackResult::kContinue;
 }
@@ -403,8 +423,10 @@ ScoConnectionManager::RequestHandle ScoConnectionManager::QueueRequest(
 void ScoConnectionManager::TryCreateNextConnection() {
   // Cancel an in-progress responder request that hasn't received a connection
   // request event yet.
-  if (in_progress_request_) {
-    CancelRequestWithId(in_progress_request_->id);
+  if (in_progress_request_ && !in_progress_request_->initiator &&
+      !in_progress_request_->received_request) {
+    CompleteRequest(fit::error(HostError::kCanceled));
+    return;
   }
 
   if (in_progress_request_ || !queued_request_) {
@@ -448,7 +470,9 @@ void ScoConnectionManager::CompleteRequestOrTryNextParameters(
   PW_CHECK(in_progress_request_);
 
   // Multiple parameter attempts are not supported for initiator requests.
-  if (result.is_ok() || in_progress_request_->initiator) {
+  // If the request was already canceled, do not try additional parameters.
+  if (result.is_ok() || in_progress_request_->initiator ||
+      in_progress_request_->canceled()) {
     CompleteRequest(std::move(result));
     return;
   }
@@ -488,7 +512,9 @@ void ScoConnectionManager::CompleteRequest(ConnectionResult result) {
   // destroying the RequestHandle).
   ConnectionRequest request = std::move(in_progress_request_.value());
   in_progress_request_.reset();
-  request.callback(std::move(result));
+  if (request.callback) {
+    request.callback(std::move(result));
+  }
   TryCreateNextConnection();
 }
 
@@ -548,16 +574,33 @@ void ScoConnectionManager::CancelRequestWithId(ScoRequestId id) {
     return;
   }
 
-  // Cancel in progress request if it is a responder request that hasn't
-  // received a connection request yet.
-  if (in_progress_request_ && in_progress_request_->id == id &&
-      !in_progress_request_->initiator &&
-      !in_progress_request_->received_request) {
-    bt_log(INFO,
-           "gap-sco",
-           "Cancelling in progress SCO request (id: %" PRIu64 ")",
-           id);
-    CompleteRequest(fit::error(HostError::kCanceled));
+  if (in_progress_request_ && in_progress_request_->id == id) {
+    // Cancel in-progress responder request immediately if it hasn't received a
+    // connection request yet.
+    if (!in_progress_request_->initiator &&
+        !in_progress_request_->received_request) {
+      bt_log(INFO,
+             "gap-sco",
+             "Cancelling in progress SCO request (id: %" PRIu64 ")",
+             id);
+      CompleteRequest(fit::error(HostError::kCanceled));
+      return;
+    }
+
+    // Connection establishment is already in progress. Notify the client
+    // immediately and keep `in_progress_request_` until the setup/accept
+    // command fails or SynchronousConnectionComplete arrives (at which point
+    // any resulting connection will be disconnected).
+    if (!in_progress_request_->canceled()) {
+      bt_log(INFO,
+             "gap-sco",
+             "Cancelling in progress SCO request awaiting controller response "
+             "(id: %" PRIu64 ")",
+             id);
+      ConnectionCallback cb = std::move(in_progress_request_->callback);
+      in_progress_request_->callback = nullptr;
+      cb(fit::error(HostError::kCanceled));
+    }
   }
 }
 

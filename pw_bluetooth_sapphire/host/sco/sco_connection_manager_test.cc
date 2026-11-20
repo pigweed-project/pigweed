@@ -980,7 +980,8 @@ TEST_F(ScoConnectionManagerTest,
   EXPECT_EQ(conn_result->error_value(), HostError::kCanceled);
 }
 
-TEST_F(ScoConnectionManagerTest, OpenConnectionCantBeCancelledOnceInProgress) {
+TEST_F(ScoConnectionManagerTest,
+       OpenConnectionCancelledWhileInProgressDisconnectsOnComplete) {
   auto setup_status_packet = testing::CommandStatusPacket(
       hci_spec::kEnhancedSetupSynchronousConnection,
       pw::bluetooth::emboss::StatusCode::SUCCESS);
@@ -994,9 +995,10 @@ TEST_F(ScoConnectionManagerTest, OpenConnectionCantBeCancelledOnceInProgress) {
                             kAclConnectionHandle, kConnectionParams),
                         &setup_status_packet);
 
+  size_t cb_count = 0;
   std::optional<OpenConnectionResult> conn_result;
-  auto conn_cb = [&conn_result](auto cb_conn) {
-    activate_connection(cb_conn);
+  auto conn_cb = [&cb_count, &conn_result](auto cb_conn) {
+    cb_count++;
     conn_result = std::move(cb_conn);
   };
 
@@ -1004,19 +1006,20 @@ TEST_F(ScoConnectionManagerTest, OpenConnectionCantBeCancelledOnceInProgress) {
       manager()->OpenConnection(kConnectionParams, std::move(conn_cb));
   req_handle.Cancel();
 
-  RunUntilIdle();
-  EXPECT_FALSE(conn_result.has_value());
-  test_device()->SendCommandChannelPacket(conn_complete_packet);
+  EXPECT_EQ(cb_count, 1u);
+  ASSERT_TRUE(conn_result.has_value());
+  ASSERT_TRUE(conn_result->is_error());
+  EXPECT_EQ(conn_result->error_value(), HostError::kCanceled);
 
   RunUntilIdle();
-  ASSERT_TRUE(conn_result.has_value());
-  ASSERT_TRUE(conn_result->is_ok());
-  EXPECT_EQ(conn_result->value()->handle(), kScoConnectionHandle);
+  EXPECT_EQ(cb_count, 1u);
 
   EXPECT_CMD_PACKET_OUT(test_device(),
                         testing::DisconnectPacket(kScoConnectionHandle));
-  conn_result.value()->Close();
+  test_device()->SendCommandChannelPacket(conn_complete_packet);
+
   RunUntilIdle();
+  EXPECT_EQ(cb_count, 1u);
 }
 
 TEST_F(ScoConnectionManagerTest, QueueTwoRequestsAndCancelSecond) {
@@ -1258,10 +1261,10 @@ TEST_F(
 TEST_F(ScoConnectionManagerTest,
        AcceptConnectionFirstParametersRejectedSecondParametersAccepted) {
   bt::StaticPacket<pw::bluetooth::emboss::SynchronousConnectionParametersWriter>
-      esco_params_0 = kConnectionParams;
-  esco_params_0.view().packet_types().ev3().Write(true);
+      esco_params_0 = EscoConnectionParams();
   bt::StaticPacket<pw::bluetooth::emboss::SynchronousConnectionParametersWriter>
       esco_params_1 = kConnectionParams;
+  esco_params_1.view().packet_types().BackingStorage().WriteUInt(0);
   esco_params_1.view().packet_types().ev4().Write(true);
 
   std::optional<AcceptConnectionResult> conn_result;
@@ -1665,6 +1668,677 @@ TEST_F(ScoConnectionManagerTest, IgnoreMalformedConnectionComplete) {
   EXPECT_EQ(conn_result->value()->handle(), kScoConnectionHandle);
   EXPECT_CMD_PACKET_OUT(test_device(),
                         testing::DisconnectPacket(kScoConnectionHandle));
+}
+
+TEST_F(ScoConnectionManagerTest,
+       OpenConnectionCancelledWhileInProgressThenStatusFailsStartsQueued) {
+  auto setup_fail_status = testing::CommandStatusPacket(
+      hci_spec::kEnhancedSetupSynchronousConnection,
+      pw::bluetooth::emboss::StatusCode::CONNECTION_LIMIT_EXCEEDED);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::EnhancedSetupSynchronousConnectionPacket(
+                            kAclConnectionHandle, kConnectionParams),
+                        &setup_fail_status);
+
+  size_t cb_count_0 = 0;
+  std::optional<OpenConnectionResult> conn_result_0;
+  auto req_handle_0 = manager()->OpenConnection(
+      kConnectionParams, [&cb_count_0, &conn_result_0](auto cb_conn) {
+        cb_count_0++;
+        conn_result_0 = std::move(cb_conn);
+      });
+
+  std::optional<OpenConnectionResult> conn_result_1;
+  auto req_handle_1 = manager()->OpenConnection(
+      kConnectionParams,
+      [&conn_result_1](auto cb_conn) { conn_result_1 = std::move(cb_conn); });
+
+  // Cancel the in-progress request before its CommandStatus arrives.
+  req_handle_0.Cancel();
+  EXPECT_EQ(cb_count_0, 1u);
+  ASSERT_TRUE(conn_result_0.has_value());
+  ASSERT_TRUE(conn_result_0->is_error());
+  EXPECT_EQ(conn_result_0->error_value(), HostError::kCanceled);
+  EXPECT_FALSE(conn_result_1.has_value());
+
+  // When the first request's CommandStatus fails, the queued request should
+  // start immediately.
+  auto setup_ok_status = testing::CommandStatusPacket(
+      hci_spec::kEnhancedSetupSynchronousConnection,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  auto conn_complete_1 = testing::SynchronousConnectionCompletePacket(
+      kScoConnectionHandle,
+      kPeerAddress,
+      hci_spec::LinkType::kExtendedSCO,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::EnhancedSetupSynchronousConnectionPacket(
+                            kAclConnectionHandle, kConnectionParams),
+                        &setup_ok_status,
+                        &conn_complete_1);
+
+  RunUntilIdle();
+  EXPECT_EQ(cb_count_0, 1u);
+  ASSERT_TRUE(conn_result_1.has_value());
+  ASSERT_TRUE(conn_result_1->is_ok());
+  EXPECT_EQ(conn_result_1->value()->handle(), kScoConnectionHandle);
+
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::DisconnectPacket(kScoConnectionHandle));
+}
+
+TEST_F(ScoConnectionManagerTest,
+       OpenConnectionCancelledWhileInProgressThenCompleteFailsStartsQueued) {
+  auto setup_ok_status = testing::CommandStatusPacket(
+      hci_spec::kEnhancedSetupSynchronousConnection,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::EnhancedSetupSynchronousConnectionPacket(
+                            kAclConnectionHandle, kConnectionParams),
+                        &setup_ok_status);
+
+  size_t cb_count_0 = 0;
+  std::optional<OpenConnectionResult> conn_result_0;
+  auto req_handle_0 = manager()->OpenConnection(
+      kConnectionParams, [&cb_count_0, &conn_result_0](auto cb_conn) {
+        cb_count_0++;
+        conn_result_0 = std::move(cb_conn);
+      });
+
+  std::optional<OpenConnectionResult> conn_result_1;
+  auto req_handle_1 = manager()->OpenConnection(
+      kConnectionParams,
+      [&conn_result_1](auto cb_conn) { conn_result_1 = std::move(cb_conn); });
+
+  RunUntilIdle();
+  req_handle_0.Cancel();
+  EXPECT_EQ(cb_count_0, 1u);
+  ASSERT_TRUE(conn_result_0.has_value());
+  ASSERT_TRUE(conn_result_0->is_error());
+  EXPECT_EQ(conn_result_0->error_value(), HostError::kCanceled);
+  EXPECT_FALSE(conn_result_1.has_value());
+
+  // First request fails with SynchronousConnectionComplete error -> queued
+  // request starts next.
+  auto conn_complete_1 = testing::SynchronousConnectionCompletePacket(
+      kScoConnectionHandle,
+      kPeerAddress,
+      hci_spec::LinkType::kExtendedSCO,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::EnhancedSetupSynchronousConnectionPacket(
+                            kAclConnectionHandle, kConnectionParams),
+                        &setup_ok_status,
+                        &conn_complete_1);
+
+  test_device()->SendCommandChannelPacket(
+      testing::SynchronousConnectionCompletePacket(
+          kScoConnectionHandle,
+          kPeerAddress,
+          hci_spec::LinkType::kExtendedSCO,
+          pw::bluetooth::emboss::StatusCode::
+              CONNECTION_FAILED_TO_BE_ESTABLISHED));
+  RunUntilIdle();
+
+  EXPECT_EQ(cb_count_0, 1u);
+  ASSERT_TRUE(conn_result_1.has_value());
+  ASSERT_TRUE(conn_result_1->is_ok());
+  EXPECT_EQ(conn_result_1->value()->handle(), kScoConnectionHandle);
+
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::DisconnectPacket(kScoConnectionHandle));
+}
+
+TEST_F(
+    ScoConnectionManagerTest,
+    OpenConnectionCancelledWhileInProgressWithQueuedRequestDisconnectsAndStartsQueued) {
+  const hci_spec::ConnectionHandle handle_0 = kScoConnectionHandle;
+  const hci_spec::ConnectionHandle handle_1 = kScoConnectionHandle + 1;
+
+  auto setup_ok_status = testing::CommandStatusPacket(
+      hci_spec::kEnhancedSetupSynchronousConnection,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::EnhancedSetupSynchronousConnectionPacket(
+                            kAclConnectionHandle, kConnectionParams),
+                        &setup_ok_status);
+
+  size_t cb_count_0 = 0;
+  std::optional<OpenConnectionResult> conn_result_0;
+  auto req_handle_0 = manager()->OpenConnection(
+      kConnectionParams, [&cb_count_0, &conn_result_0](auto cb_conn) {
+        cb_count_0++;
+        conn_result_0 = std::move(cb_conn);
+      });
+
+  std::optional<OpenConnectionResult> conn_result_1;
+  auto req_handle_1 = manager()->OpenConnection(
+      kConnectionParams,
+      [&conn_result_1](auto cb_conn) { conn_result_1 = std::move(cb_conn); });
+
+  RunUntilIdle();
+  req_handle_0.Cancel();
+  EXPECT_EQ(cb_count_0, 1u);
+  ASSERT_TRUE(conn_result_0.has_value());
+  ASSERT_TRUE(conn_result_0->is_error());
+  EXPECT_EQ(conn_result_0->error_value(), HostError::kCanceled);
+  EXPECT_FALSE(conn_result_1.has_value());
+
+  // When the canceled request completes, it must disconnect first, then start
+  // the queued request.
+  auto disconn_status = testing::CommandStatusPacket(
+      hci_spec::kDisconnect, pw::bluetooth::emboss::StatusCode::SUCCESS);
+  auto disconn_complete = testing::DisconnectionCompletePacket(handle_0);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::DisconnectPacket(handle_0),
+                        &disconn_status,
+                        &disconn_complete);
+
+  auto conn_complete_1 = testing::SynchronousConnectionCompletePacket(
+      handle_1,
+      kPeerAddress,
+      hci_spec::LinkType::kExtendedSCO,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::EnhancedSetupSynchronousConnectionPacket(
+                            kAclConnectionHandle, kConnectionParams),
+                        &setup_ok_status,
+                        &conn_complete_1);
+
+  test_device()->SendCommandChannelPacket(
+      testing::SynchronousConnectionCompletePacket(
+          handle_0,
+          kPeerAddress,
+          hci_spec::LinkType::kExtendedSCO,
+          pw::bluetooth::emboss::StatusCode::SUCCESS));
+  RunUntilIdle();
+
+  EXPECT_EQ(cb_count_0, 1u);
+  ASSERT_TRUE(conn_result_1.has_value());
+  ASSERT_TRUE(conn_result_1->is_ok());
+  EXPECT_EQ(conn_result_1->value()->handle(), handle_1);
+
+  EXPECT_CMD_PACKET_OUT(test_device(), testing::DisconnectPacket(handle_1));
+}
+
+TEST_F(ScoConnectionManagerTest,
+       AcceptConnectionCancelledAfterAcceptSentDisconnectsOnComplete) {
+  size_t cb_count = 0;
+  std::optional<AcceptConnectionResult> conn_result;
+  auto req_handle = manager()->AcceptConnection(
+      {kConnectionParams}, [&cb_count, &conn_result](auto cb_conn) {
+        cb_count++;
+        conn_result = std::move(cb_conn);
+      });
+
+  auto conn_req_packet =
+      testing::ConnectionRequestPacket(kPeerAddress, hci_spec::LinkType::kSCO);
+  test_device()->SendCommandChannelPacket(conn_req_packet);
+
+  auto accept_status_packet = testing::CommandStatusPacket(
+      hci_spec::kEnhancedAcceptSynchronousConnectionRequest,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      testing::EnhancedAcceptSynchronousConnectionRequestPacket(
+          kPeerAddress, kConnectionParams),
+      &accept_status_packet);
+  RunUntilIdle();
+  EXPECT_EQ(cb_count, 0u);
+
+  req_handle.Cancel();
+  EXPECT_EQ(cb_count, 1u);
+  ASSERT_TRUE(conn_result.has_value());
+  ASSERT_TRUE(conn_result->is_error());
+  EXPECT_EQ(conn_result->error_value(), HostError::kCanceled);
+
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::DisconnectPacket(kScoConnectionHandle));
+  test_device()->SendCommandChannelPacket(
+      testing::SynchronousConnectionCompletePacket(
+          kScoConnectionHandle,
+          kPeerAddress,
+          hci_spec::LinkType::kSCO,
+          pw::bluetooth::emboss::StatusCode::SUCCESS));
+  RunUntilIdle();
+  EXPECT_EQ(cb_count, 1u);
+}
+
+TEST_F(
+    ScoConnectionManagerTest,
+    AcceptConnectionCancelledAfterAcceptSentFailsDoesNotRetryNextParametersAndStartsQueued) {
+  bt::StaticPacket<pw::bluetooth::emboss::SynchronousConnectionParametersWriter>
+      esco_params_0 = EscoConnectionParams();
+  bt::StaticPacket<pw::bluetooth::emboss::SynchronousConnectionParametersWriter>
+      esco_params_1 = kConnectionParams;
+  esco_params_1.view().packet_types().BackingStorage().WriteUInt(0);
+  esco_params_1.view().packet_types().ev4().Write(true);
+
+  size_t cb_count_0 = 0;
+  std::optional<AcceptConnectionResult> conn_result_0;
+  auto req_handle_0 =
+      manager()->AcceptConnection({esco_params_0, esco_params_1},
+                                  [&cb_count_0, &conn_result_0](auto cb_conn) {
+                                    cb_count_0++;
+                                    conn_result_0 = std::move(cb_conn);
+                                  });
+
+  auto conn_req_packet = testing::ConnectionRequestPacket(
+      kPeerAddress, hci_spec::LinkType::kExtendedSCO);
+  test_device()->SendCommandChannelPacket(conn_req_packet);
+
+  auto accept_status_packet = testing::CommandStatusPacket(
+      hci_spec::kEnhancedAcceptSynchronousConnectionRequest,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      testing::EnhancedAcceptSynchronousConnectionRequestPacket(kPeerAddress,
+                                                                esco_params_0),
+      &accept_status_packet);
+  RunUntilIdle();
+  EXPECT_EQ(cb_count_0, 0u);
+
+  // Queue a second request and cancel the first request while awaiting
+  // SynchronousConnectionComplete.
+  std::optional<OpenConnectionResult> conn_result_1;
+  auto req_handle_1 = manager()->OpenConnection(
+      kConnectionParams,
+      [&conn_result_1](auto cb_conn) { conn_result_1 = std::move(cb_conn); });
+
+  req_handle_0.Cancel();
+  EXPECT_EQ(cb_count_0, 1u);
+  ASSERT_TRUE(conn_result_0.has_value());
+  ASSERT_TRUE(conn_result_0->is_error());
+  EXPECT_EQ(conn_result_0->error_value(), HostError::kCanceled);
+  EXPECT_FALSE(conn_result_1.has_value());
+
+  // When SynchronousConnectionComplete fails, the canceled accept request must
+  // NOT retry esco_params_1; it must start the queued OpenConnection request.
+  auto setup_ok_status = testing::CommandStatusPacket(
+      hci_spec::kEnhancedSetupSynchronousConnection,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  auto conn_complete_1 = testing::SynchronousConnectionCompletePacket(
+      kScoConnectionHandle,
+      kPeerAddress,
+      hci_spec::LinkType::kExtendedSCO,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::EnhancedSetupSynchronousConnectionPacket(
+                            kAclConnectionHandle, kConnectionParams),
+                        &setup_ok_status,
+                        &conn_complete_1);
+
+  test_device()->SendCommandChannelPacket(
+      testing::SynchronousConnectionCompletePacket(
+          kScoConnectionHandle,
+          kPeerAddress,
+          hci_spec::LinkType::kExtendedSCO,
+          pw::bluetooth::emboss::StatusCode::UNSUPPORTED_FEATURE_OR_PARAMETER));
+  RunUntilIdle();
+
+  EXPECT_EQ(cb_count_0, 1u);
+  ASSERT_TRUE(conn_result_1.has_value());
+  ASSERT_TRUE(conn_result_1->is_ok());
+  EXPECT_EQ(conn_result_1->value()->handle(), kScoConnectionHandle);
+
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::DisconnectPacket(kScoConnectionHandle));
+}
+
+TEST_F(ScoConnectionManagerTest,
+       OpenConnectionCancelledWhileInProgressAndCallbackDestroysRequestHandle) {
+  auto setup_status_packet = testing::CommandStatusPacket(
+      hci_spec::kEnhancedSetupSynchronousConnection,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::EnhancedSetupSynchronousConnectionPacket(
+                            kAclConnectionHandle, kConnectionParams),
+                        &setup_status_packet);
+
+  size_t cb_count = 0;
+  std::optional<OpenConnectionResult> conn_result;
+  std::optional<ScoConnectionManager::RequestHandle> req_handle;
+  req_handle = manager()->OpenConnection(
+      kConnectionParams, [&cb_count, &conn_result, &req_handle](auto cb_conn) {
+        cb_count++;
+        conn_result = std::move(cb_conn);
+        req_handle.reset();
+      });
+
+  RunUntilIdle();
+  req_handle->Cancel();
+
+  EXPECT_EQ(cb_count, 1u);
+  ASSERT_TRUE(conn_result.has_value());
+  ASSERT_TRUE(conn_result->is_error());
+  EXPECT_EQ(conn_result->error_value(), HostError::kCanceled);
+
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::DisconnectPacket(kScoConnectionHandle));
+  test_device()->SendCommandChannelPacket(
+      testing::SynchronousConnectionCompletePacket(
+          kScoConnectionHandle,
+          kPeerAddress,
+          hci_spec::LinkType::kExtendedSCO,
+          pw::bluetooth::emboss::StatusCode::SUCCESS));
+  RunUntilIdle();
+  EXPECT_EQ(cb_count, 1u);
+}
+
+TEST_F(ScoConnectionManagerTest,
+       DestroyManagerWhileCancelledInProgressRequestAwaitsConnectionComplete) {
+  auto setup_status_packet = testing::CommandStatusPacket(
+      hci_spec::kEnhancedSetupSynchronousConnection,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::EnhancedSetupSynchronousConnectionPacket(
+                            kAclConnectionHandle, kConnectionParams),
+                        &setup_status_packet);
+
+  size_t cb_count = 0;
+  std::optional<OpenConnectionResult> conn_result;
+  auto req_handle = manager()->OpenConnection(
+      kConnectionParams, [&cb_count, &conn_result](auto cb_conn) {
+        cb_count++;
+        conn_result = std::move(cb_conn);
+      });
+
+  RunUntilIdle();
+  req_handle.Cancel();
+  EXPECT_EQ(cb_count, 1u);
+  ASSERT_TRUE(conn_result.has_value());
+  ASSERT_TRUE(conn_result->is_error());
+  EXPECT_EQ(conn_result->error_value(), HostError::kCanceled);
+
+  // Destroying the manager while the canceled request is still awaiting
+  // SynchronousConnectionComplete must not invoke the callback a second time.
+  DestroyManager();
+  RunUntilIdle();
+  EXPECT_EQ(cb_count, 1u);
+}
+
+TEST_F(
+    ScoConnectionManagerTest,
+    AcceptConnectionRejectsSecondConnectionRequestWhileCancelledRequestAwaitsComplete) {
+  size_t cb_count = 0;
+  std::optional<AcceptConnectionResult> conn_result;
+  auto req_handle = manager()->AcceptConnection(
+      {kConnectionParams}, [&cb_count, &conn_result](auto cb_conn) {
+        cb_count++;
+        conn_result = std::move(cb_conn);
+      });
+
+  auto conn_req_packet =
+      testing::ConnectionRequestPacket(kPeerAddress, hci_spec::LinkType::kSCO);
+  test_device()->SendCommandChannelPacket(conn_req_packet);
+
+  auto accept_status_packet = testing::CommandStatusPacket(
+      hci_spec::kEnhancedAcceptSynchronousConnectionRequest,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      testing::EnhancedAcceptSynchronousConnectionRequestPacket(
+          kPeerAddress, kConnectionParams),
+      &accept_status_packet);
+  RunUntilIdle();
+  EXPECT_EQ(cb_count, 0u);
+
+  req_handle.Cancel();
+  EXPECT_EQ(cb_count, 1u);
+  ASSERT_TRUE(conn_result.has_value());
+  ASSERT_TRUE(conn_result->is_error());
+  EXPECT_EQ(conn_result->error_value(), HostError::kCanceled);
+
+  // A second incoming ConnectionRequest while the canceled request is still
+  // awaiting SynchronousConnectionComplete must be rejected.
+  auto reject_status_packet = testing::CommandStatusPacket(
+      hci_spec::kRejectSynchronousConnectionRequest,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      testing::RejectSynchronousConnectionRequest(
+          kPeerAddress,
+          pw::bluetooth::emboss::StatusCode::CONNECTION_REJECTED_BAD_BD_ADDR),
+      &reject_status_packet);
+  test_device()->SendCommandChannelPacket(conn_req_packet);
+  RunUntilIdle();
+
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::DisconnectPacket(kScoConnectionHandle));
+  test_device()->SendCommandChannelPacket(
+      testing::SynchronousConnectionCompletePacket(
+          kScoConnectionHandle,
+          kPeerAddress,
+          hci_spec::LinkType::kSCO,
+          pw::bluetooth::emboss::StatusCode::SUCCESS));
+  RunUntilIdle();
+  EXPECT_EQ(cb_count, 1u);
+}
+
+TEST_F(
+    ScoConnectionManagerTest,
+    AcceptConnectionCancelledAfterTransportMismatchRejectWaitsForCompleteBeforeStartingQueued) {
+  size_t cb_count_0 = 0;
+  std::optional<AcceptConnectionResult> conn_result_0;
+  auto req_handle_0 = manager()->AcceptConnection(
+      {EscoConnectionParams()}, [&cb_count_0, &conn_result_0](auto cb_conn) {
+        cb_count_0++;
+        conn_result_0 = std::move(cb_conn);
+      });
+
+  // Incoming SCO request does not match eSCO-only parameters, so manager sends
+  // RejectSynchronousConnectionRequest and waits for
+  // SynchronousConnectionComplete.
+  auto reject_status_packet = testing::CommandStatusPacket(
+      hci_spec::kRejectSynchronousConnectionRequest,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::RejectSynchronousConnectionRequest(
+                            kPeerAddress,
+                            pw::bluetooth::emboss::StatusCode::
+                                CONNECTION_REJECTED_LIMITED_RESOURCES),
+                        &reject_status_packet);
+  test_device()->SendCommandChannelPacket(
+      testing::ConnectionRequestPacket(kPeerAddress, hci_spec::LinkType::kSCO));
+  RunUntilIdle();
+  EXPECT_EQ(cb_count_0, 0u);
+
+  // Queue a second request and cancel the first request before
+  // SynchronousConnectionComplete arrives. The queued request must not start
+  // until SynchronousConnectionComplete completes the rejected request.
+  std::optional<OpenConnectionResult> conn_result_1;
+  auto req_handle_1 = manager()->OpenConnection(
+      kConnectionParams,
+      [&conn_result_1](auto cb_conn) { conn_result_1 = std::move(cb_conn); });
+
+  req_handle_0.Cancel();
+  RunUntilIdle();
+  EXPECT_EQ(cb_count_0, 1u);
+  ASSERT_TRUE(conn_result_0.has_value());
+  ASSERT_TRUE(conn_result_0->is_error());
+  EXPECT_EQ(conn_result_0->error_value(), HostError::kCanceled);
+  EXPECT_FALSE(conn_result_1.has_value());
+
+  // Delivering SynchronousConnectionComplete for the rejected request must
+  // finish the first request and start the queued OpenConnection request.
+  auto setup_ok_status = testing::CommandStatusPacket(
+      hci_spec::kEnhancedSetupSynchronousConnection,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  auto conn_complete_1 = testing::SynchronousConnectionCompletePacket(
+      kScoConnectionHandle,
+      kPeerAddress,
+      hci_spec::LinkType::kExtendedSCO,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::EnhancedSetupSynchronousConnectionPacket(
+                            kAclConnectionHandle, kConnectionParams),
+                        &setup_ok_status,
+                        &conn_complete_1);
+
+  test_device()->SendCommandChannelPacket(
+      testing::SynchronousConnectionCompletePacket(
+          kScoConnectionHandle,
+          kPeerAddress,
+          hci_spec::LinkType::kSCO,
+          pw::bluetooth::emboss::StatusCode::
+              CONNECTION_REJECTED_LIMITED_RESOURCES));
+  RunUntilIdle();
+
+  EXPECT_EQ(cb_count_0, 1u);
+  ASSERT_TRUE(conn_result_1.has_value());
+  ASSERT_TRUE(conn_result_1->is_ok());
+  EXPECT_EQ(conn_result_1->value()->handle(), kScoConnectionHandle);
+
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::DisconnectPacket(kScoConnectionHandle));
+}
+
+TEST_F(
+    ScoConnectionManagerTest,
+    AcceptConnectionCancelledAfterAcceptSentFailsDoesNotRetryNextParameters) {
+  bt::StaticPacket<pw::bluetooth::emboss::SynchronousConnectionParametersWriter>
+      esco_params_0 = EscoConnectionParams();
+  bt::StaticPacket<pw::bluetooth::emboss::SynchronousConnectionParametersWriter>
+      esco_params_1 = kConnectionParams;
+  esco_params_1.view().packet_types().BackingStorage().WriteUInt(0);
+  esco_params_1.view().packet_types().ev4().Write(true);
+
+  size_t cb_count = 0;
+  std::optional<AcceptConnectionResult> conn_result;
+  auto req_handle = manager()->AcceptConnection(
+      {esco_params_0, esco_params_1}, [&cb_count, &conn_result](auto cb_conn) {
+        cb_count++;
+        conn_result = std::move(cb_conn);
+      });
+
+  auto conn_req_packet = testing::ConnectionRequestPacket(
+      kPeerAddress, hci_spec::LinkType::kExtendedSCO);
+  test_device()->SendCommandChannelPacket(conn_req_packet);
+
+  auto accept_status_packet = testing::CommandStatusPacket(
+      hci_spec::kEnhancedAcceptSynchronousConnectionRequest,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      testing::EnhancedAcceptSynchronousConnectionRequestPacket(kPeerAddress,
+                                                                esco_params_0),
+      &accept_status_packet);
+  RunUntilIdle();
+  EXPECT_EQ(cb_count, 0u);
+
+  req_handle.Cancel();
+  EXPECT_EQ(cb_count, 1u);
+  ASSERT_TRUE(conn_result.has_value());
+  ASSERT_TRUE(conn_result->is_error());
+  EXPECT_EQ(conn_result->error_value(), HostError::kCanceled);
+
+  // Deliver a failing SynchronousConnectionComplete with no queued request.
+  test_device()->SendCommandChannelPacket(
+      testing::SynchronousConnectionCompletePacket(
+          kScoConnectionHandle,
+          kPeerAddress,
+          hci_spec::LinkType::kExtendedSCO,
+          pw::bluetooth::emboss::StatusCode::UNSUPPORTED_FEATURE_OR_PARAMETER));
+  RunUntilIdle();
+  EXPECT_EQ(cb_count, 1u);
+
+  // A subsequent ConnectionRequest must be rejected rather than accepted with
+  // esco_params_1.
+  auto reject_status_packet = testing::CommandStatusPacket(
+      hci_spec::kRejectSynchronousConnectionRequest,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(
+      test_device(),
+      testing::RejectSynchronousConnectionRequest(
+          kPeerAddress,
+          pw::bluetooth::emboss::StatusCode::CONNECTION_REJECTED_BAD_BD_ADDR),
+      &reject_status_packet);
+  test_device()->SendCommandChannelPacket(conn_req_packet);
+  RunUntilIdle();
+  EXPECT_EQ(cb_count, 1u);
+}
+
+TEST_F(
+    ScoConnectionManagerTest,
+    QueueRequestInsideCancelCallbackWaitsForControllerCompleteBeforeStarting) {
+  auto setup_status_packet = testing::CommandStatusPacket(
+      hci_spec::kEnhancedSetupSynchronousConnection,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::EnhancedSetupSynchronousConnectionPacket(
+                            kAclConnectionHandle, kConnectionParams),
+                        &setup_status_packet);
+
+  size_t cb_count_0 = 0;
+  std::optional<OpenConnectionResult> conn_result_0;
+  std::optional<ScoConnectionManager::RequestHandle> req_handle_1;
+  std::optional<OpenConnectionResult> conn_result_1;
+  auto req_handle_0 =
+      manager()->OpenConnection(kConnectionParams, [&](auto cb_conn) {
+        cb_count_0++;
+        conn_result_0 = std::move(cb_conn);
+        // Queue a new request re-entrantly from the cancellation callback while
+        // the canceled request is still awaiting SynchronousConnectionComplete.
+        req_handle_1 = manager()->OpenConnection(
+            kConnectionParams, [&conn_result_1](auto cb_conn_1) {
+              conn_result_1 = std::move(cb_conn_1);
+            });
+      });
+
+  RunUntilIdle();
+  EXPECT_EQ(cb_count_0, 0u);
+
+  // Canceling invokes the callback (which queues req_handle_1), but must NOT
+  // start req_handle_1 until the controller responds for req_handle_0.
+  req_handle_0.Cancel();
+  RunUntilIdle();
+  EXPECT_EQ(cb_count_0, 1u);
+  ASSERT_TRUE(conn_result_0.has_value());
+  ASSERT_TRUE(conn_result_0->is_error());
+  EXPECT_EQ(conn_result_0->error_value(), HostError::kCanceled);
+  EXPECT_TRUE(req_handle_1.has_value());
+  EXPECT_FALSE(conn_result_1.has_value());
+
+  // When req_handle_0 completes, its link is disconnected and req_handle_1
+  // starts.
+  const hci_spec::ConnectionHandle handle_0 = kScoConnectionHandle;
+  const hci_spec::ConnectionHandle handle_1 = kScoConnectionHandle + 1;
+  auto disconn_status = testing::CommandStatusPacket(
+      hci_spec::kDisconnect, pw::bluetooth::emboss::StatusCode::SUCCESS);
+  auto disconn_complete = testing::DisconnectionCompletePacket(handle_0);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::DisconnectPacket(handle_0),
+                        &disconn_status,
+                        &disconn_complete);
+
+  auto setup_ok_status = testing::CommandStatusPacket(
+      hci_spec::kEnhancedSetupSynchronousConnection,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  auto conn_complete_1 = testing::SynchronousConnectionCompletePacket(
+      handle_1,
+      kPeerAddress,
+      hci_spec::LinkType::kExtendedSCO,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        testing::EnhancedSetupSynchronousConnectionPacket(
+                            kAclConnectionHandle, kConnectionParams),
+                        &setup_ok_status,
+                        &conn_complete_1);
+
+  test_device()->SendCommandChannelPacket(
+      testing::SynchronousConnectionCompletePacket(
+          handle_0,
+          kPeerAddress,
+          hci_spec::LinkType::kExtendedSCO,
+          pw::bluetooth::emboss::StatusCode::SUCCESS));
+  RunUntilIdle();
+
+  EXPECT_EQ(cb_count_0, 1u);
+  ASSERT_TRUE(conn_result_1.has_value());
+  ASSERT_TRUE(conn_result_1->is_ok());
+  EXPECT_EQ(conn_result_1->value()->handle(), handle_1);
+
+  EXPECT_CMD_PACKET_OUT(test_device(), testing::DisconnectPacket(handle_1));
 }
 
 }  // namespace
