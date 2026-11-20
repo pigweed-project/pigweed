@@ -160,45 +160,6 @@ cc_defaults {
     ],
 }
 
-// Deprecated: pw_transfer_core, pw_transfer, and pw_transfer_client build
-// pw_rpc with the default pw_rpc flags. Linking them into a binary that uses
-// other pw_rpc flags violates the ODR. Instantiate pw_transfer_core_defaults
-// with your pw_rpc flags instead.
-cc_library_static {
-    name: "pw_transfer_core",
-    vendor_available: true,
-    host_supported: true,
-    defaults: [
-        "pw_transfer_core_defaults",
-    ],
-}
-
-// Deprecated: see pw_transfer_core.
-cc_library_static {
-    name: "pw_transfer",
-    vendor_available: true,
-    host_supported: true,
-    defaults: [
-        "pw_transfer_service_defaults",
-    ],
-    static_libs: [
-        "pw_transfer_core",
-    ],
-}
-
-// Deprecated: see pw_transfer_core.
-cc_library_static {
-    name: "pw_transfer_client",
-    vendor_available: true,
-    host_supported: true,
-    defaults: [
-        "pw_transfer_client_defaults",
-    ],
-    static_libs: [
-        "pw_transfer_core",
-    ],
-}
-
 genrule {
     name: "pw_transfer_proto_with_prefix",
     defaults: ["pw_rpc_add_prefix_to_proto"],
