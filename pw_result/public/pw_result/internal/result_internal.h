@@ -69,7 +69,7 @@ inline constexpr ErrorTag kErrorTag{};
 struct InvokeTag {};
 inline constexpr InvokeTag kInvokeTag{};
 
-struct FromResultTag {};
+using FromResultTag = containers::internal::ConstructFromTag;
 inline constexpr FromResultTag kFromResultTag{};
 
 struct FromStdOptionalTag {};
@@ -210,10 +210,6 @@ struct ResultStorageBase {
 
   ResultStorageBase() = delete;
 
-  explicit constexpr ResultStorageBase(
-      containers::internal::UninitializedTag) noexcept
-      : storage(), status() {}
-
   constexpr ResultStorageBase(EmptyTag, status_type initial_status) noexcept
       : storage(), status(std::move(initial_status)) {}
 
@@ -262,14 +258,6 @@ struct ResultStorageBase {
       if (this->status.ok()) {
         this->storage.data.~T();
       }
-    }
-  }
-
-  template <typename Other>
-  constexpr void ConstructFrom(Other&& other) noexcept {
-    this->status = CopyOrMove<Other>(other.status);
-    if (this->status.ok()) {
-      MakeValue(CopyOrMove<Other>(other.data()));
     }
   }
 

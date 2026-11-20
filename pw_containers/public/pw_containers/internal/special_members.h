@@ -38,7 +38,7 @@ inline constexpr bool kIsTriviallyReassignable =
 
 // 3-state classification for special member functions:
 // - `kTrivial`: defaulted (`= default`), preserving triviality.
-// - `kNonTrivial`: user-provided (`ConstructFrom` / `AssignFrom`).
+// - `kNonTrivial`: user-provided (`ConstructFromTag` ctor / `AssignFrom`).
 // - `kDeleted`: deleted (`= delete`), SFINAE-disabling the operation.
 enum class SpecialMemberTrait : uint8_t {
   kTrivial,
@@ -107,8 +107,8 @@ class DestructLayer<Base, false> : public Base {
 //
 // When `kConstexpr` is `true`, non-trivial operations are marked `constexpr`
 // in C++17 as well as C++20 (for `StorageBase` implementations whose
-// `UninitializedTag` constructor, `ConstructFrom`, and `AssignFrom` are
-// `constexpr`-compatible in C++17).
+// `ConstructFromTag` constructor and `AssignFrom` are `constexpr`-compatible in
+// C++17).
 template <typename Base, SpecialMemberTrait kTrait, bool kConstexpr = false>
 class CopyCtorLayer : public Base {
  public:
@@ -123,9 +123,7 @@ class CopyCtorLayer : public Base {
     using Base::Base;                                                       \
     constexpr CopyCtorLayer() = default;                                    \
     Specifier CopyCtorLayer(const CopyCtorLayer& other) noexcept            \
-        : Base(UninitializedTag{}) {                                        \
-      this->ConstructFrom(other);                                           \
-    }                                                                       \
+        : Base(ConstructFromTag{}, other) {}                                \
     constexpr CopyCtorLayer(CopyCtorLayer&&) = default;                     \
     constexpr CopyCtorLayer& operator=(CopyCtorLayer&&) = default;          \
   }
@@ -192,9 +190,7 @@ class CopyCtorLayer<Base, SpecialMemberTrait::kDeleted, kConstexpr>
   constexpr MoveCtorLayer() = default;                                \
   constexpr MoveCtorLayer(const MoveCtorLayer&) = default;            \
   Specifier MoveCtorLayer(MoveCtorLayer&& other) noexcept             \
-      : Base(UninitializedTag{}) {                                    \
-    this->ConstructFrom(std::move(other));                            \
-  }                                                                   \
+      : Base(ConstructFromTag{}, std::move(other)) {}                 \
   constexpr MoveCtorLayer& operator=(const MoveCtorLayer&) = default; \
   constexpr MoveCtorLayer& operator=(MoveCtorLayer&&) = default;
 

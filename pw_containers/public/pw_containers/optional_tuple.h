@@ -68,8 +68,16 @@ class OptionalTupleStorageImpl<std::index_sequence<kIndices...>, Types...>
   constexpr OptionalTupleStorageImpl() noexcept = default;
 
   PW_CONSTEXPR_CPP20 explicit OptionalTupleStorageImpl(
-      UninitializedTag) noexcept
-      : OptionalTupleLeaf<kIndices, Types>()..., active_{} {}
+      ConstructFromTag, const OptionalTupleStorageImpl& other) noexcept
+      : OptionalTupleLeaf<kIndices, Types>()..., active_{} {
+    ConstructFrom(other);
+  }
+
+  PW_CONSTEXPR_CPP20 explicit OptionalTupleStorageImpl(
+      ConstructFromTag, OptionalTupleStorageImpl&& other) noexcept
+      : OptionalTupleLeaf<kIndices, Types>()..., active_{} {
+    ConstructFrom(std::move(other));
+  }
 
   template <typename... Args>
   constexpr explicit OptionalTupleStorageImpl(std::in_place_t,

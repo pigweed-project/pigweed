@@ -25,6 +25,9 @@ struct Empty {};
 // constructs the active value.
 struct UninitializedTag {};
 
+// Internal tag for copy- or move-constructing storage from another instance.
+struct ConstructFromTag {};
+
 // Empty tag type to indicate that an optional container element (such as in
 // `pw::OptionalTuple`) is not set. Equivalent to `std::nullopt_t`. Use
 // `pw::kTupleNull` to refer to a value of this type.

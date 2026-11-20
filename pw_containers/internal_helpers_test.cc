@@ -30,6 +30,7 @@
 namespace {
 
 using pw::containers::internal::ConstructAt;
+using pw::containers::internal::ConstructFromTag;
 using pw::containers::internal::Empty;
 using pw::containers::internal::InvalidTypeIndex;
 using pw::containers::internal::kAllTriviallyDestructible;
@@ -51,6 +52,7 @@ using pw::containers::internal::UninitializedTag;
 using pw::containers::test::CopyOnly;
 using pw::containers::test::Counter;
 using pw::containers::test::MoveOnly;
+using pw::containers::test::TrivialMoveOnly;
 
 // ============================================================================
 // tag.h tests
@@ -62,6 +64,9 @@ static_assert(std::is_trivially_copyable_v<Empty>);
 
 static_assert(std::is_empty_v<UninitializedTag>);
 static_assert(std::is_trivially_default_constructible_v<UninitializedTag>);
+
+static_assert(std::is_empty_v<ConstructFromTag>);
+static_assert(std::is_trivially_default_constructible_v<ConstructFromTag>);
 
 constexpr auto kNullPlaceholder = NullPlaceholder::InternalUseOnly();
 static_assert(
@@ -239,20 +244,15 @@ struct TestStorageBase {
   int move_assigns = 0;
 
   constexpr TestStorageBase() = default;
-  constexpr explicit TestStorageBase(UninitializedTag) noexcept {}
+  constexpr explicit TestStorageBase(ConstructFromTag,
+                                     const TestStorageBase& other) noexcept
+      : value(other.value), copy_ctors(other.copy_ctors + 1) {}
+  constexpr explicit TestStorageBase(ConstructFromTag,
+                                     TestStorageBase&& other) noexcept
+      : value(other.value), move_ctors(other.move_ctors + 1) {}
   constexpr explicit TestStorageBase(int v) : value(v) {}
 
   PW_CONSTEXPR_CPP20 void Destroy() noexcept {}
-
-  constexpr void ConstructFrom(const TestStorageBase& other) noexcept {
-    value = other.value;
-    copy_ctors = other.copy_ctors + 1;
-  }
-
-  constexpr void ConstructFrom(TestStorageBase&& other) noexcept {
-    value = other.value;
-    move_ctors = other.move_ctors + 1;
-  }
 
   constexpr void AssignFrom(const TestStorageBase& other) noexcept {
     value = other.value;
@@ -347,6 +347,18 @@ PW_CONSTEXPR_TEST(SpecialMembersTest, ConstexprCpp17NonTrivialHooks, {
   c = a;
   PW_TEST_EXPECT_EQ(c.value, 10);
   PW_TEST_EXPECT_EQ(c.copy_assigns, 1);
+
+  using ConstexprMoveBox =
+      SelectConstexprSpecialMembers<TestStorageBase<void>, TrivialMoveOnly>;
+  ConstexprMoveBox m1(10);
+  ConstexprMoveBox m2(std::move(m1));
+  PW_TEST_EXPECT_EQ(m2.value, 10);
+  PW_TEST_EXPECT_EQ(m2.move_ctors, 1);
+
+  ConstexprMoveBox m3(20);
+  m3 = std::move(m2);
+  PW_TEST_EXPECT_EQ(m3.value, 10);
+  PW_TEST_EXPECT_EQ(m3.move_assigns, 1);
 });
 
 }  // namespace
