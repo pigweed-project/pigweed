@@ -26,6 +26,11 @@
 namespace pw::tokenizer {
 namespace {
 
+template <typename T>
+uint32_t TokenizeInTemplate() {
+  return PW_TOKENIZE_STRING("Token in template");
+}
+
 TEST(DetokenizeFromThisProgram, DetokenizesSuccessfully) {
   uint32_t token1 = PW_TOKENIZE_STRING("Token one");
   uint32_t token2 = PW_TOKENIZE_STRING("Token two");
@@ -35,6 +40,16 @@ TEST(DetokenizeFromThisProgram, DetokenizesSuccessfully) {
 
   EXPECT_EQ(detok->Detokenize(ObjectAsBytes(token1)).BestString(), "Token one");
   EXPECT_EQ(detok->Detokenize(ObjectAsBytes(token2)).BestString(), "Token two");
+}
+
+TEST(DetokenizeFromThisProgram, DetokenizesTokenInTemplate) {
+  uint32_t token = TokenizeInTemplate<int>();
+
+  pw::Result<Detokenizer> detok = GetDetokenizerFromThisProgram();
+  PW_TEST_ASSERT_OK(detok);
+
+  EXPECT_EQ(detok->Detokenize(ObjectAsBytes(token)).BestString(),
+            "Token in template");
 }
 
 // Returns the string that this program's token database has for a token in

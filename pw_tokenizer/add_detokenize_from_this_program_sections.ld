@@ -43,7 +43,6 @@ SECTIONS
   {
     __pw_tokenizer_entries_start = .;
     KEEP(*(.pw_tokenizer.entries.*))
-    __pw_tokenizer_entries_end = .;
 
     /* GCC has a known bug (https://gcc.gnu.org/bugzilla/show_bug.cgi?id=88061)
      * that causes it to ignore any user-specified section placement for
@@ -60,6 +59,7 @@ SECTIONS
      * into the  .pw_tokenizer_entries section.
      */
     KEEP(*(.rodata.*_pw_tokenizer_string_entry_*))
+    __pw_tokenizer_entries_end = .;
   }
 }
 
