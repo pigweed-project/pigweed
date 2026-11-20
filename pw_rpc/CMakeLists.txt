@@ -557,7 +557,6 @@ if((NOT "${pw_rpc_CONFIG}" STREQUAL "pw_rpc.disable_global_mutex_config") AND
       pw_rpc.test_protos.pwpb_rpc2
       pw_rpc.test_protos.raw_rpc
       pw_rpc2.cpp
-      pw_rpc2.cpp._test_utils
       pw_status
       pw_sync.thread_notification
       pw_thread.options

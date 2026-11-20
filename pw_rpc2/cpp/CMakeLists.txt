@@ -262,7 +262,6 @@ pw_add_library(pw_rpc2.cpp._test_utils STATIC
     pw_allocator
     pw_assert.check
     pw_async2
-    pw_async2.value_future
     pw_buf
     pw_bytes
     pw_containers.inline_deque
@@ -293,8 +292,6 @@ pw_add_library(pw_rpc2.cpp.test_harness INTERFACE
     ${_pw_rpc2_coro_deps}
     pw_async2.testing
     pw_rpc2.cpp
-    pw_rpc2.cpp._test_utils
-    pw_status
     pw_transport.cpp.forwarding_socket
 )
 
@@ -311,6 +308,7 @@ pw_add_test(pw_rpc2.cpp.test_harness_test
     pw_rpc2.pw_rpc2_test_proto.pwpb_rpc2
     pw_rpc2.pw_rpc2_test_proto.raw_rpc2
     pw_rpc2.cpp.test_harness
+    pw_transport.cpp.forwarding_socket
   GROUPS
     modules
     pw_rpc2
@@ -410,7 +408,6 @@ pw_add_test(pw_rpc2.cpp.server_test
     pw_assert.check
     pw_async2
     pw_async2.testing
-    pw_async2.value_future
     pw_rpc2.cpp
     pw_rpc2.cpp._packet
     pw_rpc2.cpp._test_utils
@@ -418,6 +415,7 @@ pw_add_test(pw_rpc2.cpp.server_test
     pw_thread.test_thread_context
     pw_thread.thread
     pw_transport.cpp.socket
+    pw_transport.cpp.testing
   GROUPS
     modules
     pw_rpc2
@@ -536,6 +534,7 @@ pw_add_test(pw_rpc2.cpp.client_test
     pw_status
     pw_thread.test_thread_context
     pw_thread.thread
+    pw_transport.cpp.testing
   GROUPS
     modules
     pw_rpc2
@@ -562,19 +561,16 @@ pw_add_test(pw_rpc2.cpp.generated_service_test
   SOURCES
     generated_service_test.cc
   PRIVATE_DEPS
-    pw_allocator.testing
     pw_async2
-    pw_async2.testing
     pw_buf
     pw_bytes
     pw_compilation_testing._pigweed_only_negative_compilation
     pw_polyfill
     pw_rpc2.cpp
     pw_rpc2.cpp._test_utils
+    pw_rpc2.cpp.test_harness
     pw_rpc2.pw_rpc2_test_proto.pwpb_rpc2
     pw_rpc2.pw_rpc2_test_proto.raw_rpc2
-    pw_status
-    pw_transport.cpp.forwarding_socket
   GROUPS
     modules
     pw_rpc2
@@ -604,6 +600,7 @@ pw_add_test(pw_rpc2.cpp.mixed_apis_test
     pw_status
     pw_transport.cpp.forwarding_socket
     pw_transport.cpp.socket
+    pw_transport.cpp.testing
   GROUPS
     modules
     pw_rpc2
@@ -633,7 +630,6 @@ pw_add_test(pw_rpc2.cpp.codegen_test
     pw_rpc2.cpp._test_utils
     pw_rpc2.cpp.codegen_test_proto.pwpb_rpc2
     pw_rpc2.cpp.codegen_test_proto.raw_rpc2
-    pw_status
     pw_transport.cpp.forwarding_socket
   GROUPS
     modules
@@ -657,6 +653,7 @@ pw_add_test(pw_rpc2.cpp.e2e_test
     pw_span
     pw_transport.cpp.forwarding_socket
     pw_transport.cpp.socket
+    pw_transport.cpp.testing
     pw_unit_test.status_macros
   GROUPS
     modules

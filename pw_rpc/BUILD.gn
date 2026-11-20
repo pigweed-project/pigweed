@@ -675,7 +675,6 @@ pw_test("rpc2_adapter_test") {
     "$dir_pw_assert:check",
     "$dir_pw_async2:testing",
     "$dir_pw_rpc2/cpp",
-    "$dir_pw_rpc2/cpp:test_utils",
     "$dir_pw_sync:thread_notification",
     "$dir_pw_thread:options",
     "$dir_pw_thread:sleep",

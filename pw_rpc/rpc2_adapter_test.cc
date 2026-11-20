@@ -40,7 +40,6 @@
 #include "pw_rpc/server.h"
 #include "pw_rpc2/client.h"
 #include "pw_rpc2/internal/generated_service_client.h"
-#include "pw_rpc2/internal/test_utils.h"
 #include "pw_rpc2/reader.h"
 #include "pw_rpc2/server.h"
 #include "pw_rpc2/status.h"
@@ -525,7 +524,6 @@ class Harness {
     // Close the client, if a test did not already, and the server.
     std::ignore = RunToCompletion(client_.Close());
     client_ = pw::rpc2::Client();
-    transport_.ResolveAccept(pw::Status::Cancelled());
     PW_CHECK_OK(RunToCompletion(server_.Close()));
 
     // Stopping the adapter cancels any legacy calls that were still open and
@@ -545,11 +543,8 @@ class Harness {
   // Connects another pw_rpc2 client to the server. Close it before the test
   // ends.
   pw::rpc2::Client Connect() {
-    pw::transport::ForwardingSocketPair sockets =
-        pw::transport::ForwardingSocketPair::Create(allocator_);
-    transport_.ResolveAccept(sockets.second());
     pw::rpc2::RpcResult<pw::rpc2::Client> client = RunToCompletion(
-        pw::rpc2::Client::Connect(dispatcher_, allocator_, sockets.first()));
+        pw::rpc2::Client::Connect(dispatcher_, allocator_, transport_));
     PW_CHECK_OK(client.status());
     return std::move(*client);
   }
@@ -618,7 +613,7 @@ class Harness {
   pw::thread::test::TestThreadContext thread_context_;
   typename Adapted::AdapterHolder adapter_;
   Adapted service_;
-  pw::rpc2::test::MockTransport transport_;
+  pw::transport::ForwardingTransport transport_{allocator_};
   pw::rpc2::Server server_{allocator_, dispatcher_};
   pw::rpc2::Client client_;
 };

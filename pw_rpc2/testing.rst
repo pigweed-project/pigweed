@@ -144,3 +144,20 @@ intermediate state:
    :language: c++
    :start-after: // DOCSTAG: [pw_rpc2-testing-stalled]
    :end-before: // DOCSTAG: [pw_rpc2-testing-stalled]
+
+.. _module-pw_rpc2-testing-transport-options:
+
+-----------------------------
+Configuring transport options
+-----------------------------
+Use :cc:`TestHarness::WithTransportOptions()
+<pw::rpc2::test::TestHarness::WithTransportOptions>` to pass custom
+:cc:`transport::ForwardingSocketOptions
+<pw::transport::ForwardingSocketOptions>` (followed by any service
+constructor arguments) when testing transport backpressure or message size
+limits:
+
+.. literalinclude:: cpp/test_harness_test.cc
+   :language: c++
+   :start-after: // DOCSTAG: [pw_rpc2-testing-options]
+   :end-before: // DOCSTAG: [pw_rpc2-testing-options]

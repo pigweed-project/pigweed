@@ -26,11 +26,9 @@
 #include "pw_async2/task.h"
 #include "pw_rpc2/client.h"
 #include "pw_rpc2/internal/service_info.h"
-#include "pw_rpc2/internal/test_utils.h"
 #include "pw_rpc2/server.h"
 #include "pw_rpc2/service.h"
 #include "pw_rpc2/status.h"
-#include "pw_status/status.h"
 #include "pw_transport/forwarding_socket.h"
 
 #if defined(__cpp_impl_coroutine) && __has_include("pw_async2/coro.h")
@@ -45,44 +43,56 @@ namespace pw::rpc2::test {
 /// client.
 ///
 /// Instantiates and connects a real `Server` (hosting `ServiceImpl`) and a
-/// `Client` over an in-memory `ForwardingSocketPair` on a single
+/// `Client` over an in-memory `ForwardingTransport` on a single
 /// `DispatcherForTest`. Tests drive RPCs through the generated `raw` or `pwpb`
 /// client API using `RunToCompletion()`, `RunInTaskUntilStalled()`, or
 /// `dispatcher()`.
 template <typename ServiceImpl, size_t kAllocatorSizeBytes = 16384>
 class TestHarness {
  public:
-  static_assert(std::is_base_of_v<::pw::rpc2::Service, ServiceImpl>,
+  static_assert(std::is_base_of_v<Service, ServiceImpl>,
                 "ServiceImpl must derive from a generated pw_rpc2 Service "
                 "base class (which inherits from pw::rpc2::Service).");
 
-  using RawClient =
-      typename ::pw::rpc2::internal::ServiceInfo<ServiceImpl>::RawClient;
-  using PwpbClient =
-      typename ::pw::rpc2::internal::ServiceInfo<ServiceImpl>::PwpbClient;
+  using RawClient = typename internal::ServiceInfo<ServiceImpl>::RawClient;
+  using PwpbClient = typename internal::ServiceInfo<ServiceImpl>::PwpbClient;
 
-  template <typename... Args,
-            typename =
-                std::enable_if_t<std::is_constructible_v<ServiceImpl, Args...>>>
+  /// Constructs `ServiceImpl` with `service_args` and connects a client and
+  /// server over an in-memory `ForwardingTransport` with default
+  /// `ForwardingSocketOptions`.
+  ///
+  /// @param[in,out] service_args Arguments forwarded to `ServiceImpl`'s
+  ///   constructor.
+  template <
+      typename... Args,
+      std::enable_if_t<std::is_constructible_v<ServiceImpl, Args...>, int> = 0>
   explicit TestHarness(Args&&... service_args)
-      : service_(std::forward<Args>(service_args)...),
-        server_(allocator_, dispatcher_) {
-    PW_CHECK_OK(server_.RegisterService(service_));
-    PW_CHECK_OK(server_.RegisterListenerBlocking(transport_));
-    server_.Start();
+      : TestHarness(InitTag{},
+                    transport::ForwardingSocketOptions{},
+                    std::forward<Args>(service_args)...) {}
 
-    auto paired = transport::ForwardingSocketPair::Create(allocator_);
-    transport_.ResolveAccept(paired.second());
-
-    RpcResult<Client> client = RunToCompletion(
-        Client::Connect(dispatcher_, allocator_, paired.first()));
-    PW_CHECK_OK(client.status());
-    client_ = std::move(*client);
+  /// Constructs `ServiceImpl` with `service_args` and connects a client and
+  /// server over an in-memory `ForwardingTransport` configured with `options`.
+  ///
+  /// @param[in] options Queue depth and maximum message size for the underlying
+  ///   `ForwardingTransport`.
+  /// @param[in,out] service_args Arguments forwarded to `ServiceImpl`'s
+  ///   constructor.
+  /// @returns A connected `TestHarness` instance.
+  /// @pre `options.queue_depth > 0` (crash-asserts otherwise).
+  template <
+      typename... Args,
+      std::enable_if_t<std::is_constructible_v<ServiceImpl, Args...>, int> = 0>
+  static TestHarness WithTransportOptions(
+      const transport::ForwardingSocketOptions& options,
+      Args&&... service_args) {
+    return TestHarness(InitTag{}, options, std::forward<Args>(service_args)...);
   }
 
+  /// Closes the client and server, running the dispatcher until teardown
+  /// completes.
   ~TestHarness() {
     client_ = Client();
-    transport_.ResolveAccept(Status::Cancelled());
     PW_CHECK_OK(RunToCompletion(server_.Close()));
   }
 
@@ -91,7 +101,7 @@ class TestHarness {
   TestHarness(TestHarness&&) = delete;
   TestHarness& operator=(TestHarness&&) = delete;
 
-  /// Returns the connected `pw::rpc2::Client`.
+  /// Returns the connected `Client`.
   const Client& client() const { return client_; }
 
   /// Returns a generated `raw` service client bound to the connected `Client`.
@@ -107,11 +117,11 @@ class TestHarness {
   const ServiceImpl& service() const { return service_; }
 
   /// Returns the shared test dispatcher driving both client and server.
-  pw::async2::DispatcherForTest& dispatcher() { return dispatcher_; }
+  async2::DispatcherForTest& dispatcher() { return dispatcher_; }
 
   /// Returns the test allocator (which also implicitly converts to
-  /// `pw::async2::CoroContext`).
-  pw::Allocator& allocator() { return allocator_; }
+  /// `async2::CoroContext`).
+  Allocator& allocator() { return allocator_; }
 
   /// Advances the dispatcher until all ready tasks have stalled.
   bool RunUntilStalled() { return dispatcher_.RunUntilStalled(); }
@@ -171,11 +181,30 @@ class TestHarness {
   }
 
  private:
+  struct InitTag {};
+
+  template <typename... Args>
+  explicit TestHarness(InitTag,
+                       const transport::ForwardingSocketOptions& options,
+                       Args&&... service_args)
+      : transport_(allocator_, options),
+        service_(std::forward<Args>(service_args)...),
+        server_(allocator_, dispatcher_) {
+    PW_CHECK_OK(server_.RegisterService(service_));
+    PW_CHECK_OK(server_.RegisterListenerBlocking(transport_));
+    server_.Start();
+
+    RpcResult<Client> client =
+        RunToCompletion(Client::Connect(dispatcher_, allocator_, transport_));
+    PW_CHECK_OK(client.status());
+    client_ = std::move(*client);
+  }
+
   // Declared first so it outlives everything allocated from it, including the
   // dispatcher's posted tasks and connection buffers.
-  pw::allocator::test::AllocatorForTest<kAllocatorSizeBytes> allocator_;
-  pw::async2::DispatcherForTest dispatcher_;
-  MockTransport transport_;
+  allocator::test::AllocatorForTest<kAllocatorSizeBytes> allocator_;
+  async2::DispatcherForTest dispatcher_;
+  transport::ForwardingTransport transport_;
   // Declared before `server_` so that it is destroyed after active calls are
   // torn down during `~TestHarness()`.
   ServiceImpl service_;

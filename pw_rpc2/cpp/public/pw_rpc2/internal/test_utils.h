@@ -25,7 +25,6 @@
 #include "pw_assert/check.h"
 #include "pw_async2/future_task.h"
 #include "pw_async2/runnable_dispatcher.h"
-#include "pw_async2/value_future.h"
 #include "pw_buf/buf.h"
 #include "pw_bytes/span.h"
 #include "pw_containers/inline_deque.h"
@@ -42,32 +41,14 @@
 #include "pw_status/status.h"
 #include "pw_sync/interrupt_spin_lock.h"
 #include "pw_transport/socket.h"
-#include "pw_transport/transport.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::rpc2::test {
 
-/// Exposes `ReliableListener::WrapSocket` to test code.
-///
-/// `ReliableSocket`'s constructor is private: handles are normally
-/// minted by a `ReliableListener` or `ReliableConnector` from
-/// their protected `WrapSocket` hook. Tests frequently want a handle to a bare
-/// `ReliableSocketImpl` with no transport behind it, so this class
-/// inherits the hook and republishes it. It is abstract and is never
-/// instantiated; only its static `WrapSocket` is used.
-class SocketFactory : public transport::ReliableListener {
- public:
-  using transport::ReliableListener::WrapSocket;
-};
-
-/// Returns a `ReliableSocket` handle to `impl` for testing.
-inline transport::ReliableSocket WrapSocket(
-    transport::ReliableSocketImpl& impl) {
-  return SocketFactory::WrapSocket(impl);
-}
-
 class MockConnection : public transport::ReliableSocketImpl {
  public:
+  using transport::ReliableSocketImpl::WrapSocket;
+
   /// Maximum number of committed (written) packets retained for inspection.
   /// Committing more than this many packets is a fatal error rather than a
   /// silent eviction, since dropping packets would corrupt the indices
@@ -91,7 +72,6 @@ class MockConnection : public transport::ReliableSocketImpl {
   void UnblockReserveWrite(size_t size) PW_LOCKS_EXCLUDED(*this);
   void SetNextRead(pw::Buf buf) PW_LOCKS_EXCLUDED(*this);
   void PushNextRead(pw::Buf buf) PW_LOCKS_EXCLUDED(*this);
-  void TryResolveRead() PW_LOCKS_EXCLUDED(*this);
   ConstBuf last_written_buf() const PW_LOCKS_EXCLUDED(*this) {
     std::lock_guard lock(*this);
     if (written_packets_.empty()) {
@@ -151,10 +131,10 @@ class MockConnection : public transport::ReliableSocketImpl {
 // and returns both the transport::ReliableSocket handle and raw pointer
 // for testing.
 inline std::pair<transport::ReliableSocket, MockConnection*> MakeMockConnection(
-    pw::Allocator& allocator, size_t max_write_message_size_bytes = 1500) {
+    Allocator& allocator, size_t max_write_message_size_bytes = 1500) {
   auto* raw =
       allocator.New<MockConnection>(allocator, max_write_message_size_bytes);
-  return {WrapSocket(*raw), raw};
+  return {raw->WrapSocket(), raw};
 }
 
 /// Queues the `kSynAck` a server sends to accept a client's `kSyn`.
@@ -623,69 +603,6 @@ class MockPeer {
 /// still-posted tasks, which live in `allocator`.
 MockPeer MakeMockPeer(async2::RunnableDispatcher& dispatcher,
                       pw::Allocator& allocator);
-
-/// Bidirectional mock usable both as a server listener and a client connector.
-class MockTransport : public transport::ReliableListener,
-                      public transport::ReliableConnector {
- public:
-  MockTransport() = default;
-  ~MockTransport() override {
-    if (accept_provider_.has_future()) {
-      accept_provider_.Resolve(Status::Cancelled());
-    }
-    if (connect_provider_.has_future()) {
-      connect_provider_.Resolve(Status::Cancelled());
-    }
-  }
-
-  transport::ReliableConnector::ConnectFuture DoConnectReliable() override {
-    if (pending_connect_result_.has_value()) {
-      auto res = std::move(*pending_connect_result_);
-      pending_connect_result_.reset();
-      return transport::ReliableConnector::ConnectFuture::Resolved(
-          std::move(res));
-    }
-    return connect_provider_.Get();
-  }
-  transport::ReliableListener::AcceptFuture DoAcceptReliable() override {
-    if (pending_accept_result_.has_value()) {
-      auto res = std::move(*pending_accept_result_);
-      pending_accept_result_.reset();
-      return transport::ReliableListener::AcceptFuture::Resolved(
-          std::move(res));
-    }
-    return accept_provider_.Get();
-  }
-
-  void ResolveConnect(Result<transport::ReliableSocket> res) {
-    if (connect_provider_.has_future()) {
-      connect_provider_.Resolve(std::move(res));
-    } else {
-      pending_connect_result_ = std::move(res);
-    }
-  }
-  void ResolveAccept(Result<transport::ReliableSocket> res) {
-    if (accept_provider_.has_future()) {
-      accept_provider_.Resolve(std::move(res));
-    } else {
-      pending_accept_result_ = std::move(res);
-    }
-  }
-
-  bool has_pending_connect() const {
-    return connect_provider_.has_future() ||
-           pending_connect_result_.has_value();
-  }
-  bool has_pending_accept() const {
-    return accept_provider_.has_future() || pending_accept_result_.has_value();
-  }
-
- private:
-  ConnectProvider connect_provider_;
-  AcceptProvider accept_provider_;
-  std::optional<Result<transport::ReliableSocket>> pending_connect_result_;
-  std::optional<Result<transport::ReliableSocket>> pending_accept_result_;
-};
 
 /// Closes `client` and runs `dispatcher` until the connection is torn down.
 /// Use this instead of `Client::CloseBlocking()` on the thread that runs the

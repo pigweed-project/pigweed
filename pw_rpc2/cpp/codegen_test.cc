@@ -50,7 +50,6 @@
 #include "pw_rpc2/server.h"
 #include "pw_rpc2/write_reservation.h"
 #include "pw_rpc2/writer.h"
-#include "pw_status/status.h"
 #include "pw_transport/forwarding_socket.h"
 #include "pw_unit_test/framework.h"
 
@@ -1141,7 +1140,6 @@ class TestServer {
   ~TestServer() {
     client_.reset();
     static_cast<void>(server_.Close());
-    transport_.ResolveAccept(::pw::Status::Cancelled());
     dispatcher_.RunUntilStalled();
     EXPECT_EQ(allocator_.metrics().allocated_bytes.value(), 0u);
   }
@@ -1161,10 +1159,7 @@ class TestServer {
     }
     server_.Start();
 
-    auto paired = pw::transport::ForwardingSocketPair::Create(allocator_);
-    transport_.ResolveAccept(paired.second());
-
-    auto client = Run(Client::Connect(dispatcher_, allocator_, paired.first()));
+    auto client = Run(Client::Connect(dispatcher_, allocator_, transport_));
     if (!client.has_value() || !client->ok()) {
       return false;
     }
@@ -1198,7 +1193,7 @@ class TestServer {
  private:
   allocator::test::AllocatorForTest<32768> allocator_;
   async2::DispatcherForTest dispatcher_;
-  test::MockTransport transport_;
+  pw::transport::ForwardingTransport transport_{allocator_};
 
   NamesService name_service_;
   KindsService kinds_service_;

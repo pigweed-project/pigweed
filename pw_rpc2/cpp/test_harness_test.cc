@@ -28,11 +28,13 @@
 #include "pw_async2/task.h"
 #include "pw_buf/buf.h"
 #include "pw_compilation_testing/negative_compilation.h"
+#include "pw_rpc2/internal/test_utils.h"
 #include "pw_rpc2/reader.h"
 #include "pw_rpc2/status.h"
 #include "pw_rpc2/writer.h"
 #include "pw_rpc2_test_pb/pw_rpc2_test.pwpb.rpc2.h"
 #include "pw_rpc2_test_pb/pw_rpc2_test.raw.rpc2.h"
+#include "pw_transport/forwarding_socket.h"
 #include "pw_unit_test/framework.h"
 
 namespace {
@@ -62,6 +64,9 @@ namespace RawTestEcho = ::pw::rpc2::test::pw_rpc2::raw::TestEcho;
 // Service that implements every RPC by declaring `<Method>Future` types.
 class EchoFutureService : public PwpbTestEcho::Service<EchoFutureService> {
  public:
+  explicit EchoFutureService(uint32_t multiplier = 2)
+      : multiplier_(multiplier) {}
+
   uint32_t calls() const { return calls_; }
 
   class EchoUnaryFuture : public TestFuture {
@@ -71,6 +76,7 @@ class EchoFutureService : public PwpbTestEcho::Service<EchoFutureService> {
                     EchoRequest request,
                     UnaryWriter<EchoResponse> responder)
         : TestFuture(true),
+          multiplier_(service.multiplier_),
           request_(request),
           responder_(std::move(responder)) {
       ++service.calls_;
@@ -78,7 +84,8 @@ class EchoFutureService : public PwpbTestEcho::Service<EchoFutureService> {
 
     async2::Poll<> Pend(async2::Context& cx) {
       if (!finish_.is_pendable()) {
-        finish_ = responder_.Finish(EchoResponse{.val = request_.val * 2});
+        finish_ =
+            responder_.Finish(EchoResponse{.val = request_.val * multiplier_});
       }
       PW_AWAIT(RpcStatus status, finish_, cx);
       PW_TEST_EXPECT_OK(status);
@@ -86,6 +93,7 @@ class EchoFutureService : public PwpbTestEcho::Service<EchoFutureService> {
     }
 
    private:
+    uint32_t multiplier_ = 0;
     EchoRequest request_;
     UnaryWriter<EchoResponse> responder_;
     WriteFuture<EchoResponse> finish_;
@@ -207,6 +215,7 @@ class EchoFutureService : public PwpbTestEcho::Service<EchoFutureService> {
   };
 
  private:
+  uint32_t multiplier_;
   uint32_t calls_ = 0;
 };
 static_assert(async2::Future<EchoFutureService::EchoUnaryFuture>);
@@ -618,12 +627,97 @@ TEST(TestHarnessTest, AbandonedCallTearsDownCleanly) {
   // Leave the call open when `tester` and `call` go out of scope.
 }
 
+// DOCSTAG: [pw_rpc2-testing-options]
+TEST(TestHarnessTest, CustomForwardingSocketOptionsMtuLimit) {
+  auto tester = TestHarness<EchoFutureService>::WithTransportOptions(
+      {.queue_depth = 2, .max_message_size_bytes = 32},
+      /*multiplier=*/3u);
+
+  // Small request fits within the 32-byte message size limit.
+  RpcResult<EchoResponse> ok_resp = tester.RunToCompletion(
+      tester.pwpb_client().EchoUnary(EchoRequest{.val = 7}));
+  PW_TEST_ASSERT_OK(ok_resp);
+  EXPECT_EQ(ok_resp->val, 21u);
+
+  // Raw request exceeding the 32-byte MTU fails immediately.
+  constexpr std::array<std::byte, 40> kOversizedPayload{};
+  RpcResult<pw::ConstBuf> too_large =
+      tester.RunToCompletion(tester.raw_client().EchoUnary::Copy(
+          pw::ConstBuf::Unowned(kOversizedPayload)));
+  EXPECT_EQ(too_large.status(), RpcStatus::MessageTooLarge());
+}
+// DOCSTAG: [pw_rpc2-testing-options]
+
+TEST(TestHarnessTest, NamedForwardingSocketOptionsAndBackpressure) {
+  pw::transport::ForwardingSocketOptions options;
+  options.queue_depth = 4;
+  auto tester = TestHarness<EchoFutureService>::WithTransportOptions(options);
+
+  // With `queue_depth = 4`, all 3 stream responses plus Finish() fit in the
+  // server->client queue before the client reads a single message.
+  RpcResult<Reader<EchoResponse>> reader = tester.RunToCompletion(
+      tester.pwpb_client().CountUpServerStream(EchoRequest{.val = 10}));
+  PW_TEST_ASSERT_OK(reader);
+  tester.RunUntilStalled();
+
+  for (uint32_t expected = 11; expected <= 13; ++expected) {
+    RpcResult<EchoResponse> msg = tester.RunToCompletion(reader->Read());
+    PW_TEST_ASSERT_OK(msg);
+    EXPECT_EQ(msg->val, expected);
+  }
+  EXPECT_EQ(tester.RunToCompletion(reader->Read()).status(),
+            RpcStatus::EndOfStream());
+}
+
+class BraceConfigurableService : public EchoFutureService {
+ public:
+  struct Config {
+    uint32_t multiplier = 5;
+  };
+
+  BraceConfigurableService() = default;
+  explicit BraceConfigurableService(Config config)
+      : EchoFutureService(config.multiplier), used_config_ctor_(true) {}
+
+  bool used_config_ctor() const { return used_config_ctor_; }
+
+ private:
+  bool used_config_ctor_ = false;
+};
+
+TEST(TestHarnessTest, BraceInitializedServiceConfigCallsServiceConstructor) {
+  TestHarness<BraceConfigurableService> tester(
+      BraceConfigurableService::Config{.multiplier = 6});
+  EXPECT_TRUE(tester.service().used_config_ctor());
+
+  RpcResult<EchoResponse> resp = tester.RunToCompletion(
+      tester.pwpb_client().EchoUnary(EchoRequest{.val = 7}));
+  PW_TEST_ASSERT_OK(resp);
+  EXPECT_EQ(resp->val, 42u);
+}
+
 #if PW_NC_TEST(NotAServiceImpl)
 PW_NC_EXPECT("ServiceImpl must derive from a generated pw_rpc2 Service");
 
 struct NotAService {};
 
 [[maybe_unused]] void BadServiceImpl() { TestHarness<NotAService> tester; }
+
+#elif PW_NC_TEST(WithTransportOptionsInvalidServiceArgs)
+PW_NC_EXPECT("no matching function for call to.*WithTransportOptions");
+
+[[maybe_unused]] void BadWithTransportOptions() {
+  auto tester =
+      TestHarness<EchoFutureService>::WithTransportOptions({}, "invalid arg");
+}
+
+#elif PW_NC_TEST(BraceInitDoesNotSilentlyBindSocketOptions)
+PW_NC_EXPECT_CLANG("no matching constructor for initialization of");
+PW_NC_EXPECT_GCC("no matching function for call to");
+
+[[maybe_unused]] void BraceInitNotHijackedAsSocketOptions() {
+  TestHarness<BraceConfigurableService> tester({.multiplier = 6});
+}
 
 #elif PW_NC_TEST(InvalidRunToCompletionArgument)
 PW_NC_EXPECT("RunToCompletion.*requires a pw::async2::Future");

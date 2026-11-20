@@ -44,6 +44,7 @@
 #include "pw_span/span.h"
 #include "pw_transport/forwarding_socket.h"
 #include "pw_transport/socket.h"
+#include "pw_transport/testing.h"
 #include "pw_unit_test/framework.h"
 #include "pw_unit_test/status_macros.h"
 
@@ -621,7 +622,7 @@ class E2ETest : public ::testing::Test {
     } else if (service_kind_ == ServiceKind::kPwpb) {
       PW_TEST_EXPECT_OK(server_.RegisterService(pwpb_service_));
     }
-    for (test::MockTransport& transport : interfaces_) {
+    for (transport::test::MockReliableListener& transport : interfaces_) {
       PW_TEST_EXPECT_OK(server_.RegisterListenerBlocking(transport));
     }
     server_.Start();
@@ -641,11 +642,10 @@ class E2ETest : public ::testing::Test {
   }
 
   // Connects a new client to the server through `listener`.
-  Connection& ConnectClient(test::MockTransport& listener) {
+  Connection& ConnectClient(transport::test::MockReliableListener& listener) {
     connections_.emplace_back(Connection{
         .client = Client(),
-        .sockets = transport::ForwardingSocketPair::Create(allocator_,
-                                                           {.queue_depth = 1}),
+        .sockets = transport::ForwardingSocketPair::Create(allocator_),
     });
     Connection& connection = connections_.back();
     listener.ResolveAccept(connection.sockets.second());
@@ -712,7 +712,7 @@ class E2ETest : public ::testing::Test {
   async2::DispatcherForTest dispatcher_;
   RawTestService raw_service_;
   PwpbEchoService pwpb_service_;
-  std::array<test::MockTransport, kNumInterfaces> interfaces_;
+  std::array<transport::test::MockReliableListener, kNumInterfaces> interfaces_;
   Server server_{allocator_, dispatcher_};
   Vector<Connection, 4> connections_;
 
@@ -1129,7 +1129,7 @@ class ProxyTest : public E2ETest {
   }
 
   ProxyService proxy_service_;
-  test::MockTransport proxy_listener_;
+  transport::test::MockReliableListener proxy_listener_;
   Server proxy_server_{allocator_, dispatcher_};
   Connection* backend_ = nullptr;
   RawClient frontend_;

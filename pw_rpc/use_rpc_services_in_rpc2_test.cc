@@ -27,11 +27,9 @@
 #include "pw_rpc/rpc2_adapter.h"
 #include "pw_rpc/server.h"
 #include "pw_rpc2/client.h"
-#include "pw_rpc2/internal/test_utils.h"
 #include "pw_rpc2/reader.h"
 #include "pw_rpc2/server.h"
 #include "pw_rpc2/status.h"
-#include "pw_status/status.h"
 #include "pw_thread/options.h"
 #include "pw_thread/sleep.h"
 #include "pw_thread/test_thread_context.h"
@@ -107,19 +105,16 @@ void RunServer(pw::rpc2::Server& rpc2_server,
   PW_CHECK_NOTNULL(current_context);
   auto& cx = *current_context;
 
-  pw::rpc2::test::MockTransport transport;
+  transport::ForwardingTransport transport(cx.allocator);
   PW_CHECK_OK(rpc2_server.RegisterListenerBlocking(transport));
   rpc2_server.Start();
 
   // Connect a pw_rpc2 client over an in-memory connection.
-  pw::transport::ForwardingSocketPair sockets =
-      pw::transport::ForwardingSocketPair::Create(cx.allocator);
-  transport.ResolveAccept(sockets.second());
   PW_TEST_ASSERT_OK_AND_ASSIGN(
-      pw::rpc2::Client rpc2_client,
-      RunToCompletion(cx.dispatcher,
-                      pw::rpc2::Client::Connect(
-                          cx.dispatcher, cx.allocator, sockets.first())));
+      rpc2::Client rpc2_client,
+      RunToCompletion(
+          cx.dispatcher,
+          rpc2::Client::Connect(cx.dispatcher, cx.allocator, transport)));
 
   pw::rpc::examples::pw_rpc2::pwpb::SensorService::Client client(rpc2_client);
 
@@ -160,7 +155,6 @@ void RunServer(pw::rpc2::Server& rpc2_server,
   // Tear down in order: the client, the pw_rpc2 server, then the adapter.
   PW_TEST_EXPECT_OK(RunToCompletion(cx.dispatcher, rpc2_client.Close()));
   rpc2_client = pw::rpc2::Client();
-  transport.ResolveAccept(pw::Status::Cancelled());
   PW_TEST_EXPECT_OK(RunToCompletion(cx.dispatcher, rpc2_server.Close()));
   adapter.Stop();
 }

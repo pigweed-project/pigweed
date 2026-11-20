@@ -25,15 +25,11 @@
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
-#include <optional>
 #include <type_traits>
 #include <utility>
 
-#include "pw_allocator/testing.h"
 #include "pw_async2/await.h"
 #include "pw_async2/context.h"
-#include "pw_async2/dispatcher_for_test.h"
-#include "pw_async2/future_task.h"
 #include "pw_async2/poll.h"
 #include "pw_buf/buf.h"
 #include "pw_bytes/span.h"
@@ -43,15 +39,13 @@
 #include "pw_rpc2/internal/service_info.h"
 #include "pw_rpc2/internal/test_utils.h"
 #include "pw_rpc2/reader.h"
-#include "pw_rpc2/server.h"
 #include "pw_rpc2/service_client.h"
 #include "pw_rpc2/status.h"
+#include "pw_rpc2/test_harness.h"
 #include "pw_rpc2/write_reservation.h"
 #include "pw_rpc2/writer.h"
 #include "pw_rpc2_test_pb/pw_rpc2_test.pwpb.rpc2.h"
 #include "pw_rpc2_test_pb/pw_rpc2_test.raw.rpc2.h"
-#include "pw_status/status.h"
-#include "pw_transport/forwarding_socket.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::rpc2::test {
@@ -466,46 +460,18 @@ TEST(GeneratedService, ConstantInitialization) {
 template <typename ServiceImpl>
 class ServiceTest : public ::testing::Test {
  protected:
-  ServiceTest() : server_(allocator_, dispatcher_) {}
-
-  void SetUp() override {
-    PW_TEST_ASSERT_OK(server_.RegisterService(service_));
-    PW_TEST_ASSERT_OK(server_.RegisterListenerBlocking(transport_));
-    server_.Start();
-    started_ = true;
-
-    auto connections = transport::ForwardingSocketPair::Create(allocator_);
-    transport_.ResolveAccept(connections.second());
-    ::pw::rpc2::RpcResult<pw::rpc2::Client> client =
-        RunToCompletion(::pw::rpc2::Client::Connect(
-            dispatcher_, allocator_, connections.first()));
-    PW_TEST_ASSERT_OK(client.status());
-    client_.emplace(std::move(*client), dispatcher_);
-  }
-
-  // A started server must be closed before it, and the service registered
-  // with it, are destroyed.
-  void TearDown() override {
-    client_.reset();
-    if (started_) {
-      auto closed = server_.Close();
-      transport_.ResolveAccept(::pw::Status::Cancelled());
-      PW_TEST_EXPECT_OK(RunToCompletion(std::move(closed)));
-    }
-  }
-
-  const ::pw::rpc2::Client& client() { return *client_; }
+  const Client& client() const { return harness_.client(); }
 
   template <typename Fut>
   typename Fut::value_type RunToCompletion(Fut future) {
-    return test::RunToCompletion(dispatcher_, std::move(future));
+    return harness_.RunToCompletion(std::move(future));
   }
 
   // Sends `payload` as the request of a zero-copy raw call and returns the
   // result of committing it: a response future or reader.
   template <typename ReserveFuture,
             typename Future = std::remove_reference_t<ReserveFuture>>
-  auto SendRawRequest(ReserveFuture&& reservation, ::pw::ConstByteSpan payload)
+  auto SendRawRequest(ReserveFuture&& reservation, ConstByteSpan payload)
       -> decltype(std::declval<typename Future::Reservation&>().Commit(0)) {
     typename Future::value_type buffer =
         RunToCompletion(std::forward<ReserveFuture>(reservation));
@@ -515,13 +481,7 @@ class ServiceTest : public ::testing::Test {
     return CommitCopy(*buffer, payload);
   }
 
-  ::pw::allocator::test::AllocatorForTest<8192> allocator_;
-  ::pw::async2::DispatcherForTest dispatcher_;
-  ServiceImpl service_;
-  ::pw::rpc2::Server server_;
-  MockTransport transport_;
-  std::optional<ScopedClient> client_;
-  bool started_ = false;
+  TestHarness<ServiceImpl, 8192> harness_;
 };
 
 // Checks every RPC of a pwpb service implemented with the futures above.

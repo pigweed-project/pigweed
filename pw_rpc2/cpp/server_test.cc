@@ -28,7 +28,6 @@
 #include "pw_async2/future_task.h"
 #include "pw_async2/task.h"
 #include "pw_async2/try.h"
-#include "pw_async2/value_future.h"
 #include "pw_rpc2/internal/handshake.h"
 #include "pw_rpc2/internal/method_invoker.h"
 #include "pw_rpc2/internal/packet.h"
@@ -44,6 +43,7 @@
 #include "pw_span/span.h"
 #include "pw_thread/test_thread_context.h"
 #include "pw_thread/thread.h"
+#include "pw_transport/testing.h"
 #include "pw_transport/transport.h"
 #include "pw_unit_test/framework.h"
 
@@ -54,30 +54,7 @@ using internal::ProtocolError;
 
 namespace flags = ::pw::rpc2::internal::flags;
 
-class MockServerListener : public transport::ReliableListener {
- public:
-  MockServerListener() = default;
-  ~MockServerListener() override {
-    accept_provider_.Resolve(Status::Cancelled());
-  }
-
-  AcceptFuture DoAcceptReliable() override {
-    ++accept_calls_;
-    return accept_provider_.Get();
-  }
-
-  void ResolveAccept(Result<transport::ReliableSocket> res) {
-    accept_provider_.Resolve(std::move(res));
-  }
-
-  // Number of times the server has called `Accept()`; nonzero once the server
-  // has registered this listener and polled it.
-  size_t accept_calls() const { return accept_calls_; }
-
- private:
-  AcceptProvider accept_provider_;
-  size_t accept_calls_ = 0;
-};
+using transport::test::MockReliableListener;
 
 struct ReadyFuture {
   using value_type = void;
@@ -244,7 +221,7 @@ class ConnectionRecordingService : public Service {
 void EstablishServerConnection(Allocator& allocator,
                                async2::DispatcherForTest& dispatcher,
                                [[maybe_unused]] Server& server,
-                               MockServerListener& transport,
+                               MockReliableListener& transport,
                                test::MockConnection* raw_conn,
                                transport::ReliableSocket conn) {
   dispatcher.RunUntilStalled();
@@ -280,7 +257,7 @@ TEST(ServerTest, RegisterTransportAndAcceptConnectionWithHandshake) {
   async2::DispatcherForTest dispatcher;
 
   Server server(allocator, dispatcher);
-  MockServerListener transport;
+  MockReliableListener transport;
   PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
   server.Start();
 
@@ -304,7 +281,7 @@ TEST(ServerTest, ServiceMethodDispatchRouting) {
   TestEchoService echo_service(100u);
   PW_TEST_EXPECT_OK(server.RegisterService(echo_service));
 
-  MockServerListener transport;
+  MockReliableListener transport;
   PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
   server.Start();
 
@@ -339,7 +316,7 @@ TEST(ServerTest, ServiceNotFoundRepliesError) {
   TestEchoService echo_service(100u);
   PW_TEST_EXPECT_OK(server.RegisterService(echo_service));
 
-  MockServerListener transport;
+  MockReliableListener transport;
   PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
   server.Start();
 
@@ -383,7 +360,7 @@ TEST(ServerTest, MethodNotFoundRepliesError) {
   TestEchoService echo_service(100u);
   PW_TEST_EXPECT_OK(server.RegisterService(echo_service));
 
-  MockServerListener transport;
+  MockReliableListener transport;
   PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
   server.Start();
 
@@ -464,7 +441,7 @@ TEST(ServerTest, StartTwiceCrashes) {
 TEST(ServerTest, DestroyingUnclosedServerCrashes) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
-  MockServerListener transport;
+  MockReliableListener transport;
 
   EXPECT_DEATH_IF_SUPPORTED(
       {
@@ -479,7 +456,7 @@ TEST(ServerTest, CloseTearsDownListenersAndConnections) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
 
-  MockServerListener transport;
+  MockReliableListener transport;
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
 
   {
@@ -505,7 +482,7 @@ TEST(ServerTest, CloseBlockingTearsDownListenersAndConnections) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
 
-  MockServerListener transport;
+  MockReliableListener transport;
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
 
   Server server(allocator, dispatcher);
@@ -533,7 +510,7 @@ TEST(ServerTest, HasConnectionTracksOpenConnections) {
   ConnectionRecordingService service(300u);
   PW_TEST_EXPECT_OK(server.RegisterService(service));
 
-  MockServerListener transport;
+  MockReliableListener transport;
   PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
   server.Start();
 
@@ -596,7 +573,7 @@ TEST(ServerTest, CloseDrainsInFlightServerCalls) {
   StallingService stalling_service(200u);
   PW_TEST_EXPECT_OK(server.RegisterService(stalling_service));
 
-  MockServerListener transport;
+  MockReliableListener transport;
   PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
   server.Start();
 
@@ -636,7 +613,7 @@ TEST(ServerTest, BlockingControlOperationsRunFromAnotherThread) {
 
   Server server(allocator, dispatcher);
   TestEchoService echo_service(100u);
-  MockServerListener transport;
+  MockReliableListener transport;
 
   server.Start();
 
@@ -658,7 +635,7 @@ TEST(ServerTest, BlockingControlOperationsRunFromAnotherThread) {
 
   PW_TEST_EXPECT_OK(register_service);
   PW_TEST_EXPECT_OK(register_listener);
-  EXPECT_EQ(transport.accept_calls(), 1u);
+  EXPECT_EQ(transport.accept_count(), 1u);
 }
 
 TEST(ServerTest, RegisterListenerFailsWhenRecordAllocationFails) {
@@ -667,7 +644,7 @@ TEST(ServerTest, RegisterListenerFailsWhenRecordAllocationFails) {
   async2::DispatcherForTest dispatcher;
 
   Server server(failing_allocator, dispatcher);
-  MockServerListener transport;
+  MockReliableListener transport;
 
   failing_allocator.DisableAllocate();
   RpcStatus status = server.RegisterListenerBlocking(transport);
@@ -679,9 +656,9 @@ TEST(ServerTest, RegisterMultipleListenersWhileRunningDoesNotCrash) {
   async2::DispatcherForTest dispatcher;
 
   Server server(allocator, dispatcher);
-  MockServerListener listener1;
-  MockServerListener listener2;
-  MockServerListener listener3;
+  MockReliableListener listener1;
+  MockReliableListener listener2;
+  MockReliableListener listener3;
 
   server.Start();
 
@@ -715,8 +692,8 @@ TEST(ServerTest, RegistrationBeforeStart) {
   Server server(allocator, dispatcher);
   TestEchoService service1(100u);
   TestEchoService service2(200u);
-  MockServerListener listener1;
-  MockServerListener listener2;
+  MockReliableListener listener1;
+  MockReliableListener listener2;
 
   // Service registration is queued without allocating.
   PW_TEST_EXPECT_OK(server.RegisterService(service1));
@@ -737,13 +714,13 @@ TEST(ServerTest, RegistrationBeforeStart) {
   PW_TEST_EXPECT_OK(listener_task.value());
 
   // Listeners only begin accepting once the server runs.
-  EXPECT_EQ(listener1.accept_calls(), 0u);
-  EXPECT_EQ(listener2.accept_calls(), 0u);
+  EXPECT_EQ(listener1.accept_count(), 0u);
+  EXPECT_EQ(listener2.accept_count(), 0u);
 
   server.Start();
   dispatcher.RunUntilStalled();
-  EXPECT_EQ(listener1.accept_calls(), 1u);
-  EXPECT_EQ(listener2.accept_calls(), 1u);
+  EXPECT_EQ(listener1.accept_count(), 1u);
+  EXPECT_EQ(listener2.accept_count(), 1u);
 
   async2::FutureTask close_task(server.Close());
   dispatcher.Post(close_task);
@@ -759,8 +736,8 @@ TEST(ServerTest, CloseBeforeStartDropsQueuedRequests) {
 
   Server server(allocator, dispatcher);
   TestEchoService service(100u);
-  MockServerListener listener1;
-  MockServerListener listener2;
+  MockReliableListener listener1;
+  MockReliableListener listener2;
 
   PW_TEST_EXPECT_OK(server.RegisterService(service));
   async2::FutureTask listener_task(server.RegisterListener(listener1));
@@ -793,7 +770,7 @@ TEST(ServerTest, RegistrationWhileClosingFails) {
   TestEchoService echo_service(100u);
   PW_TEST_EXPECT_OK(server.RegisterService(stalling_service));
 
-  MockServerListener transport;
+  MockReliableListener transport;
   PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
   server.Start();
 
@@ -812,7 +789,7 @@ TEST(ServerTest, RegistrationWhileClosingFails) {
   dispatcher.RunUntilStalled();
   ASSERT_EQ(stalling_service.future_destructions(), 0);
 
-  MockServerListener late_listener;
+  MockReliableListener late_listener;
   async2::FutureTask close_task(server.Close());
   EXPECT_EQ(server.RegisterService(echo_service), RpcStatus::Closed());
   async2::FutureTask listener_task(server.RegisterListener(late_listener));
@@ -833,7 +810,7 @@ TEST(ServerTest, ControlOperationsAfterCloseResolveImmediately) {
 
   Server server(allocator, dispatcher);
   TestEchoService service(100u);
-  MockServerListener listener;
+  MockReliableListener listener;
   PW_TEST_EXPECT_OK(server.RegisterService(service));
   server.Start();
 
@@ -866,7 +843,7 @@ TEST(ServerTest, AsyncControlOperationsSubmittedFromAnotherThread) {
 
   Server server(allocator, dispatcher);
   TestEchoService echo_service(100u);
-  MockServerListener transport;
+  MockReliableListener transport;
   server.Start();
 
   RpcStatus register_service = RpcStatus::ProtocolError();
@@ -889,7 +866,7 @@ TEST(ServerTest, AsyncControlOperationsSubmittedFromAnotherThread) {
 
   ASSERT_TRUE(register_listener_task.has_value());
   PW_TEST_EXPECT_OK(register_listener_task.value());
-  EXPECT_EQ(transport.accept_calls(), 1u);
+  EXPECT_EQ(transport.accept_count(), 1u);
 
   async2::FutureTask close_task(server.Close());
   dispatcher.Post(close_task);
@@ -904,7 +881,7 @@ TEST(ServerTest, AsyncControlOperationsWhenAllocatorExhausted) {
 
   Server server(failing_allocator, dispatcher);
   TestEchoService echo_service(100u);
-  MockServerListener transport;
+  MockReliableListener transport;
   server.Start();
 
   // Service registration does not allocate and succeeds even when the
@@ -917,7 +894,7 @@ TEST(ServerTest, AsyncControlOperationsWhenAllocatorExhausted) {
 
   ASSERT_TRUE(register_listener_task.has_value());
   EXPECT_EQ(register_listener_task.value(), RpcStatus::ResourceExhausted());
-  EXPECT_EQ(transport.accept_calls(), 0u);
+  EXPECT_EQ(transport.accept_count(), 0u);
 
   async2::FutureTask close_task(server.Close());
   dispatcher.Post(close_task);
@@ -930,8 +907,8 @@ TEST(ServerTest, DroppingQueuedRegisterListenerFutureWithdrawsRequest) {
   async2::DispatcherForTest dispatcher;
 
   Server server(allocator, dispatcher);
-  MockServerListener listener1;
-  MockServerListener listener2;
+  MockReliableListener listener1;
+  MockReliableListener listener2;
   server.Start();
 
   ControlFuture reg1 = server.RegisterListener(listener1);
@@ -950,8 +927,8 @@ TEST(ServerTest, DroppingQueuedRegisterListenerFutureWithdrawsRequest) {
   // Only listener1 was registered: one record was allocated and only
   // listener1 has been asked to accept.
   EXPECT_EQ(allocator.metrics().num_allocations.value(), 1u);
-  EXPECT_EQ(listener1.accept_calls(), 1u);
-  EXPECT_EQ(listener2.accept_calls(), 0u);
+  EXPECT_EQ(listener1.accept_count(), 1u);
+  EXPECT_EQ(listener2.accept_count(), 0u);
 
   async2::FutureTask close_task(server.Close());
   dispatcher.Post(close_task);
@@ -964,8 +941,8 @@ TEST(ServerTest, MovingQueuedControlFuturesPreservesRequests) {
   async2::DispatcherForTest dispatcher;
 
   Server server(allocator, dispatcher);
-  MockServerListener listener1;
-  MockServerListener listener2;
+  MockReliableListener listener1;
+  MockReliableListener listener2;
   server.Start();
 
   ControlFuture first = server.RegisterListener(listener1);
@@ -1006,7 +983,7 @@ TEST(ServerTest, CallAllocationFailureRepliesError) {
   TestEchoService echo_service(100u);
   PW_TEST_EXPECT_OK(server.RegisterService(echo_service));
 
-  MockServerListener transport;
+  MockReliableListener transport;
   PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
   server.Start();
 
@@ -1052,7 +1029,7 @@ TEST(ServerTest, ListenerKeepsAcceptingAfterConnectionAllocationFailure) {
   async2::DispatcherForTest dispatcher;
 
   Server server(failing_allocator, dispatcher);
-  MockServerListener transport;
+  MockReliableListener transport;
   PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
   server.Start();
   dispatcher.RunUntilStalled();
@@ -1067,6 +1044,7 @@ TEST(ServerTest, ListenerKeepsAcceptingAfterConnectionAllocationFailure) {
 
   // With no control operation or other wake in between, the listener must
   // already have re-armed `Accept()`, so the next connection is served.
+  EXPECT_TRUE(transport.has_pending_accept());
   auto [conn, raw_conn] = test::MakeMockConnection(backing_allocator);
   transport.ResolveAccept(conn);
   dispatcher.RunUntilStalled();
@@ -1095,7 +1073,7 @@ TEST(ServerTest, InvalidRequestPayloadRepliesError) {
   TestEchoService echo_service(100u);
   PW_TEST_EXPECT_OK(server.RegisterService(echo_service));
 
-  MockServerListener transport;
+  MockReliableListener transport;
   PW_TEST_EXPECT_OK(server.RegisterListenerBlocking(transport));
   server.Start();
 
@@ -1261,7 +1239,7 @@ class ServerStartPacketTest : public ::testing::Test {
   Server server_{allocator_, dispatcher_};
   TestEchoService echo_service_{kEchoServiceId};
   StreamRecordingService stream_service_{kStreamServiceId};
-  MockServerListener transport_;
+  MockReliableListener transport_;
   test::MockConnection* raw_conn_ = nullptr;
 
   static constexpr std::byte kPayload[4] = {

@@ -87,13 +87,6 @@ void MockConnection::PushNextRead(pw::Buf buf) {
 
 void MockConnection::SetNextRead(pw::Buf buf) { PushNextRead(std::move(buf)); }
 
-void MockConnection::TryResolveRead() {
-  std::lock_guard lock(*this);
-  if (!read_queue_.empty()) {
-    WakeReader();
-  }
-}
-
 bool MockConnection::DoCommitWrite(pw::Buf&& buffer) {
   PW_CHECK(!written_packets_.full(),
            "MockConnection has recorded its maximum of %zu written packets. "

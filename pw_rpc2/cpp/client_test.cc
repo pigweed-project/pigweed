@@ -32,6 +32,7 @@
 #include "pw_status/status.h"
 #include "pw_thread/test_thread_context.h"
 #include "pw_thread/thread.h"
+#include "pw_transport/testing.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::rpc2 {
@@ -44,10 +45,10 @@ TEST(ClientFutureTest, CreateFromTransportSequentialConnectAndHandshake) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
 
-  test::MockTransport transport;
+  transport::test::MockReliableConnector connector;
   auto [conn, raw_conn] = test::MakeMockConnection(allocator);
 
-  async2::FutureTask task(Client::Connect(dispatcher, allocator, transport));
+  async2::FutureTask task(Client::Connect(dispatcher, allocator, connector));
   dispatcher.Post(task);
 
   // Awaiting the transport connection.
@@ -55,7 +56,7 @@ TEST(ClientFutureTest, CreateFromTransportSequentialConnectAndHandshake) {
   EXPECT_FALSE(task.has_value());
 
   // Once connected, the client sends its kSyn and awaits the kSynAck.
-  transport.ResolveConnect(conn);
+  connector.ResolveConnect(conn);
   dispatcher.RunUntilStalled();
   EXPECT_FALSE(task.has_value());
   EXPECT_EQ(raw_conn->commit_count(), 1u);
@@ -109,14 +110,14 @@ TEST(ClientFutureTest, CreateFromTransportConnectFailure) {
   allocator::test::AllocatorForTest<16384> allocator;
   async2::DispatcherForTest dispatcher;
 
-  test::MockTransport transport;
-  async2::FutureTask task(Client::Connect(dispatcher, allocator, transport));
+  transport::test::MockReliableConnector connector;
+  async2::FutureTask task(Client::Connect(dispatcher, allocator, connector));
   dispatcher.Post(task);
 
   dispatcher.RunUntilStalled();
   EXPECT_FALSE(task.has_value());
 
-  transport.ResolveConnect(Status::Unavailable());
+  connector.ResolveConnect(Status::Unavailable());
   dispatcher.RunUntilStalled();
 
   ASSERT_TRUE(task.has_value());

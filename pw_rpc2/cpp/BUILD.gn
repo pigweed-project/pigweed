@@ -271,7 +271,6 @@ pw_source_set("test_utils") {
     ":protocol_error",
     ":serialize",
     "$dir_pw_assert:check",
-    "$dir_pw_async2:value_future",
     "$dir_pw_containers:inline_deque",
     "$dir_pw_sync:interrupt_spin_lock",
     "$dir_pw_transport/cpp:socket",
@@ -283,7 +282,7 @@ pw_source_set("test_utils") {
     dir_pw_status,
     dir_pw_unit_test,
   ]
-  visibility = _default_visibility + [ "$dir_pw_rpc/*" ]
+  visibility = _default_visibility
 }
 
 pw_source_set("test_harness") {
@@ -292,14 +291,12 @@ pw_source_set("test_harness") {
   public = [ "public/pw_rpc2/test_harness.h" ]
   public_deps = [
                   ":cpp",
-                  ":test_utils",
                   "$dir_pw_allocator:testing",
                   "$dir_pw_assert:check",
                   "$dir_pw_async2:testing",
                   "$dir_pw_transport/cpp:forwarding_socket",
                   dir_pw_allocator,
                   dir_pw_async2,
-                  dir_pw_status,
                 ] + _coro_deps
 }
 
@@ -313,6 +310,7 @@ pw_test("test_harness_test") {
            ":test_utils",
            "$dir_pw_rpc2:pw_rpc2_test_proto.pwpb_rpc2",
            "$dir_pw_rpc2:pw_rpc2_test_proto.raw_rpc2",
+           "$dir_pw_transport/cpp:forwarding_socket",
            dir_pw_async2,
            dir_pw_buf,
          ] + _coro_deps
@@ -419,10 +417,10 @@ pw_test("server_test") {
     "$dir_pw_allocator:testing",
     "$dir_pw_assert:check",
     "$dir_pw_async2:testing",
-    "$dir_pw_async2:value_future",
     "$dir_pw_thread:test_thread_context",
     "$dir_pw_thread:thread",
     "$dir_pw_transport/cpp:socket",
+    "$dir_pw_transport/cpp:testing",
     dir_pw_async2,
     dir_pw_span,
   ]
@@ -541,6 +539,7 @@ pw_test("client_test") {
     "$dir_pw_rpc2:pw_rpc2_test_proto.pwpb_rpc2",
     "$dir_pw_thread:test_thread_context",
     "$dir_pw_thread:thread",
+    "$dir_pw_transport/cpp:testing",
     dir_pw_async2,
     dir_pw_buf,
     dir_pw_status,
@@ -571,17 +570,14 @@ pw_test("generated_service_test") {
               pw_sync_THREAD_NOTIFICATION_BACKEND != ""
   deps = [
     ":cpp",
+    ":test_harness",
     ":test_utils",
-    "$dir_pw_allocator:testing",
-    "$dir_pw_async2:testing",
     "$dir_pw_rpc2:pw_rpc2_test_proto.pwpb_rpc2",
     "$dir_pw_rpc2:pw_rpc2_test_proto.raw_rpc2",
-    "$dir_pw_transport/cpp:forwarding_socket",
     dir_pw_async2,
     dir_pw_buf,
     dir_pw_bytes,
     dir_pw_polyfill,
-    dir_pw_status,
   ]
   sources = [ "generated_service_test.cc" ]
   negative_compilation_tests = true
@@ -606,6 +602,7 @@ pw_test("mixed_apis_test") {
     "$dir_pw_async2:testing",
     "$dir_pw_transport/cpp:forwarding_socket",
     "$dir_pw_transport/cpp:socket",
+    "$dir_pw_transport/cpp:testing",
     dir_pw_allocator,
     dir_pw_async2,
     dir_pw_buf,
@@ -642,7 +639,6 @@ pw_test("codegen_test") {
     dir_pw_async2,
     dir_pw_buf,
     dir_pw_bytes,
-    dir_pw_status,
   ]
   sources = [ "codegen_test.cc" ]
 }
@@ -661,6 +657,7 @@ pw_test("e2e_test") {
     "$dir_pw_rpc2:pw_rpc2_test_proto.raw_rpc2",
     "$dir_pw_transport/cpp:forwarding_socket",
     "$dir_pw_transport/cpp:socket",
+    "$dir_pw_transport/cpp:testing",
     "$dir_pw_unit_test:status_macros",
     dir_pw_async2,
     dir_pw_buf,

@@ -42,10 +42,10 @@
 #include "pw_rpc2/status.h"
 #include "pw_rpc2/write_reservation.h"
 #include "pw_rpc2/writer.h"
-#include "pw_status/status.h"
 #include "pw_status/try.h"
 #include "pw_transport/forwarding_socket.h"
 #include "pw_transport/socket.h"
+#include "pw_transport/testing.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::rpc2::mixed_apis {
@@ -455,17 +455,16 @@ class MixedApisTest : public ::testing::Test {
 
   void SetUp() override {
     PW_TEST_ASSERT_OK(server_.RegisterService(service_));
-    PW_TEST_ASSERT_OK(server_.RegisterListenerBlocking(transport_));
+    PW_TEST_ASSERT_OK(server_.RegisterListenerBlocking(listener_));
     server_.Start();
     started_ = true;
 
     auto connections =
         transport::ForwardingSocketPair::Create(allocator_, {.queue_depth = 1});
     server_connection_ = connections.second();
-    transport_.ResolveAccept(connections.second());
-    ::pw::rpc2::RpcResult<pw::rpc2::Client> client =
-        RunToCompletion(::pw::rpc2::Client::Connect(
-            dispatcher_, allocator_, connections.first()));
+    listener_.ResolveAccept(connections.second());
+    RpcResult<Client> client = RunToCompletion(
+        Client::Connect(dispatcher_, allocator_, connections.first()));
     PW_TEST_ASSERT_OK(client.status());
     client_.emplace(std::move(*client), dispatcher_);
   }
@@ -474,9 +473,7 @@ class MixedApisTest : public ::testing::Test {
     client_.reset();
     server_connection_ = {};
     if (started_) {
-      auto closed = server_.Close();
-      transport_.ResolveAccept(::pw::Status::Cancelled());
-      PW_TEST_EXPECT_OK(RunToCompletion(std::move(closed)));
+      PW_TEST_EXPECT_OK(RunToCompletion(server_.Close()));
     }
   }
 
@@ -543,13 +540,13 @@ class MixedApisTest : public ::testing::Test {
     EXPECT_EQ(service_.coro_calls(), coro);
   }
 
-  ::pw::allocator::test::AllocatorForTest<8192> allocator_;
-  ::pw::async2::DispatcherForTest dispatcher_;
+  allocator::test::AllocatorForTest<8192> allocator_;
+  async2::DispatcherForTest dispatcher_;
   MixedApiService service_;
-  ::pw::rpc2::Server server_;
-  ::pw::rpc2::test::MockTransport transport_;
-  ::pw::transport::ReliableSocket server_connection_;
-  std::optional<::pw::rpc2::test::ScopedClient> client_;
+  Server server_;
+  transport::test::MockReliableListener listener_;
+  transport::ReliableSocket server_connection_;
+  std::optional<test::ScopedClient> client_;
   bool started_ = false;
 };
 
