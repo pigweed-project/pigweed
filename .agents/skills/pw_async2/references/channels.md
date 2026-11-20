@@ -1,8 +1,11 @@
-# Channels (`pw::async2::Channel`)
+# Channels (`pw::async2::Sender` and `Receiver`)
 
-`pw::async2::Channel` provides thread-safe, multi-producer/multi-consumer
-asynchronous message passing between tasks on the same dispatcher, across
-dispatchers, or between asynchronous tasks and synchronous threads/ISRs.
+pw_async2 channels (`pw_async2/channel.h`) provide thread-safe,
+multi-producer/multi-consumer asynchronous message passing between tasks on the
+same dispatcher, across dispatchers, or between asynchronous tasks and
+synchronous threads/ISRs. There is no public `Channel` class: create a channel
+with a `Create*Channel` function and use its `Sender<T>` and `Receiver<T>`
+endpoints.
 
 ---
 
@@ -191,12 +194,16 @@ pw::Result<int> result = receiver.BlockingReceive(dispatcher, timeout);
 
 ---
 
-## 6. Notification channels (`Channel<void>`)
+## 6. Notification channels (`void` channels)
 
-`Channel<void>` is optimized for signaling events without payload data. It
-stores a single integer counter instead of a queue, reducing memory overhead.
+A channel whose value type is `void` (for example,
+`ChannelStorage<void, 4>` passed to `CreateSpscChannel`) is optimized for
+signaling events without payload data. It stores a single integer counter
+instead of a queue, reducing memory overhead. Its endpoints are `Sender<void>`
+and `Receiver<void>`. In the list below, `Channel<T>` and `Channel<void>` are
+shorthand for value and notification channels, not type names.
 
-### API differences for `Channel<void>`
+### API differences for notification channels
 
 - **`Send()`**:
   - `Channel<T>`: `Send(T value)` -> `SendFuture<T>` (resolves to `bool`)
@@ -225,8 +232,10 @@ stores a single integer counter instead of a queue, reducing memory overhead.
 
 ## 7. Capacity and status queries
 
-- `sender.capacity()` / `receiver.capacity()`: Total channel buffer capacity.
-- `sender.remaining_capacity()` / `receiver.remaining_capacity()`: Available
-  buffer slots (accounting for active reservations).
+- `sender.capacity()`: Total channel buffer capacity.
+- `sender.remaining_capacity()`: Available buffer slots (accounting for active
+  reservations).
 - `sender.is_open()` / `receiver.is_open()`: Returns `true` if channel is open.
+
+`Receiver` has no capacity accessors.
 

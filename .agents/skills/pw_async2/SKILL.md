@@ -24,7 +24,8 @@ Structure pw_async2 systems using a strict 3-tier execution graph:
    - NO `FutureCore`, NO `Waker`s, NO providers, NO dynamic allocation.
    - Composes subfutures inline, transitively passing `Context&`.
 3. **Leaf level: Primitive wakeable futures**
-   - `ValueFuture<T>`, `TimeFuture<Clock>`, `Channel` Receiver/Sender.
+   - `ValueFuture<T>`, `TimeFuture<Clock>`, channel `SendFuture` /
+     `ReceiveFuture`.
    - Uses `FutureCore` / `Waker` / Provider; interacts with ISRs/timers.
 
 ### Directives
@@ -36,8 +37,8 @@ Structure pw_async2 systems using a strict 3-tier execution graph:
   returned by **factory functions**. Store child futures inline as member
   variables.
 - **Leaf futures**: Use primitive futures (`ValueFuture`, `TimeFuture`,
-  `Channel`) or `FutureCore` **only** when interfacing directly with hardware,
-  timers, or event providers.
+  channel futures) or `FutureCore` **only** when interfacing directly with
+  hardware, timers, or event providers.
 
 ### Top-down design and the coroutine mental model
 
@@ -164,7 +165,7 @@ timers, etc.) and manage waker registration.
 
 > [!NOTE] > **Prefer pre-built primitives**: In most cases, do NOT write a custom leaf
 > future from scratch. Use existing primitives like `ValueFuture<T>` (with
-> `ValueProvider` or `ValueListProvider`), `Notification`, or `Channel`.
+> `ValueProvider` or `ValueListProvider`), `Notification`, or a channel.
 > Pre-built primitives handle synchronization, thread safety, and waker
 > management automatically.
 
@@ -183,7 +184,9 @@ default;`). `FutureCore` handles movability automatically: when a future is
    across threads or ISR contexts is the responsibility of the user (e.g. via
    spinlocks, mutexes, or global locks).
 3. Delegate public `Pend(cx)` to `core_.DoPend(*this, cx)`.
-4. Implement a private `DoPend(Context& cx)` callback friended by `FutureCore`.
+4. Implement a private `DoPend(Context& cx)` callback friended by `FutureCore`,
+   and define a `static constexpr const char kWaitReason[]` member, which
+   `FutureCore::DoPend` requires.
 5. Store pending futures in a `pw::async2::FutureList` inside the provider
    class.
 
@@ -206,8 +209,10 @@ Composite futures encapsulate multi-step asynchronous operations without using
   `subfuture_.Pend(cx)`.
 - Loop state transitions immediately (`while (true) switch (state_)`) to pend
   newly created subfutures within the same `Pend(cx)` call. Returning
-  `Pending()` before pending a new subfuture prevents waker registration,
-  causing the task to stall indefinitely.
+  `Pending()` before pending a new subfuture means no waker is stored for it.
+  If the task has no waker stored at all, the dispatcher crashes with
+  `returned Pending() without registering a waker`; otherwise the task stalls
+  until an unrelated wake.
 
 For step-by-step guidance on transforming a sequential coroutine mental model
 into a manual composite future, see
@@ -332,7 +337,9 @@ class SensorReaderTask : public pw::async2::Task {
 
 ### Task deregistration requirement (CRITICAL)
 
-Every posted task **MUST** be explicitly deregistered before destruction:
+A task **MUST NOT** be registered with a dispatcher when it is destroyed. A
+task is deregistered automatically when `DoPend` returns `Ready()`. A task that
+may be destroyed before it completes must be deregistered first:
 
 ```cpp
 SensorReaderTask task(sensor, time_provider);
@@ -340,9 +347,12 @@ dispatcher.Post(task);
 
 // ... run dispatcher ...
 
-// MUST call Deregister() or BlockingJoin() before destruction!
+// Required if the task may not have completed. Does nothing if it has.
 task.Deregister();
 ```
+
+`BlockingJoin()` waits for the task to complete instead. Only call it from a
+thread other than the one running the dispatcher; otherwise it deadlocks.
 
 ---
 
@@ -367,7 +377,7 @@ error handling with `PW_CO_TRY` / `PW_CO_TRY_ASSIGN`, and memory guidelines.
 
 ---
 
-## 8. Channels (`pw::async2::Channel`)
+## 8. Channels (`pw::async2::Sender` and `Receiver`)
 
 If working with channels for message passing or sync-to-async bridging, view
 [references/channels.md](./references/channels.md) for channel creation
@@ -406,8 +416,8 @@ for deterministic unit testing patterns with `DispatcherForTest` and
 - [ ] **No `Async` naming**: Name functions `Read()`, not `AsyncRead()`.
 - [ ] **Direct future return**: Return `Future<T>` directly by value, not
       `Result<Future>`.
-- [ ] **Task deregistration**: Call `task.Deregister()` or `task.BlockingJoin()`
-      before destroying a posted task.
+- [ ] **Task deregistration**: A task must not be registered when it is
+      destroyed. Call `task.Deregister()` unless the task has completed.
 - [ ] **Lazy future provisioning**: Provision subfutures lazily inside
       `DoPend()` (when `!future.is_pendable()`), never eagerly in constructors.
 - [ ] **Completed future invariant**: Never call `Pend()` on a future after it

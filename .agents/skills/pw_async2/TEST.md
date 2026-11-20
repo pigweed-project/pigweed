@@ -24,12 +24,12 @@ Verify:
 ### 2. Workflow files exist
 
 ```console
-ls pw_async2/agents/references/*.md
+ls .agents/skills/pw_async2/references/*.md
 ```
 
 Verify:
 
-- Files for channels, coroutines, and testing exist.
+- Files for channels, coroutines, testing, and top-down design exist.
 
 ### 3. Check async2 code is idiomatic
 

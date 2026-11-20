@@ -136,10 +136,25 @@ class ReadAndProcessFuture {
  public:
   using value_type = pw::Result<SensorData>;
 
-  // Futures must be default-constructible to an empty non-pendable state and movable.
+  // Futures must be default-constructible to an empty, non-pendable state, and
+  // movable. A move must leave the moved-from future empty, so the move
+  // operations cannot be defaulted: that would leave `other.state_` unchanged.
   ReadAndProcessFuture() = default;
-  ReadAndProcessFuture(ReadAndProcessFuture&&) = default;
-  ReadAndProcessFuture& operator=(ReadAndProcessFuture&&) = default;
+  ReadAndProcessFuture(ReadAndProcessFuture&& other) {
+    *this = std::move(other);
+  }
+  ReadAndProcessFuture& operator=(ReadAndProcessFuture&& other) {
+    state_ = std::exchange(other.state_, State::kUninitialized);
+    early_error_ = other.early_error_;
+    sensor_ = other.sensor_;
+    proc_ = other.proc_;
+    max_retries_ = other.max_retries_;
+    attempts_ = other.attempts_;
+    init_future_ = std::move(other.init_future_);
+    read_future_ = std::move(other.read_future_);
+    process_future_ = std::move(other.process_future_);
+    return *this;
+  }
 
   // Concept requirement: is_pendable() is false when uninitialized or complete.
   bool is_pendable() const {
@@ -327,8 +342,19 @@ class WorkflowFuture {
 
   // Default constructible into empty, uninitialized state
   WorkflowFuture() = default;
-  WorkflowFuture(WorkflowFuture&&) = default;
-  WorkflowFuture& operator=(WorkflowFuture&&) = default;
+
+  // Moves reset the source to std::monostate. A defaulted move would leave the
+  // moved-from variant holding its old phase, so it would still be pendable.
+  WorkflowFuture(WorkflowFuture&& other)
+      : device_(other.device_),
+        retries_(other.retries_),
+        phase_(std::exchange(other.phase_, std::monostate())) {}
+  WorkflowFuture& operator=(WorkflowFuture&& other) {
+    device_ = other.device_;
+    retries_ = other.retries_;
+    phase_ = std::exchange(other.phase_, std::monostate());
+    return *this;
+  }
 
   bool is_pendable() const {
     return !std::holds_alternative<std::monostate>(phase_) &&
@@ -400,7 +426,8 @@ if (auto* handshake = std::get_if<HandshakePhase>(&phase_)) {
 
 1. **Default constructible to non-pendable**:
    Every `Future` must be default constructible to an empty, uninitialized state
-   where `is_pendable() == false` and `is_complete() == false`.
+   where `is_pendable() == false` and `is_complete() == false`. A moved-from
+   future must be in the same empty state.
 2. **Factory function entry point**:
    Async APIs are invoked via public factory functions that validate inputs
    synchronously and return composite futures by value.
@@ -410,7 +437,8 @@ if (auto* handshake = std::get_if<HandshakePhase>(&phase_)) {
 4. **Immediate loop-through (`continue`)**:
    Always advance state machines using `continue` inside `while (true) switch`.
    Returning `Pending()` between state transitions prevents registering the next
-   subfuture's waker and can cause the system to hang.
+   subfuture's waker. The dispatcher crashes if the task has no waker stored at
+   all; otherwise the task stalls.
 5. **Partition persistent vs. transient state**:
    Avoid storing 10 flat subfuture members in a single struct. Use `std::variant`
    to overlap disjoint subfutures and intermediate buffers, keeping future size

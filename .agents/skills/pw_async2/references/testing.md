@@ -19,10 +19,12 @@ To test async code, include `dispatcher_for_test.h`:
 ```
 
 Build target dependencies:
-- **GN**: Add `$dir_pw_async2:dispatcher_for_test` to `deps` (and
-  `$dir_pw_async2:simulated_time_provider` for time tests).
-- **Bazel**: Add `//pw_async2:dispatcher_for_test` to `deps` (and
+- **Bazel**: Add `//pw_async2:testing` to `deps` (and
   `//pw_async2:simulated_time_provider` for time tests).
+- **GN**: Add `$dir_pw_async2:testing` to `deps` (and
+  `$dir_pw_async2:simulated_time_provider` for time tests).
+- **CMake**: Add `pw_async2.testing` to `PRIVATE_DEPS` (and
+  `pw_async2.simulated_time_provider` for time tests).
 
 ---
 
@@ -41,8 +43,7 @@ synchronously on the calling thread without real-time delays.
   - Returns `false` if all tasks ran to completion.
 - `dispatcher.RunToCompletion()`: Runs tasks until all tasks complete. If a task
   blocks waiting for a wake from another thread, `dispatcher.AllowBlocking()`
-  must be called first; otherwise attempting to block triggers a debug
-  assertion failure.
+  must be called first; otherwise attempting to block is a fatal error.
 - `dispatcher.AllowBlocking()`: Explicitly permits `DispatcherForTest` to block
   the test thread when waiting for tasks to be woken (e.g., from background
   threads or ISR handlers).
@@ -57,7 +58,7 @@ synchronously on the calling thread without real-time delays.
   across all tasks.
 - `dispatcher.tasks_completed()`: Total number of tasks that finished with
   `Ready()`.
-- `dispatcher.wake_count()`: Total number of waker triggers.
+- `dispatcher.wake_count()`: Total number of times the dispatcher was woken.
 
 ---
 
@@ -94,10 +95,11 @@ When building mock dependencies that return futures, `ValueProvider<T>` allows
 resolving futures manually during a test:
 
 - `provider.Get()`: Returns a `ValueFuture<T>` to return from mock methods.
-- `provider.Resolve(value)`: Resolves pending futures with `value` and wakes
-  their tasks.
-- `provider.ResolveWithResult(status_or_value)`: Resolves futures returning
-  `pw::Result<T>`.
+- `provider.Resolve(args...)`: Resolves the pending future, constructing its
+  value from `args...`, and wakes its task. Does nothing if no future is
+  pending.
+- For fallible operations, use `ValueProvider<pw::Result<T>>` and pass either a
+  value or a `pw::Status` to `Resolve()`.
 
 ---
 
@@ -113,7 +115,7 @@ TEST(MyAsyncCodeTest, InlineLambdaTask) {
   pw::async2::DispatcherForTest dispatcher;
 
   int result_val = 0;
-  pw::async2::FuncTask task([&](pw::async2::Context& cx) -> pw::async2::Poll<> {
+  pw::async2::FuncTask task([&](pw::async2::Context&) -> pw::async2::Poll<> {
     result_val = 100;
     return pw::async2::Ready();
   });
@@ -254,8 +256,8 @@ Test channel senders and receivers using `DispatcherForTest` or synchronous
 TEST(ChannelTest, SendAndReceiveAsync) {
   pw::allocator::test::AllocatorForTest<2048> alloc;
   auto maybe_channel = pw::async2::CreateSpscChannel<int>(alloc, 5);
-  ASSERT_TRUE(maybe_channel.ok());
-  auto [channel, sender, receiver] = *maybe_channel;
+  ASSERT_TRUE(maybe_channel.has_value());
+  auto [channel, sender, receiver] = std::move(*maybe_channel);
   channel.Release();
 
   pw::async2::DispatcherForTest dispatcher;
@@ -275,15 +277,16 @@ TEST(ChannelTest, SendAndReceiveAsync) {
 
 ### Channel closure
 
-When senders are dropped or `channel.Release()` is called,
-`receiver.Receive()` resolves to `std::nullopt`:
+Once the handle is released and every sender is dropped, the channel closes.
+`receiver.Receive()` then resolves to `std::nullopt` after any buffered values
+are received:
 
 ```cpp
 TEST(ChannelTest, ReceiveReturnsNulloptOnClose) {
   pw::allocator::test::AllocatorForTest<2048> alloc;
   auto maybe_channel = pw::async2::CreateSpscChannel<int>(alloc, 5);
-  ASSERT_TRUE(maybe_channel.ok());
-  auto [channel, sender, receiver] = *maybe_channel;
+  ASSERT_TRUE(maybe_channel.has_value());
+  auto [channel, sender, receiver] = std::move(*maybe_channel);
   channel.Release();
 
   pw::async2::DispatcherForTest dispatcher;
@@ -302,7 +305,9 @@ TEST(ChannelTest, ReceiveReturnsNulloptOnClose) {
 
 ## 8. Multi-step integration test pattern
 
-Pattern for multi-step unit tests with mock events and time steps:
+Pattern for multi-step unit tests with mock events and time steps (`MockSensor`
+and `SensorReaderTask` are defined in
+`pw_async2/examples/composite_future.cc`):
 
 ```cpp
 TEST(SensorWorkflowTest, RetriesAndSucceeds) {
