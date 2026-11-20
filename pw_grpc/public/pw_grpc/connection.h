@@ -16,7 +16,6 @@
 #include <atomic>
 #include <cstdint>
 #include <optional>
-#include <type_traits>
 #include <utility>
 
 #include "pw_allocator/allocator.h"
@@ -163,55 +162,7 @@ class Connection {
              CloseConnectionCallback&& close_connection_callback = nullptr,
              allocator::SynchronizedAllocator<pw::sync::Mutex>* read_allocator =
                  nullptr,
-             pw::async::Dispatcher* read_dispatcher = nullptr)
-      : Connection(reader,
-                   send_queue,
-                   callbacks,
-                   static_cast<Allocator*>(message_assembly_allocator),
-                   static_cast<Allocator&>(send_allocator),
-                   std::move(close_connection_callback),
-                   read_allocator,
-                   read_dispatcher) {}
-
-  // Temporary soft-transition overload for callers still passing an
-  // unsynchronized Allocator*. Constrained to exclude
-  // SynchronizedAllocator<pw::sync::Mutex>* so nullptr and synchronized
-  // allocator calls remain unambiguous.
-  template <typename AllocatorType,
-            typename = std::enable_if_t<
-                std::is_convertible_v<AllocatorType*, Allocator*> &&
-                !std::is_convertible_v<
-                    AllocatorType*,
-                    allocator::SynchronizedAllocator<pw::sync::Mutex>*>>>
-  [[deprecated(
-      "Pass allocator::SynchronizedAllocator<pw::sync::Mutex>* for "
-      "message_assembly_allocator")]] Connection(stream::Reader& reader,
-                                                 SendQueue& send_queue,
-                                                 RequestCallbacks& callbacks,
-                                                 AllocatorType*
-                                                     message_assembly_allocator,
-                                                 allocator::
-                                                     SynchronizedAllocator<
-                                                         pw::sync::Mutex>&
-                                                         send_allocator,
-                                                 CloseConnectionCallback&&
-                                                     close_connection_callback =
-                                                         nullptr,
-                                                 allocator::
-                                                     SynchronizedAllocator<
-                                                         pw::sync::Mutex>*
-                                                         read_allocator =
-                                                             nullptr,
-                                                 pw::async::Dispatcher*
-                                                     read_dispatcher = nullptr)
-      : Connection(reader,
-                   send_queue,
-                   callbacks,
-                   static_cast<Allocator*>(message_assembly_allocator),
-                   static_cast<Allocator&>(send_allocator),
-                   std::move(close_connection_callback),
-                   read_allocator,
-                   read_dispatcher) {}
+             pw::async::Dispatcher* read_dispatcher = nullptr);
 
   // Reads from stream and processes required connection preface frames. Should
   // be called before ProcessFrame(). Return OK if connection preface was found.
@@ -272,15 +223,6 @@ class Connection {
   //
   // Safe to call multiple times and from any thread.
   void CloseStreams() { LockState()->Close(); }
-
-  Connection(stream::Reader& reader,
-             SendQueue& send_queue,
-             RequestCallbacks& callbacks,
-             Allocator* message_assembly_allocator,
-             Allocator& send_allocator,
-             CloseConnectionCallback&& close_connection_callback,
-             allocator::SynchronizedAllocator<pw::sync::Mutex>* read_allocator,
-             pw::async::Dispatcher* read_dispatcher);
 
   // RFC 9113 §6.9.2. Flow control windows are unsigned 31-bit numbers, but
   // because of the following requirement from §6.9.2, we track flow control

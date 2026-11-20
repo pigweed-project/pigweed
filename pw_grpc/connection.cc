@@ -183,8 +183,9 @@ Connection::Connection(
     stream::Reader& reader,
     SendQueue& send_queue,
     RequestCallbacks& callbacks,
-    Allocator* message_assembly_allocator,
-    Allocator& send_allocator,
+    allocator::SynchronizedAllocator<pw::sync::Mutex>*
+        message_assembly_allocator,
+    allocator::SynchronizedAllocator<pw::sync::Mutex>& send_allocator,
     CloseConnectionCallback&& close_connection_callback,
     allocator::SynchronizedAllocator<pw::sync::Mutex>* read_allocator,
     pw::async::Dispatcher* read_dispatcher)
@@ -196,8 +197,8 @@ Connection::Connection(
       read_allocator_(read_allocator),
       shared_state_(std::in_place,
                     *this,
-                    message_assembly_allocator,
-                    send_allocator,
+                    static_cast<Allocator*>(message_assembly_allocator),
+                    static_cast<Allocator&>(send_allocator),
                     send_queue),
       reader_(*this, callbacks, reader, read_allocator),
       writer_(*this),
