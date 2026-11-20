@@ -318,6 +318,72 @@ TEST(HelpersTest, FidlToEncoderSettingsSbcTest) {
             result.view().channel_mode().Read());
 }
 
+TEST(HelpersTest, FidlToEncoderSettingsSbcChannelModesTest) {
+  struct TestCase {
+    fuchsia::media::SbcChannelMode sbc_channel_mode;
+    fbredr::AudioChannelMode audio_channel_mode;
+    android_emb::SbcChannelMode expected;
+  };
+  const TestCase kCases[] = {
+      {fuchsia::media::SbcChannelMode::MONO,
+       fbredr::AudioChannelMode::STEREO,
+       android_emb::SbcChannelMode::MONO},
+      {fuchsia::media::SbcChannelMode::DUAL,
+       fbredr::AudioChannelMode::STEREO,
+       android_emb::SbcChannelMode::DUAL_CHANNEL},
+      {fuchsia::media::SbcChannelMode::STEREO,
+       fbredr::AudioChannelMode::MONO,
+       android_emb::SbcChannelMode::STEREO},
+      {fuchsia::media::SbcChannelMode::JOINT_STEREO,
+       fbredr::AudioChannelMode::STEREO,
+       android_emb::SbcChannelMode::JOINT_STEREO},
+  };
+
+  for (const auto& test_case : kCases) {
+    fbredr::AudioEncoderSettings encoder_settings;
+    std::unique_ptr<fuchsia::media::SbcEncoderSettings> value =
+        fuchsia::media::SbcEncoderSettings::New();
+    value->channel_mode = test_case.sbc_channel_mode;
+    encoder_settings.set_sbc(*value);
+
+    bt::StaticPacket<android_emb::SbcCodecInformationWriter> result =
+        FidlToEncoderSettingsSbc(encoder_settings,
+                                 fbredr::AudioSamplingFrequency::HZ_44100,
+                                 test_case.audio_channel_mode);
+    EXPECT_EQ(test_case.expected, result.view().channel_mode().Read());
+  }
+}
+
+TEST(HelpersTest, FidlToEncoderSettingsSbcBitpoolAndFieldsTest) {
+  fbredr::AudioEncoderSettings encoder_settings;
+  std::unique_ptr<fuchsia::media::SbcEncoderSettings> value =
+      fuchsia::media::SbcEncoderSettings::New();
+  value->allocation = fuchsia::media::SbcAllocation::ALLOC_SNR;
+  value->sub_bands = fuchsia::media::SbcSubBands::SUB_BANDS_4;
+  value->block_count = fuchsia::media::SbcBlockCount::BLOCK_COUNT_16;
+  value->channel_mode = fuchsia::media::SbcChannelMode::JOINT_STEREO;
+  value->bit_pool = 51;
+  encoder_settings.set_sbc(*value);
+
+  bt::StaticPacket<android_emb::SbcCodecInformationWriter> result =
+      FidlToEncoderSettingsSbc(encoder_settings,
+                               fbredr::AudioSamplingFrequency::HZ_48000,
+                               fbredr::AudioChannelMode::STEREO);
+
+  EXPECT_EQ(android_emb::SbcAllocationMethod::SNR,
+            result.view().allocation_method().Read());
+  EXPECT_EQ(android_emb::SbcSubBands::SUBBANDS_4,
+            result.view().subbands().Read());
+  EXPECT_EQ(android_emb::SbcBlockLen::BLOCK_LEN_16,
+            result.view().block_length().Read());
+  EXPECT_EQ(51, result.view().min_bitpool_value().Read());
+  EXPECT_EQ(51, result.view().max_bitpool_value().Read());
+  EXPECT_EQ(android_emb::SbcSamplingFrequency::HZ_48000,
+            result.view().sampling_frequency().Read());
+  EXPECT_EQ(android_emb::SbcChannelMode::JOINT_STEREO,
+            result.view().channel_mode().Read());
+}
+
 TEST(HelpersTest, FidlToEncoderSettingsAacTest) {
   std::unique_ptr<fbredr::AudioEncoderSettings> encoder_settings =
       std::make_unique<fbredr::AudioEncoderSettings>();

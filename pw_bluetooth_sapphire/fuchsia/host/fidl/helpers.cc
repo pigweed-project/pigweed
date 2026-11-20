@@ -168,7 +168,7 @@ std::optional<android_emb::A2dpChannelMode> FidlToChannelMode(
 bt::StaticPacket<android_emb::SbcCodecInformationWriter>
 FidlToEncoderSettingsSbc(const fbredr::AudioEncoderSettings& encoder_settings,
                          fbredr::AudioSamplingFrequency sampling_frequency,
-                         fbredr::AudioChannelMode channel_mode) {
+                         fbredr::AudioChannelMode) {
   bt::StaticPacket<android_emb::SbcCodecInformationWriter> sbc;
 
   switch (encoder_settings.sbc().allocation) {
@@ -209,12 +209,20 @@ FidlToEncoderSettingsSbc(const fbredr::AudioEncoderSettings& encoder_settings,
   sbc.view().min_bitpool_value().Write(encoder_settings.sbc().bit_pool);
   sbc.view().max_bitpool_value().Write(encoder_settings.sbc().bit_pool);
 
-  switch (channel_mode) {
-    case fbredr::AudioChannelMode::MONO:
+  switch (encoder_settings.sbc().channel_mode) {
+    case fuchsia::media::SbcChannelMode::MONO:
       sbc.view().channel_mode().Write(android_emb::SbcChannelMode::MONO);
       break;
-    case fbredr::AudioChannelMode::STEREO:
+    case fuchsia::media::SbcChannelMode::DUAL:
+      sbc.view().channel_mode().Write(
+          android_emb::SbcChannelMode::DUAL_CHANNEL);
+      break;
+    case fuchsia::media::SbcChannelMode::STEREO:
       sbc.view().channel_mode().Write(android_emb::SbcChannelMode::STEREO);
+      break;
+    case fuchsia::media::SbcChannelMode::JOINT_STEREO:
+      sbc.view().channel_mode().Write(
+          android_emb::SbcChannelMode::JOINT_STEREO);
       break;
   }
 
