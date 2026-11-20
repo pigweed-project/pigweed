@@ -58,6 +58,7 @@ constexpr uint32_t kDefaultInitialWindowSize = 65535;
 
 constexpr uint8_t kFrameTypeData = 0x00;
 constexpr uint8_t kFrameTypeHeaders = 0x01;
+constexpr uint8_t kFrameTypePriority = 0x02;
 constexpr uint8_t kFrameTypeRstStream = 0x03;
 constexpr uint8_t kFrameTypeSettings = 0x04;
 constexpr uint8_t kFrameTypePing = 0x06;
@@ -70,10 +71,12 @@ constexpr uint8_t kFlagEndHeaders = 0x04;
 
 constexpr uint16_t kSettingsInitialWindowSize = 0x0004;
 constexpr uint32_t kMaxFlowControlWindow = 0x7fffffffU;
+constexpr uint32_t kMax24BitFrameLength = 0xffffffU;
 constexpr uint32_t kHttp2ErrorProtocolError = 0x01;
 constexpr uint32_t kHttp2ErrorInternalError = 0x02;
 constexpr uint32_t kHttp2ErrorFlowControlError = 0x03;
 constexpr uint32_t kHttp2ErrorStreamClosed = 0x05;
+constexpr uint32_t kHttp2ErrorFrameSizeError = 0x06;
 constexpr uint32_t kHttp2ErrorCancel = 0x08;
 constexpr uint32_t kHttp2ErrorEnhanceYourCalm = 0x0b;
 
@@ -109,18 +112,37 @@ void AppendFrameHeader(ByteBuilder& out,
 class BlockingInMemoryReader : public stream::NonSeekableReader {
  public:
   void Push(ConstByteSpan data) PW_LOCKS_EXCLUDED(mutex_) {
-    if (data.empty()) {
-      return;
-    }
-    {
-      std::lock_guard<sync::Mutex> lock(mutex_);
-      for (std::byte b : data) {
-        ASSERT_FALSE(buffer_.full());
-        buffer_.push_back(b);
+    size_t offset = 0;
+    while (offset < data.size()) {
+      bool pushed = false;
+      bool wait_for_space = false;
+      {
+        std::lock_guard<sync::Mutex> lock(mutex_);
+        if (reader_exited_) {
+          return;
+        }
+        const size_t space = buffer_.capacity() - buffer_.size();
+        const size_t to_copy = std::min(space, data.size() - offset);
+        for (size_t i = 0; i < to_copy; ++i) {
+          buffer_.push_back(data[offset + i]);
+        }
+        offset += to_copy;
+        pushed = to_copy > 0;
+        if (pushed) {
+          static_cast<void>(idle_notification_.try_acquire());
+        }
+        if (offset < data.size() && buffer_.full()) {
+          static_cast<void>(space_available_.try_acquire());
+          wait_for_space = true;
+        }
       }
-      static_cast<void>(idle_notification_.try_acquire());
+      if (pushed) {
+        readable_.release();
+      }
+      if (wait_for_space) {
+        space_available_.acquire();
+      }
     }
-    readable_.release();
   }
 
   void PushClientPreface() PW_LOCKS_EXCLUDED(mutex_) {
@@ -198,35 +220,48 @@ class BlockingInMemoryReader : public stream::NonSeekableReader {
   void PushRawDataFrame(StreamId stream_id,
                         ConstByteSpan raw_payload,
                         bool end_stream) PW_LOCKS_EXCLUDED(mutex_) {
-    ByteBuffer<kFrameScratchSize> bytes;
-    AppendFrameHeader(bytes,
+    ByteBuffer<kFrameHeaderSize> header;
+    AppendFrameHeader(header,
                       static_cast<uint32_t>(raw_payload.size()),
                       kFrameTypeData,
                       end_stream ? kFlagEndStream : 0,
                       stream_id);
-    bytes.append(raw_payload);
-    ASSERT_EQ(bytes.status(), OkStatus());
-    Push(bytes);
+    ASSERT_EQ(header.status(), OkStatus());
+    Push(header);
+    Push(raw_payload);
+  }
+
+  void PushFrameHeaderWithPartialPayload(uint32_t declared_payload_length,
+                                         uint8_t type,
+                                         uint8_t flags,
+                                         StreamId stream_id,
+                                         ConstByteSpan partial_payload)
+      PW_LOCKS_EXCLUDED(mutex_) {
+    ByteBuffer<kFrameHeaderSize> header;
+    AppendFrameHeader(header, declared_payload_length, type, flags, stream_id);
+    ASSERT_EQ(header.status(), OkStatus());
+    Push(header);
+    Push(partial_payload);
   }
 
   void PushLengthPrefixAndChunk(StreamId stream_id,
                                 uint32_t declared_message_length,
                                 ConstByteSpan initial_chunk,
                                 bool end_stream) PW_LOCKS_EXCLUDED(mutex_) {
-    ByteBuffer<kFrameScratchSize> bytes;
+    ByteBuffer<kFrameHeaderSize + kLengthPrefixedMessageHdrSize> prefix;
     const uint32_t framed_len = static_cast<uint32_t>(
         kLengthPrefixedMessageHdrSize + initial_chunk.size());
-    AppendFrameHeader(bytes,
+    AppendFrameHeader(prefix,
                       framed_len,
                       kFrameTypeData,
                       end_stream ? kFlagEndStream : 0,
                       stream_id);
     constexpr uint8_t kUncompressedFlag = 0;
-    bytes.PutUint8(kUncompressedFlag);
-    bytes.PutUint32(declared_message_length, endian::big);
-    bytes.append(initial_chunk);
-    ASSERT_EQ(bytes.status(), OkStatus());
-    Push(bytes);
+    prefix.PutUint8(kUncompressedFlag);
+    prefix.PutUint32(declared_message_length, endian::big);
+    ASSERT_EQ(prefix.status(), OkStatus());
+    Push(prefix);
+    Push(initial_chunk);
   }
 
   void PushPing(ConstByteSpan opaque_eight_bytes) PW_LOCKS_EXCLUDED(mutex_) {
@@ -296,26 +331,36 @@ class BlockingInMemoryReader : public stream::NonSeekableReader {
       std::lock_guard<sync::Mutex> lock(mutex_);
       reader_exited_ = true;
     }
+    space_available_.release();
     idle_notification_.release();
   }
 
  private:
   StatusWithSize DoRead(ByteSpan dest) override PW_LOCKS_EXCLUDED(mutex_) {
     while (true) {
+      bool freed_from_full = false;
+      size_t copied = 0;
       {
         std::lock_guard<sync::Mutex> lock(mutex_);
         if (!buffer_.empty()) {
-          const size_t to_copy = std::min<size_t>(dest.size(), buffer_.size());
-          for (size_t i = 0; i < to_copy; ++i) {
+          const bool was_full = buffer_.full();
+          copied = std::min<size_t>(dest.size(), buffer_.size());
+          for (size_t i = 0; i < copied; ++i) {
             dest[i] = buffer_.front();
             buffer_.pop_front();
           }
-          return StatusWithSize(to_copy);
-        }
-        if (closed_) {
+          freed_from_full = was_full && copied > 0;
+        } else if (closed_) {
           return StatusWithSize::OutOfRange();
+        } else {
+          reader_waiting_ = true;
         }
-        reader_waiting_ = true;
+      }
+      if (copied > 0) {
+        if (freed_from_full) {
+          space_available_.release();
+        }
+        return StatusWithSize(copied);
       }
       idle_notification_.release();
       readable_.acquire();
@@ -328,6 +373,7 @@ class BlockingInMemoryReader : public stream::NonSeekableReader {
 
   sync::Mutex mutex_;
   sync::ThreadNotification readable_;
+  sync::ThreadNotification space_available_;
   sync::ThreadNotification idle_notification_;
   InlineDeque<std::byte, kReaderBufferSize> buffer_ PW_GUARDED_BY(mutex_);
   bool closed_ PW_GUARDED_BY(mutex_) = false;
@@ -829,7 +875,7 @@ struct ConnectionHarness {
   std::array<std::byte, kSendAllocatorPoolSize> send_pool{};
   std::array<std::byte, kAssemblyAllocatorPoolSize> assembly_pool{};
   std::array<std::byte, kReadAllocatorPoolSize> read_pool{};
-  std::array<std::byte, internal::kMaxGrpcMessageSize> drain_scratch{};
+  std::array<std::byte, internal::kMaxFramePayloadSize> drain_scratch{};
   allocator::BestFitAllocator<> raw_send_allocator{send_pool};
   allocator::SynchronizedAllocator<sync::Mutex> send_allocator{
       raw_send_allocator};
@@ -1905,6 +1951,134 @@ TEST_F(ConnectionTest, DataOnHalfClosedStreamResetsStreamWithoutHoldingLock) {
   Vector<RecordedFrame, kMaxStreamFrames> rst_frames;
   harness().send_queue.TakeStreamFrames(kStreamId, rst_frames);
   ExpectSingleRstStreamFrame(rst_frames, kStreamId, kHttp2ErrorStreamClosed);
+}
+
+TEST_F(ConnectionTest, OversizedIgnoredDataOnClosedStreamSendsFrameSizeError) {
+  StartConnection();
+  harness().callbacks.EnableOnCancelReentry(harness().connection);
+
+  constexpr StreamId kClosedStream = 1;
+  OpenStream(kClosedStream);
+  ASSERT_EQ(
+      harness().connection.SendResponseComplete(kClosedStream, OkStatus()),
+      OkStatus());
+  harness().send_queue.ClearStreamFrames(kClosedStream);
+
+  constexpr StreamId kActiveStream = 3;
+  OpenStream(kActiveStream);
+  harness().send_queue.ClearStreamFrames(/*stream_id=*/0);
+
+  constexpr auto kTrailingBytes = bytes::Array<0xaa, 0xbb>();
+  harness().reader.PushFrameHeaderWithPartialPayload(
+      internal::kMaxFramePayloadSize + 1U,
+      kFrameTypeData,
+      /*flags=*/0,
+      kClosedStream,
+      kTrailingBytes);
+  harness().reader.WaitUntilIdle();
+
+  EXPECT_EQ(harness().reader_runner->frame_status(), Status::Internal());
+  EXPECT_TRUE(harness().callbacks.WasCanceled(kActiveStream));
+  EXPECT_EQ(harness().callbacks.on_cancel_reentry_status(),
+            Status::Unavailable());
+  EXPECT_EQ(harness().close_connection_calls.load(), 1U);
+
+  Vector<RecordedFrame, kMaxStreamFrames> control_frames;
+  harness().send_queue.TakeStreamFrames(/*stream_id=*/0, control_frames);
+  ExpectSingleGoAwayFrame(
+      control_frames, kActiveStream, kHttp2ErrorFrameSizeError);
+}
+
+TEST_F(ConnectionTest,
+       MaxLengthIgnoredDataOnHalfClosedStreamSendsFrameSizeError) {
+  StartConnection();
+  harness().callbacks.EnableOnCancelReentry(harness().connection);
+
+  constexpr StreamId kHalfClosedStream = 1;
+  OpenStream(kHalfClosedStream);
+  harness().reader.PushRawDataFrame(
+      kHalfClosedStream, ConstByteSpan(), /*end_stream=*/true);
+  harness().reader.WaitUntilIdle();
+  ASSERT_TRUE(harness().callbacks.WasHalfClosed(kHalfClosedStream));
+  harness().send_queue.ClearStreamFrames(/*stream_id=*/0);
+
+  constexpr auto kTrailingBytes = bytes::Array<0xcc, 0xdd>();
+  harness().reader.PushFrameHeaderWithPartialPayload(kMax24BitFrameLength,
+                                                     kFrameTypeData,
+                                                     /*flags=*/0,
+                                                     kHalfClosedStream,
+                                                     kTrailingBytes);
+  harness().reader.WaitUntilIdle();
+
+  EXPECT_EQ(harness().reader_runner->frame_status(), Status::Internal());
+  EXPECT_TRUE(harness().callbacks.WasCanceled(kHalfClosedStream));
+  EXPECT_EQ(harness().close_connection_calls.load(), 1U);
+
+  Vector<RecordedFrame, kMaxStreamFrames> control_frames;
+  harness().send_queue.TakeStreamFrames(/*stream_id=*/0, control_frames);
+  ExpectSingleGoAwayFrame(
+      control_frames, kHalfClosedStream, kHttp2ErrorFrameSizeError);
+}
+
+TEST_F(ConnectionTest, OversizedHeadersWithEndStreamSendsFrameSizeError) {
+  StartConnection();
+  harness().send_queue.ClearStreamFrames(/*stream_id=*/0);
+
+  constexpr StreamId kStreamId = 1;
+  constexpr auto kTrailingBytes = bytes::Array<0x84, 0x00>();
+  harness().reader.PushFrameHeaderWithPartialPayload(
+      internal::kMaxFramePayloadSize + 1U,
+      kFrameTypeHeaders,
+      kFlagEndHeaders | kFlagEndStream,
+      kStreamId,
+      kTrailingBytes);
+  harness().reader.WaitUntilIdle();
+
+  EXPECT_EQ(harness().reader_runner->frame_status(), Status::Internal());
+  EXPECT_EQ(harness().close_connection_calls.load(), 1U);
+
+  Vector<RecordedFrame, kMaxStreamFrames> control_frames;
+  harness().send_queue.TakeStreamFrames(/*stream_id=*/0, control_frames);
+  ExpectSingleGoAwayFrame(control_frames, kStreamId, kHttp2ErrorFrameSizeError);
+}
+
+TEST_F(ConnectionTest,
+       ExactMaxIgnoredFrameSucceedsAndOversizedPrioritySendsFrameSizeError) {
+  StartConnection();
+
+  constexpr StreamId kClosedStream = 1;
+  OpenStream(kClosedStream);
+  ASSERT_EQ(
+      harness().connection.SendResponseComplete(kClosedStream, OkStatus()),
+      OkStatus());
+  harness().send_queue.ClearStreamFrames(kClosedStream);
+  harness().send_queue.ClearStreamFrames(/*stream_id=*/0);
+
+  // An ignored DATA frame at exact kMaxFramePayloadSize succeeds cleanly.
+  const ConstByteSpan exact_max_payload(harness().drain_scratch.data(),
+                                        internal::kMaxFramePayloadSize);
+  harness().reader.PushRawDataFrame(
+      kClosedStream, exact_max_payload, /*end_stream=*/false);
+  harness().reader.WaitUntilIdle();
+  EXPECT_EQ(harness().reader_runner->frame_status(), Status::Unknown());
+
+  // An oversized PRIORITY frame (> kMaxFramePayloadSize) sends GOAWAY with
+  // FRAME_SIZE_ERROR without reading payload bytes.
+  constexpr auto kTrailingBytes = bytes::Array<0x00, 0x00, 0x00, 0x00, 0x10>();
+  harness().reader.PushFrameHeaderWithPartialPayload(
+      internal::kMaxFramePayloadSize + 1U,
+      kFrameTypePriority,
+      /*flags=*/0,
+      kClosedStream,
+      kTrailingBytes);
+  harness().reader.WaitUntilIdle();
+
+  EXPECT_EQ(harness().reader_runner->frame_status(), Status::Internal());
+
+  Vector<RecordedFrame, kMaxStreamFrames> control_frames;
+  harness().send_queue.TakeStreamFrames(/*stream_id=*/0, control_frames);
+  ExpectSingleGoAwayFrame(
+      control_frames, kClosedStream, kHttp2ErrorFrameSizeError);
 }
 
 }  // namespace

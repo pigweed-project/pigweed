@@ -1930,14 +1930,7 @@ Status Connection::Reader::ProcessWindowUpdateFrame(const FrameHeader& frame) {
 
 // Advance past the payload.
 Status Connection::Reader::ProcessIgnoredFrame(const FrameHeader& frame) {
-  size_t to_read = frame.payload_length;
-  while (to_read > 0) {
-    auto chunk = span{payload_scratch_}.subspan(
-        0, std::min(payload_scratch_.size(), to_read));
-    PW_TRY(ReadExactly(reader_, chunk));
-    to_read -= chunk.size();
-  }
-  return OkStatus();
+  return ReadFramePayload(frame).status();
 }
 
 Result<ByteSpan> Connection::Reader::ReadFramePayload(
