@@ -223,17 +223,12 @@ class Connection {
   // as long as connection is open. Should be called from a single thread.
   Status ProcessFrame() { return HandleReadError(reader_.ProcessFrame()); }
 
-  // Triggers the registered `CloseConnectionCallback` to close transport stream
-  // resources (e.g. underlying socket, TLS stream, or channel reader).
+  // Triggers the registered `CloseConnectionCallback` at most once to close
+  // transport stream resources (e.g. underlying socket, TLS stream, or channel
+  // reader).
   //
-  // Safe to call multiple times; transport closing implementations must be
-  // idempotent.
-  void CloseConnection() {
-    UnregisterSpaceAvailableCallback();
-    if (close_connection_callback_) {
-      close_connection_callback_();
-    }
-  }
+  // Safe to call multiple times and from any thread.
+  void CloseConnection() PW_LOCKS_EXCLUDED(callback_mutex_);
 
   // Sends a response message for an RPC. The `message` will not be accessed
   // after this method returns. Thread safe.
@@ -631,7 +626,8 @@ class Connection {
   sync::InlineBorrowable<SharedState> shared_state_;
   Reader reader_;
   Writer writer_;
-  CloseConnectionCallback close_connection_callback_;
+  CloseConnectionCallback close_connection_callback_
+      PW_GUARDED_BY(callback_mutex_);
 };
 
 }  // namespace pw::grpc

@@ -1793,5 +1793,52 @@ TEST_F(ConnectionTest, StreamIdOrderingAndIdleRstStreamEchoLastStreamId) {
       goaway_frames, kOpenedStream, kHttp2ErrorProtocolError);
 }
 
+TEST_F(ConnectionTest, CloseConnectionInvokesCallbackAtMostOnce) {
+  class CloseCaller final : public thread::ThreadCore {
+   public:
+    explicit CloseCaller(Connection& connection)
+        : connection_(connection), thread_(context_.options(), *this) {}
+
+    ~CloseCaller() override { Join(); }
+
+    void Join() {
+      if (thread_.joinable()) {
+        thread_.join();
+      }
+    }
+
+   private:
+    void Run() override { connection_.CloseConnection(); }
+
+    Connection& connection_;
+    thread::test::TestThreadContext context_;
+    thread::Thread thread_;
+  };
+
+  // 1. After SendGoAway invokes the close callback, explicit CloseConnection()
+  // calls during server teardown do not invoke it again.
+  StartConnection();
+  harness().send_queue.ClearStreamFrames(/*stream_id=*/0);
+  harness().reader.PushWindowUpdate(/*stream_id=*/0, /*increment=*/0);
+  harness().reader.WaitUntilIdle();
+  EXPECT_EQ(harness().close_connection_calls.load(), 1U);
+
+  harness().connection.CloseConnection();
+  harness().connection.CloseConnection();
+  EXPECT_EQ(harness().close_connection_calls.load(), 1U);
+
+  // 2. Concurrent CloseConnection() calls on a live connection invoke the
+  // callback once without data races.
+  ResetHarness(/*enable_assembly_allocator=*/false);
+  StartConnection();
+  {
+    CloseCaller caller_a(harness().connection);
+    CloseCaller caller_b(harness().connection);
+    caller_a.Join();
+    caller_b.Join();
+  }
+  EXPECT_EQ(harness().close_connection_calls.load(), 1U);
+}
+
 }  // namespace
 }  // namespace pw::grpc

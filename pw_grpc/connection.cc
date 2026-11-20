@@ -229,6 +229,22 @@ void Connection::UnregisterSpaceAvailableCallback() {
   send_queue_.set_on_space_available(nullptr);
 }
 
+void Connection::CloseConnection() {
+  CloseConnectionCallback callback;
+  {
+    std::lock_guard lock(callback_mutex_);
+    callback_closed_ = true;
+    if (callback_registered_) {
+      callback_registered_ = false;
+      send_queue_.set_on_space_available(nullptr);
+    }
+    callback = std::move(close_connection_callback_);
+  }
+  if (callback != nullptr) {
+    callback();
+  }
+}
+
 Connection::~Connection() {
   UnregisterSpaceAvailableCallback();
   reader_.Drain();
@@ -1986,9 +2002,7 @@ void Connection::Reader::SendGoAwayLocked(
     callbacks_.OnCancel(id);
   }
 
-  if (connection_.close_connection_callback_) {
-    connection_.close_connection_callback_();
-  }
+  connection_.CloseConnection();
 }
 
 // RFC 9113 §6.4
