@@ -55,6 +55,16 @@ pw_add_library(pw_log.args INTERFACE
     pw_tokenizer
 )
 
+pw_add_library(pw_log.status INTERFACE
+  HEADERS
+    public/pw_log/status.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_log.args
+    pw_status
+)
+
 pw_add_library(pw_log.rate_limited STATIC
   HEADERS
     public/pw_log/rate_limited.h
@@ -159,6 +169,25 @@ if(NOT "${pw_log_BACKEND}" STREQUAL "")
       pw_log.args
       pw_tokenizer
       pw_unit_test.constexpr
+    GROUPS
+      modules
+      pw_log
+  )
+
+  pw_add_test(pw_log.log_status_test
+    SOURCES
+      log_status_test.cc
+    PRIVATE_DEPS
+      pw_compilation_testing._pigweed_only_negative_compilation
+      pw_log
+      pw_log.args
+      pw_log.status
+      pw_preprocessor
+      pw_result
+      pw_status
+      pw_string.format
+      pw_string.string
+      pw_tokenizer
     GROUPS
       modules
       pw_log

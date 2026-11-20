@@ -197,8 +197,13 @@ pw_add_test(pw_log_tokenized.tokenized_args_test
     tokenized_args_test.cc
   PRIVATE_DEPS
     pw_log.args
+    pw_log.status
     pw_log_tokenized.tokenized_backend_indicator
+    pw_result
+    pw_span
+    pw_status
     pw_tokenizer
+    pw_tokenizer.decoder
     pw_unit_test.constexpr
   GROUPS
     modules

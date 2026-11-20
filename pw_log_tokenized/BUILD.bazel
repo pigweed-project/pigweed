@@ -209,7 +209,12 @@ pw_cc_test(
     deps = [
         ":tokenized_backend_indicator",
         "//pw_log:args",
+        "//pw_log:status",
+        "//pw_result",
+        "//pw_span",
+        "//pw_status",
         "//pw_tokenizer",
+        "//pw_tokenizer:decoder",
         "//pw_unit_test:constexpr",
     ],
 )

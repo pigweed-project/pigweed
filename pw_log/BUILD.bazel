@@ -86,6 +86,18 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "status",
+    hdrs = [
+        "public/pw_log/status.h",
+    ],
+    strip_include_prefix = "public",
+    deps = [
+        ":args",
+        "//pw_status",
+    ],
+)
+
 label_flag(
     name = "config_override",
     build_setting_default = "//pw_build:default_module_config",
@@ -256,6 +268,25 @@ pw_cc_test(
     ],
 )
 
+pw_cc_test(
+    name = "log_status_test",
+    srcs = [
+        "log_status_test.cc",
+    ],
+    has_nc_test = True,
+    deps = [
+        ":args",
+        ":status",
+        "//pw_log",
+        "//pw_preprocessor",
+        "//pw_result",
+        "//pw_status",
+        "//pw_string:format",
+        "//pw_string:string",
+        "//pw_tokenizer",
+    ],
+)
+
 filegroup(
     name = "doxygen",
     srcs = [
@@ -269,6 +300,7 @@ filegroup(
         "public/pw_log/rate_limited.h",
         "public/pw_log/short.h",
         "public/pw_log/shorter.h",
+        "public/pw_log/status.h",
         "public/pw_log/tokenized_args.h",
     ],
 )

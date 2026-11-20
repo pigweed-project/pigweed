@@ -36,26 +36,75 @@ def _legacy_camel_to_upper_snake(name: str) -> str:
     return re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1).upper()
 
 
+def _macro_names(scopes: Sequence[str], name: str) -> tuple[str, str]:
+    """Returns (macro, legacy_macro) prefixes for a scoped C++ name."""
+    prefix = camel_to_upper_snake("_".join(scopes))
+    if prefix:
+        prefix += "_"
+    macro = prefix + camel_to_upper_snake(name)
+
+    legacy_prefix = _legacy_camel_to_upper_snake("_".join(scopes))
+    if legacy_prefix:
+        legacy_prefix += "_"
+    legacy_macro = legacy_prefix + _legacy_camel_to_upper_snake(name)
+    return macro, legacy_macro
+
+
 def _generate_macro_defs(enum_desc: EnumDescriptor) -> Iterator[str]:
-    macro_prefix = camel_to_upper_snake("_".join(enum_desc.scopes))
-    if macro_prefix:
-        macro_prefix += "_"
-    macro = macro_prefix + camel_to_upper_snake(enum_desc.name)
-    yield f'#define {macro}_DOMAIN "{enum_desc.cc_versioned_name}"'
-    yield (
-        f'#define {macro}_FMT '
-        f'PW_LOG_TOKEN_FMT("{enum_desc.cc_versioned_name}")'
-    )
+    defined: dict[str, str] = {}
+
+    def expansion(value: str) -> str:
+        """Follows aliases of other macros defined here to their value."""
+        while value in defined:
+            value = defined[value]
+        return value
+
+    def define(name: str, value: str) -> Iterator[str]:
+        # The enum and status macros share a name when the enum is named
+        # <Status>Code: <ENUM>_FMT is <STATUS>_CODE_FMT. Define it once.
+        if name not in defined:
+            defined[name] = value
+            yield f"#define {name} {value}"
+        elif expansion(name) != expansion(value):
+            raise ParseError(
+                f"{enum_desc.cc_full_name} and its status class both define "
+                f"the {name} macro, as {expansion(name)} and "
+                f"{expansion(value)}. Rename the enum or the status class."
+            )
+
+    domain = enum_desc.cc_versioned_name
+    macro, legacy_macro = _macro_names(enum_desc.scopes, enum_desc.name)
+    yield from define(f"{macro}_DOMAIN", f'"{domain}"')
+    yield from define(f"{macro}_FMT", f'PW_LOG_TOKEN_FMT("{domain}")')
 
     # Temporarily emit legacy double-underscore aliases for downstream
     # consumers while they migrate to the single-underscore names.
-    legacy_prefix = _legacy_camel_to_upper_snake("_".join(enum_desc.scopes))
-    if legacy_prefix:
-        legacy_prefix += "_"
-    legacy_macro = legacy_prefix + _legacy_camel_to_upper_snake(enum_desc.name)
     if legacy_macro != macro:
-        yield f"#define {legacy_macro}_DOMAIN {macro}_DOMAIN"
-        yield f"#define {legacy_macro}_FMT {macro}_FMT"
+        yield from define(f"{legacy_macro}_DOMAIN", f"{macro}_DOMAIN")
+        yield from define(f"{legacy_macro}_FMT", f"{macro}_FMT")
+
+    if enum_desc.status is not None:
+        status = enum_desc.status
+        status_macro, legacy_status_macro = _macro_names(
+            status.scopes, status.name
+        )
+        yield from define(f"{status_macro}_DOMAIN", f'"{domain}"')
+        yield from define(
+            f"{status_macro}_FMT", f'PW_LOG_STATUS_DOMAIN_FMT("{domain}")'
+        )
+        yield from define(
+            f"{status_macro}_CODE_FMT", f'PW_LOG_TOKEN_FMT("{domain}")'
+        )
+        if legacy_status_macro != status_macro:
+            yield from define(
+                f"{legacy_status_macro}_DOMAIN", f"{status_macro}_DOMAIN"
+            )
+            yield from define(
+                f"{legacy_status_macro}_FMT", f"{status_macro}_FMT"
+            )
+            yield from define(
+                f"{legacy_status_macro}_CODE_FMT", f"{status_macro}_CODE_FMT"
+            )
 
 
 def _is_contiguous(distinct_values: Sequence[EnumValue]) -> bool:

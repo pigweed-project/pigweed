@@ -67,6 +67,11 @@ enum class BoolEnum : bool {
   kTrue = true,
 };
 
+enum class PlainTestCode : uint8_t {
+  kOk = 0,
+  kFailed = 1,
+};
+
 }  // namespace pw::testing
 
 PW_ENUM(pw::testing::TestEnum, kFirst, kSecond, kFromH);
@@ -95,3 +100,4 @@ PW_ENUM(pw::testing::EnumWithCustomAliases,
         kF = "custom_f");
 PW_ENUM(pw::testing::EnumWithPartialAliases, kA);
 PW_ENUM(pw::testing::BoolEnum, kFalse, kTrue);
+PW_ENUM_STATUS(pw::testing::PlainTestStatus, PlainTestCode::kOk, kOk, kFailed);

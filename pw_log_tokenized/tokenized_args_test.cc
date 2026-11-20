@@ -14,8 +14,16 @@
 #include "pw_log/tokenized_args.h"
 
 #include <cinttypes>
+#include <cstdio>
+#include <string>
 #include <type_traits>
 
+#include "pw_log/status.h"
+#include "pw_result/result.h"
+#include "pw_span/span.h"
+#include "pw_status/status.h"
+#include "pw_status/status_base.h"
+#include "pw_tokenizer/detokenize.h"
 #include "pw_tokenizer/enum.h"
 #include "pw_tokenizer/hash.h"
 #include "pw_tokenizer/tokenize.h"
@@ -23,6 +31,58 @@
 #include "pw_unit_test/framework.h"
 
 namespace this_is_a_test {
+
+enum class I2cCode : uint8_t {
+  kOk = 0,
+  kNack = 1,
+  kTimeout = 2,
+};
+
+constexpr const char* PwEnumToString(I2cCode code) {
+  switch (code) {
+    case I2cCode::kOk:
+      return "OK";
+    case I2cCode::kNack:
+      return "NACK";
+    case I2cCode::kTimeout:
+      return "TIMEOUT";
+  }
+  return "UNKNOWN";
+}
+
+enum class Link : bool {
+  kDown = false,
+  kUp = true,
+};
+
+constexpr const char* PwEnumToString(Link link) {
+  return link == Link::kUp ? "UP" : "DOWN";
+}
+
+}  // namespace this_is_a_test
+
+_PW_TOKENIZE_ENUM_DOMAIN(::this_is_a_test::I2cCode,
+                         "::this_is_a_test::I2cCode",
+                         (kOk, "OK"),
+                         (kNack, "NACK"),
+                         (kTimeout, "TIMEOUT"));
+
+_PW_TOKENIZE_ENUM_DOMAIN(::this_is_a_test::Link,
+                         "::this_is_a_test::Link",
+                         (kDown, "DOWN"),
+                         (kUp, "UP"));
+
+namespace this_is_a_test {
+
+#define I2C_STATUS_FMT PW_LOG_STATUS_DOMAIN_FMT("::this_is_a_test::I2cCode")
+
+using I2cStatus = pw::StatusOf<I2cCode::kOk>;
+
+// A status whose OK code is not zero.
+#define LINK_STATUS_FMT PW_LOG_STATUS_DOMAIN_FMT("::this_is_a_test::Link")
+
+using LinkStatus = pw::StatusOf<Link::kUp>;
+
 namespace {
 
 enum Thing { kAlpha, kBravo, kCharlie };
@@ -132,6 +192,102 @@ PW_CONSTEXPR_TEST(
           static_cast<uint32_t>(::this_is_a_test::ScopedThing::kItem1),
           result.value);
     });
+
+PW_CONSTEXPR_TEST(TokenizedArgs, LogEnumFromStatusAndCarriers_Tokenizing, {
+  constexpr I2cStatus kNack(I2cCode::kNack);
+  PW_TEST_EXPECT_EQ(static_cast<uint32_t>(I2cCode::kNack), PW_LOG_ENUM(kNack));
+  PW_TEST_EXPECT_EQ(static_cast<uint32_t>(I2cCode::kNack),
+                    PW_LOG_ENUM(pw::Result<int, I2cStatus>(kNack)));
+
+  struct VersionedArgs {
+    uint32_t domain;
+    uint32_t value;
+  };
+  auto capture = [](uint32_t domain, uint32_t value) {
+    return VersionedArgs{domain, value};
+  };
+  constexpr VersionedArgs versioned = capture(PW_LOG_ENUM_VERSIONED(kNack));
+  PW_TEST_EXPECT_EQ(pw::tokenizer::Hash("::this_is_a_test::I2cCode"),
+                    versioned.domain);
+  PW_TEST_EXPECT_EQ(static_cast<uint32_t>(I2cCode::kNack), versioned.value);
+});
+
+// A status is logged as one argument: the token of its code.
+TEST(TokenizedArgs, LogStatusIsItsCode_TokenizingBackend) {
+  EXPECT_STREQ(I2C_STATUS_FMT, "${::this_is_a_test::I2cCode}#%08" PRIx32);
+  EXPECT_STREQ(LINK_STATUS_FMT, "${::this_is_a_test::Link}#%08" PRIx32);
+
+  const I2cStatus nack(I2cCode::kNack);
+  const pw::Result<int, LinkStatus> link_up(0);
+  EXPECT_EQ(PW_LOG_STATUS(nack), 1u);
+  EXPECT_EQ(PW_LOG_STATUS(LinkStatus(Link::kDown)), 0u);
+  EXPECT_EQ(PW_LOG_STATUS(link_up), 1u);
+}
+
+TEST(TokenizedArgs, LogStatusEvaluatesArgumentOnce_TokenizingBackend) {
+  int calls = 0;
+  auto next_status = [&calls]() {
+    ++calls;
+    return I2cStatus(I2cCode::kNack);
+  };
+  EXPECT_EQ(PW_LOG_STATUS(next_status()), 1u);
+  EXPECT_EQ(calls, 1);
+}
+
+// Adds a line to a CSV token database. The text is quoted because bit field
+// token formats contain a comma.
+void AddToken(std::string& csv,
+              uint32_t token,
+              const char* domain,
+              const char* text) {
+  char line[256] = {};
+  std::snprintf(
+      line, sizeof(line), "%08" PRIx32 ",,%s,\"%s\"\n", token, domain, text);
+  csv += line;
+}
+
+// Statuses are logged like any other tokenized argument. The C++ detokenizer
+// resolves the code's token.
+TEST(TokenizedArgs, LogStatusDetokenizes_TokenizingBackend) {
+  const I2cStatus nack(I2cCode::kNack);
+  const pw::Result<int, I2cStatus> result(nack);
+
+  constexpr const char* kFmtStatic = "i2c=" I2C_STATUS_FMT;
+  constexpr const char* kFmtCodeOnly = "code=" PW_LOG_ENUM_VERSIONED_FMT();
+
+  std::string csv;
+  AddToken(csv, pw::tokenizer::Hash(kFmtStatic), "", kFmtStatic);
+  AddToken(csv, pw::tokenizer::Hash(kFmtCodeOnly), "", kFmtCodeOnly);
+  AddToken(csv,
+           pw::tokenizer::Hash("::this_is_a_test::I2cCode"),
+           "enum_domain",
+           "::this_is_a_test::I2cCode");
+  AddToken(csv,
+           static_cast<uint32_t>(I2cCode::kNack),
+           "::this_is_a_test::I2cCode",
+           "NACK");
+
+  pw::Result<pw::tokenizer::Detokenizer> detok =
+      pw::tokenizer::Detokenizer::FromCsv(csv);
+  PW_TEST_ASSERT_OK(detok);
+
+  uint8_t buffer[64] = {};
+  size_t size = 0;
+
+#define EXPECT_DETOKENIZED(expected, ...)            \
+  size = sizeof(buffer);                             \
+  PW_TOKENIZE_TO_BUFFER(buffer, &size, __VA_ARGS__); \
+  EXPECT_EQ(expected,                                \
+            detok->RecursiveDetokenize(pw::span(buffer, size)).BestString())
+
+  EXPECT_DETOKENIZED("code=NACK",
+                     "code=" PW_LOG_ENUM_VERSIONED_FMT(),
+                     PW_LOG_ENUM_VERSIONED(result));
+
+  EXPECT_DETOKENIZED("i2c=NACK", "i2c=" I2C_STATUS_FMT, PW_LOG_STATUS(nack));
+
+#undef EXPECT_DETOKENIZED
+}
 
 }  // namespace
 }  // namespace this_is_a_test

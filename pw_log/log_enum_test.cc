@@ -12,6 +12,8 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 #include <cinttypes>
+#include <string_view>
+#include <type_traits>
 
 #include "pw_log/log.h"
 #include "pw_log/tokenized_args.h"
@@ -184,6 +186,30 @@ PW_CONSTEXPR_TEST(TokenizedArgs, LogEnumVersioned_NonTokenizingBackend, {
 });
 
 #endif  // __has_include("pw_log_backend/log_backend_uses_pw_tokenizer.h")
+
+// Compares PW_LOG_ENUM arguments, which are tokens with a tokenizing backend
+// and strings otherwise.
+template <typename T>
+constexpr bool SameLogArgument(T lhs, T rhs) {
+  if constexpr (std::is_pointer_v<T>) {
+    return std::string_view(lhs) == std::string_view(rhs);
+  } else {
+    return lhs == rhs;
+  }
+}
+
+// PW_LOG_ENUM must not odr-use its argument: a lambda may use a constant
+// without capturing it.
+TEST(TokenizedArgs, LogEnumAcceptsConstantInLambdaWithoutCapture) {
+  constexpr Thing kThing = kBravo;
+  auto log_enum = [] { return PW_LOG_ENUM(kThing); };
+  EXPECT_TRUE(SameLogArgument(log_enum(), PW_LOG_ENUM(kBravo)));
+}
+
+TEST(TokenizedArgs, LogEnumAcceptsVolatileEnum) {
+  volatile Thing thing = kCharlie;
+  EXPECT_TRUE(SameLogArgument(PW_LOG_ENUM(thing), PW_LOG_ENUM(kCharlie)));
+}
 
 }  // namespace
 }  // namespace this_is_a_test

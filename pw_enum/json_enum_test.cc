@@ -21,6 +21,10 @@
 #include "pw_enum_private/json_base_enum.h"
 #include "pw_enum_private/mixed_enum.h"
 #include "pw_enum_private/toml_enums.h"
+#include "pw_log/status.h"
+#include "pw_log/tokenized_args.h"
+#include "pw_string/format.h"
+#include "pw_string/string.h"
 #include "pw_tokenizer/enum.h"
 #include "pw_unit_test/constexpr.h"
 #include "pw_unit_test/framework.h"
@@ -91,6 +95,33 @@ PW_CONSTEXPR_TEST(PwEnumJsonTest, Status, {
   PW_TEST_EXPECT_EQ(busy.code(), TomlCode::kBusy);
   PW_TEST_EXPECT_STREQ(busy.str(), "BUSY");
 });
+
+// What logging TomlCode::kBusy formats as. Tokenizing pw_log backends log its
+// token in the enum's domain; other backends log its name.
+#if __has_include("pw_log_backend/log_backend_uses_pw_tokenizer.h")
+constexpr char kLoggedBusy[] =
+    "${" PW_ENUM_TEST_TOML_TOML_STATUS_DOMAIN "}#00000001";
+#else
+constexpr char kLoggedBusy[] = "BUSY";
+#endif  // __has_include("pw_log_backend/log_backend_uses_pw_tokenizer.h")
+
+TEST(PwEnumJsonTest, StatusFmtLogsStatusWithLogStatus) {
+  const TomlStatus busy = TomlStatus::Busy();
+
+  pw::InlineString<128> logged;
+  PW_TEST_ASSERT_OK(pw::string::Format(
+      logged, PW_ENUM_TEST_TOML_TOML_STATUS_FMT, PW_LOG_STATUS(busy)));
+  EXPECT_STREQ(logged.c_str(), kLoggedBusy);
+}
+
+TEST(PwEnumJsonTest, StatusCodeFmtLogsCodeWithLogEnum) {
+  const TomlStatus busy = TomlStatus::Busy();
+
+  pw::InlineString<128> logged;
+  PW_TEST_ASSERT_OK(pw::string::Format(
+      logged, PW_ENUM_TEST_TOML_TOML_STATUS_CODE_FMT, PW_LOG_ENUM(busy)));
+  EXPECT_STREQ(logged.c_str(), kLoggedBusy);
+}
 
 PW_CONSTEXPR_TEST(PwEnumJsonTest, HeaderEnumReferencesJsonEnum, {
   PW_TEST_EXPECT_EQ(static_cast<int>(MixedEnum::kFromJson), 10);

@@ -26,10 +26,14 @@
 
 /// @submodule{pw_log,tokenized_args}
 
-/// If nested tokenization is supported by the logging backend, this is a
-/// format specifier to declare a nested token with a specific domain value.
+/// Format specifier for logging a `PW_TOKENIZE_ENUM` enum with `PW_LOG_ENUM`.
 ///
-/// For non-tokenizing backends, defaults to the string specifier `%s`.
+/// If nested tokenization is supported by the logging backend, this expands to
+/// a nested token format specifier using `#enum` as the domain. For
+/// non-tokenizing backends, defaults to `%s`.
+///
+/// @note `pw_enum` types use versioned tokenizer domains. Log them with the
+/// generated `<ENUM>_FMT` macro or `PW_LOG_ENUM_VERSIONED_FMT()` instead.
 #define PW_LOG_ENUM_FMT(enum) PW_LOG_TOKEN_FMT(#enum)
 
 // pw_log backends that use pw_tokenizer and want to support nested tokenization
@@ -46,11 +50,15 @@
 #define PW_LOG_TOKEN PW_TOKENIZE_STRING
 #define PW_LOG_TOKEN_EXPR PW_TOKENIZE_STRING_EXPR
 #define PW_LOG_TOKEN_FMT PW_TOKEN_FMT
-#define PW_LOG_ENUM(enumerator) ::pw::tokenizer::EnumToToken(enumerator)
+#define PW_LOG_ENUM(...) \
+  ::pw::tokenizer::EnumToToken(::pw::log::internal::ToEnum(__VA_ARGS__))
 #define PW_LOG_NESTED_TOKEN_FMT PW_NESTED_TOKEN_FMT
-#define PW_LOG_ENUM_VERSIONED_FMT PW_TOKENIZER_ENUM_DOMAIN_AND_VALUE_FMT
-#define PW_LOG_ENUM_VERSIONED(enumerator) \
-  PW_TOKENIZER_ENUM_DOMAIN_AND_VALUE(enumerator)
+#define PW_LOG_ENUM_VERSIONED_FMT(...) \
+  PW_TOKENIZER_ENUM_DOMAIN_AND_VALUE_FMT(__VA_ARGS__)
+#define PW_LOG_ENUM_VERSIONED(...)                                         \
+  ::pw::tokenizer::EnumDomainToken<                                        \
+      std::decay_t<decltype(::pw::log::internal::ToEnum(__VA_ARGS__))>>(), \
+      PW_LOG_ENUM(__VA_ARGS__)
 
 #else
 
@@ -89,12 +97,17 @@
 /// For non-tokenizing backends, defaults to the string specifier `%s`.
 #define PW_LOG_TOKEN_FMT(...) "%s"
 
-/// If nested tokenization is supported by the logging backend, this will
-/// return a token representation of the enum.
+/// Converts an enum to the log argument for a static-domain format specifier
+/// (such as a generated `<ENUM>_FMT` macro). Evaluates its argument once.
 ///
-/// For non-tokenizing backends, defaults to the string representation of the
-/// enum.
-#define PW_LOG_ENUM(enumerator) ::pw::EnumToString(enumerator)
+/// If nested tokenization is supported by the logging backend, returns the
+/// 32-bit enum token. For non-tokenizing backends, returns the string name of
+/// the enumerator (`const char*`).
+///
+/// With `pw_log/status.h` included, also accepts statuses with enum codes and
+/// `pw::Result`, and logs their status code.
+#define PW_LOG_ENUM(...) \
+  ::pw::EnumToString(::pw::log::internal::ToEnum(__VA_ARGS__))
 
 /// If nested tokenization is supported by the logging backend, this is an
 /// alias for `PW_NESTED_TOKEN_FMT`.
@@ -102,19 +115,21 @@
 /// For non-tokenizing backends, defaults to `%s::%s`.
 #define PW_LOG_NESTED_TOKEN_FMT(...) "%s::%s"
 
-/// Format specifier for logging a versioned enum with `PW_LOG_ENUM_VERSIONED`.
+/// Type-agnostic format specifier for logging a versioned enum or status code
+/// with `PW_LOG_ENUM_VERSIONED`.
 ///
 /// On both tokenizing and non-tokenizing backends, formats as the enumerator
-/// string (for example, `"SECOND"`).
+/// string (for example, `"SECOND"` or `"NOT_FOUND"`).
 #define PW_LOG_ENUM_VERSIONED_FMT(...) "%s"
 
 /// Converts an enum to the arguments needed to log its enumerator with
-/// `PW_LOG_ENUM_VERSIONED_FMT()`.
+/// `PW_LOG_ENUM_VERSIONED_FMT()`. Accepts the same types as `PW_LOG_ENUM` and
+/// evaluates its argument once.
 ///
 /// If nested tokenization is supported by the logging backend, expands to two
 /// arguments: the 32-bit versioned domain token and the enum value token. For
 /// non-tokenizing backends, expands to the enumerator string (`const char*`).
-#define PW_LOG_ENUM_VERSIONED(enumerator) PW_LOG_ENUM(enumerator)
+#define PW_LOG_ENUM_VERSIONED(...) PW_LOG_ENUM(__VA_ARGS__)
 
 #endif  // __has_include("pw_log_backend/log_backend_uses_pw_tokenizer.h")
 
@@ -134,3 +149,35 @@ inline constexpr Token kDefaultToken = PW_LOG_TOKEN_DEFAULT_VALUE;
 #endif  // __cplusplus
 
 /// @}
+
+#ifdef __cplusplus
+
+namespace pw::log::internal {
+
+// Provides the enum that PW_LOG_ENUM logs for an argument of type T.
+// pw_log/status.h specializes this for statuses.
+template <typename T, typename = void>
+struct LoggedEnum {
+  static constexpr T Get(T value) {
+    static_assert(std::is_enum_v<T>,
+                  "PW_LOG_ENUM requires an enum. To log the code of a status "
+                  "or Result, include pw_log/status.h.");
+    return value;
+  }
+};
+
+// Enums are passed by value, so PW_LOG_ENUM does not odr-use its argument and
+// accepts volatile enums.
+template <typename T, std::enable_if_t<std::is_enum_v<T>, int> = 0>
+constexpr T ToEnum(T value) {
+  return LoggedEnum<T>::Get(value);
+}
+
+template <typename T, std::enable_if_t<!std::is_enum_v<T>, int> = 0>
+constexpr auto ToEnum(const T& value) {
+  return LoggedEnum<T>::Get(value);
+}
+
+}  // namespace pw::log::internal
+
+#endif  // __cplusplus

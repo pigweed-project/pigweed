@@ -105,6 +105,9 @@ pw_test("enum_test") {
     ":standalone_enum",
     "$dir_pw_log",
     "$dir_pw_log:args",
+    "$dir_pw_log:status",
+    "$dir_pw_string:format",
+    "$dir_pw_string:string",
     "$dir_pw_tokenizer",
     "$dir_pw_unit_test:constexpr",
   ]
@@ -145,6 +148,10 @@ pw_test("json_enum_test") {
     ":mixed_enum",
     ":pw_enum",
     ":toml_enums_cc",
+    "$dir_pw_log:args",
+    "$dir_pw_log:status",
+    "$dir_pw_string:format",
+    "$dir_pw_string:string",
     "$dir_pw_tokenizer",
     "$dir_pw_unit_test:constexpr",
   ]

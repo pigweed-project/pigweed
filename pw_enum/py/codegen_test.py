@@ -175,6 +175,9 @@ _PW_TOKENIZE_ENUM_DOMAIN(::my::pkg::MyEnum,
 
 #define MY_PKG_CODE_DOMAIN "::my::pkg::_pw_enum_024a61b00c08::Code"
 #define MY_PKG_CODE_FMT PW_LOG_TOKEN_FMT("::my::pkg::_pw_enum_024a61b00c08::Code")
+#define MY_PKG_MY_STATUS_DOMAIN "::my::pkg::_pw_enum_024a61b00c08::Code"
+#define MY_PKG_MY_STATUS_FMT PW_LOG_STATUS_DOMAIN_FMT("::my::pkg::_pw_enum_024a61b00c08::Code")
+#define MY_PKG_MY_STATUS_CODE_FMT PW_LOG_TOKEN_FMT("::my::pkg::_pw_enum_024a61b00c08::Code")
 
 namespace pw {
 template <>

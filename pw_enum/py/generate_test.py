@@ -21,7 +21,7 @@ from pw_enum.generate import (
     _write_generated_header,
 )
 from pw_enum.generate_gn import _resolve_gn_compiler_and_flags
-from pw_enum.parse import EnumDescriptor, EnumValue, StatusInfo
+from pw_enum.parse import EnumDescriptor, EnumValue, ParseError, StatusInfo
 
 
 class TestEnumGeneration(unittest.TestCase):
@@ -555,6 +555,18 @@ class TestEnumGeneration(unittest.TestCase):
             ": ::pw::StatusBase<MyStatus, MyStatusCode::kOk>(code) {}",
             footer,
         )
+        self.assertIn(
+            f'#define MY_NS_MY_STATUS_DOMAIN "{enums[0].cc_versioned_name}"',
+            footer,
+        )
+        self.assertIn(
+            "#define MY_NS_MY_STATUS_FMT "
+            f'PW_LOG_STATUS_DOMAIN_FMT("{enums[0].cc_versioned_name}")',
+            footer,
+        )
+        # The status's MY_NS_MY_STATUS_CODE_FMT is the enum's
+        # MY_NS_MY_STATUS_CODE_FMT, so it must only be emitted once.
+        self.assertEqual(footer.count("#define MY_NS_MY_STATUS_CODE_FMT "), 1)
         self.assertLess(
             footer.index("struct EnumTraits<::my::ns::MyStatusCode>"),
             footer.index("class [[nodiscard]] MyStatus final"),
@@ -571,6 +583,28 @@ class TestEnumGeneration(unittest.TestCase):
         self.assertIn(
             "_PW_TOKENIZE_ENUM_DOMAIN(::my::ns::MyStatusCode,", footer
         )
+
+    def test_status_macro_conflicts_with_enum_macro(self) -> None:
+        """Enum and status macros with one name must have one value."""
+        enums = [
+            EnumDescriptor(
+                name="Thing",
+                scopes=("ns",),
+                cc_full_name="::ns::Thing",
+                line=1,
+                values=(EnumValue(cc_name="kOk", value=0, name="OK"),),
+                status=StatusInfo(
+                    name="Thing",
+                    scopes=("ns",),
+                    cc_full_name="::ns::Thing",
+                    ok_code="kOk",
+                ),
+            )
+        ]
+        # NS_THING_FMT is PW_LOG_TOKEN_FMT() for the enum, but
+        # PW_LOG_STATUS_DOMAIN_FMT() for the status.
+        with self.assertRaisesRegex(ParseError, "NS_THING_FMT"):
+            list(generate_footer(enums))
 
     def test_status_enum_no_factory_for_ok_code(self) -> None:
         """Factories are omitted for the OK code and its aliases."""

@@ -250,7 +250,12 @@ pw_test("tokenized_args_test") {
   deps = [
     ":tokenized_backend_indicator",
     "$dir_pw_log:args",
+    "$dir_pw_log:status",
+    "$dir_pw_tokenizer:decoder",
     "$dir_pw_unit_test:constexpr",
+    dir_pw_result,
+    dir_pw_span,
+    dir_pw_status,
     dir_pw_tokenizer,
   ]
 

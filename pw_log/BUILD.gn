@@ -79,6 +79,15 @@ pw_source_set("args") {
   public = [ "public/pw_log/tokenized_args.h" ]
 }
 
+pw_source_set("status") {
+  public_configs = [ ":public_include_path" ]
+  public_deps = [
+    ":args",
+    dir_pw_status,
+  ]
+  public = [ "public/pw_log/status.h" ]
+}
+
 pw_source_set("glog_adapter") {
   public_configs = [ ":public_include_path" ]
   public = [
@@ -136,6 +145,7 @@ pw_test_group("tests") {
     ":glog_adapter_test",
     ":proto_utils_test",
     ":log_enum_test",
+    ":log_status_test",
   ]
 }
 
@@ -188,6 +198,24 @@ pw_test("log_enum_test") {
   ]
 
   sources = [ "log_enum_test.cc" ]
+}
+
+pw_test("log_status_test") {
+  enable_if = pw_log_BACKEND != ""
+  negative_compilation_tests = true
+  deps = [
+    ":args",
+    ":pw_log",
+    ":status",
+    "$dir_pw_string:format",
+    "$dir_pw_string:string",
+    dir_pw_preprocessor,
+    dir_pw_result,
+    dir_pw_status,
+    dir_pw_tokenizer,
+  ]
+
+  sources = [ "log_status_test.cc" ]
 }
 
 pw_proto_library("protos") {

@@ -27,7 +27,10 @@
 #include "pw_enum_private/complex_enum.h"
 #include "pw_enum_private/enum_with_deps.h"
 #include "pw_enum_private/standalone_enum.h"
+#include "pw_log/status.h"
 #include "pw_log/tokenized_args.h"
+#include "pw_string/format.h"
+#include "pw_string/string.h"
 #include "pw_tokenizer/hash.h"
 #include "pw_unit_test/constexpr.h"
 #include "pw_unit_test/framework.h"
@@ -596,6 +599,38 @@ TEST(EnumTraitsTest, RejectsHandWrittenSpecializations) {
   // they otherwise provide the entire API.
   static_assert(!::pw::has_enum_traits_v<UntaggedTraitsEnum>);
   static_assert(!::pw::has_enum_to_string_v<UntaggedTraitsEnum>);
+}
+
+// What logging PlainTestCode::kFailed formats as. Tokenizing pw_log backends
+// log its token in the enum's domain; other backends log its name.
+#if __has_include("pw_log_backend/log_backend_uses_pw_tokenizer.h")
+constexpr char kLoggedFailed[] =
+    "${" PW_TESTING_PLAIN_TEST_STATUS_DOMAIN "}#00000001";
+#else
+constexpr char kLoggedFailed[] = "FAILED";
+#endif  // __has_include("pw_log_backend/log_backend_uses_pw_tokenizer.h")
+
+TEST(PwEnumStatusTest, StatusDomainIsCodeEnumDomain) {
+  EXPECT_STREQ(PW_TESTING_PLAIN_TEST_STATUS_DOMAIN,
+               PW_TESTING_PLAIN_TEST_CODE_DOMAIN);
+}
+
+TEST(PwEnumStatusTest, StatusCodeFmtLogsCodeWithLogEnum) {
+  constexpr auto kFailed = ::pw::testing::PlainTestStatus::Failed();
+
+  pw::InlineString<128> logged;
+  PW_TEST_ASSERT_OK(pw::string::Format(
+      logged, PW_TESTING_PLAIN_TEST_STATUS_CODE_FMT, PW_LOG_ENUM(kFailed)));
+  EXPECT_STREQ(logged.c_str(), kLoggedFailed);
+}
+
+TEST(PwEnumStatusTest, StatusFmtLogsStatusWithLogStatus) {
+  constexpr auto kFailed = ::pw::testing::PlainTestStatus::Failed();
+
+  pw::InlineString<128> logged;
+  PW_TEST_ASSERT_OK(pw::string::Format(
+      logged, PW_TESTING_PLAIN_TEST_STATUS_FMT, PW_LOG_STATUS(kFailed)));
+  EXPECT_STREQ(logged.c_str(), kLoggedFailed);
 }
 
 }  // namespace

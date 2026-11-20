@@ -15,6 +15,9 @@
 #include <cstdint>
 
 #include "enum_example/i2c_status.h"
+#include "pw_log/log.h"
+#include "pw_log/status.h"
+#include "pw_log/tokenized_args.h"
 #include "pw_status/try.h"
 #include "pw_unit_test/framework.h"
 
@@ -44,6 +47,24 @@ bool ShouldRetry(I2cStatus status) {
 }
 // DOCSTAG: [pw_enum-examples-status-enum-usage]
 
+// DOCSTAG: [pw_enum-examples-status-enum-logging]
+void LogI2cStatus(const I2cStatus& status) {
+  // Log the status: pair <STATUS>_FMT with PW_LOG_STATUS.
+  PW_LOG_INFO("I2C result: " MY_DRIVER_I2C_STATUS_FMT, PW_LOG_STATUS(status));
+
+  // Log only the status code: pair <STATUS>_CODE_FMT with PW_LOG_ENUM.
+  PW_LOG_INFO("I2C code: " MY_DRIVER_I2C_STATUS_CODE_FMT, PW_LOG_ENUM(status));
+}
+
+// Generic code does not know the status's macros, so it logs the status code
+// with PW_LOG_ENUM_VERSIONED_FMT and PW_LOG_ENUM_VERSIONED.
+template <typename Status>
+void LogStatusCode(const Status& status) {
+  PW_LOG_INFO("Code: " PW_LOG_ENUM_VERSIONED_FMT(),
+              PW_LOG_ENUM_VERSIONED(status));
+}
+// DOCSTAG: [pw_enum-examples-status-enum-logging]
+
 TEST(StatusEnumExample, Ok) {
   I2cStatus status = WritePacket(0x42, 0x01, 0x02);
   PW_TEST_EXPECT_OK(status);
@@ -65,6 +86,12 @@ TEST(StatusEnumExample, Error) {
   I2cStatus bus_error = WritePacket(0x42, 0x01, 0xFF);
   EXPECT_TRUE(bus_error.IsBusError());
   EXPECT_FALSE(ShouldRetry(bus_error));
+}
+
+TEST(StatusEnumExample, Logging) {
+  LogI2cStatus(I2cStatus());
+  LogI2cStatus(I2cStatus::Timeout());
+  LogStatusCode(I2cStatus::Nack());
 }
 
 }  // namespace
