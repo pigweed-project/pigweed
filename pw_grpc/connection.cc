@@ -17,6 +17,7 @@
 #include <cinttypes>
 #include <cstring>
 #include <string_view>
+#include <tuple>
 #include <type_traits>
 
 #include "pw_assert/check.h"
@@ -90,6 +91,7 @@ constexpr std::string_view kExpectedConnectionPrefaceLiteral(
 static_assert(kMaxMethodNameSize == kHpackMaxStringSize);
 
 constexpr size_t kLengthPrefixedMessageHdrSize = 5;
+constexpr size_t kInitialReadQueueCapacity = 8;
 
 enum {
   FLAGS_ACK = 0x01,
@@ -185,10 +187,7 @@ Connection::Connection(
     CloseConnectionCallback&& close_connection_callback,
     allocator::SynchronizedAllocator<pw::sync::Mutex>* read_allocator,
     pw::async::Dispatcher* read_dispatcher)
-    : read_dispatcher_(
-          read_dispatcher
-              ? std::make_optional<pw::async::HeapDispatcher>(*read_dispatcher)
-              : std::nullopt),
+    : read_dispatcher_(read_dispatcher),
       send_queue_(send_queue),
       drain_task_([this](pw::async::Context&, pw::Status status) {
         RunDrainTask(status);
@@ -199,12 +198,12 @@ Connection::Connection(
                     message_assembly_allocator,
                     send_allocator,
                     send_queue),
-      reader_(*this, callbacks, reader),
+      reader_(*this, callbacks, reader, read_allocator),
       writer_(*this),
       close_connection_callback_(std::move(close_connection_callback)) {}
 
 void Connection::RegisterSpaceAvailableCallback() {
-  if (!read_dispatcher_.has_value()) {
+  if (read_dispatcher_ == nullptr) {
     return;
   }
   std::lock_guard lock(callback_mutex_);
@@ -232,11 +231,12 @@ void Connection::UnregisterSpaceAvailableCallback() {
 
 Connection::~Connection() {
   UnregisterSpaceAvailableCallback();
+  reader_.Drain();
   bool wait_for_task = false;
   {
     std::lock_guard lock(drain_mutex_);
     drain_stopping_ = true;
-    if (drain_scheduled_ && read_dispatcher_.has_value()) {
+    if (drain_scheduled_ && read_dispatcher_ != nullptr) {
       if (read_dispatcher_->Cancel(drain_task_)) {
         drain_scheduled_ = false;
       } else {
@@ -299,7 +299,7 @@ void Connection::RunDrainTask(pw::Status status) {
 
 void Connection::ScheduleDrainTask() {
   std::lock_guard lock(drain_mutex_);
-  if (drain_stopping_ || !read_dispatcher_.has_value()) {
+  if (drain_stopping_ || read_dispatcher_ == nullptr) {
     return;
   }
   if (drain_scheduled_) {
@@ -915,7 +915,7 @@ Status Connection::Writer::SendResponseComplete(StreamId stream_id,
                 " error=%d, latching END_STREAM",
                 stream_id,
                 status.code());
-    if (!connection_.read_dispatcher_.has_value()) {
+    if (connection_.read_dispatcher_ == nullptr) {
       stream->Reset();
     } else {
       stream->end_stream_latched = true;
@@ -932,6 +932,84 @@ Status Connection::Writer::SendResponseComplete(StreamId stream_id,
   stream->Reset();
 
   return OkStatus();
+}
+
+Connection::Reader::Reader(Connection& connection,
+                           RequestCallbacks& callbacks,
+                           stream::Reader& reader,
+                           Allocator* read_allocator)
+    : connection_(connection),
+      callbacks_(callbacks),
+      reader_(reader),
+      read_task_([this](pw::async::Context&, pw::Status status) {
+        RunReadTask(status);
+      }),
+      read_queue_(read_allocator != nullptr
+                      ? std::make_optional<DynamicQueue<QueuedDataFrame>>(
+                            *read_allocator)
+                      : std::nullopt) {}
+
+void Connection::Reader::Drain() {
+  connection_.CloseStreams();
+  if (connection_.read_dispatcher_ == nullptr) {
+    return;
+  }
+  bool wait_for_task = false;
+  {
+    std::lock_guard lock(read_mutex_);
+    read_stopping_ = true;
+    if (read_queue_.has_value()) {
+      read_queue_->reset();
+    }
+    if (read_scheduled_) {
+      if (connection_.read_dispatcher_->Cancel(read_task_)) {
+        read_scheduled_ = false;
+      } else {
+        read_waiting_ = true;
+        wait_for_task = true;
+      }
+    }
+  }
+  if (wait_for_task) {
+    read_done_.acquire();
+    // RunReadTask() calls read_done_.release() while holding read_mutex_.
+    // Re-acquire read_mutex_ so RunReadTask() finishes unlocking it before
+    // Connection can be destroyed.
+    std::lock_guard lock(read_mutex_);
+  }
+}
+
+void Connection::Reader::RunReadTask(pw::Status status) {
+  while (true) {
+    QueuedDataFrame item;
+    {
+      std::lock_guard lock(read_mutex_);
+      if (!status.ok()) {
+        read_stopping_ = true;
+      }
+      if (read_stopping_ || read_queue_->empty()) {
+        read_queue_->reset();
+        read_scheduled_ = false;
+        if (read_waiting_) {
+          read_waiting_ = false;
+          read_done_.release();
+        }
+        return;
+      }
+      item = std::move(read_queue_->front());
+      read_queue_->pop();
+    }
+    const FrameHeader frame{
+        .payload_length = item.payload_length,
+        .type = FrameType::DATA,
+        .flags = item.flags,
+        .stream_id = item.stream_id,
+    };
+    ByteSpan payload = item.payload != nullptr
+                           ? ByteSpan(item.payload.get(), item.payload.size())
+                           : ByteSpan();
+    ProcessDataFramePosted(frame, payload);
+  }
 }
 
 void Connection::Reader::CloseStream(Connection::Stream* stream) {
@@ -1104,38 +1182,66 @@ Status Connection::Reader::ProcessDataFrame(const FrameHeader& frame) {
 
   Allocator* read_alloc = connection_.read_allocator_;
   const bool async_processing =
-      connection_.read_dispatcher_.has_value() && read_alloc != nullptr;
+      connection_.read_dispatcher_ != nullptr && read_alloc != nullptr;
 
   if (async_processing) {
+    {
+      std::lock_guard lock(read_mutex_);
+      if (read_stopping_) {
+        return Status::Unavailable();
+      }
+      if (read_queue_->capacity() == 0) {
+        // Pre-reserve initial queue storage before allocating payload_buf so
+        // the queue buffer sits at the start of read_allocator_ instead of
+        // interleaving 0 -> 1 -> 2 -> 4 growth allocations with large payload
+        // blocks.
+        std::ignore = read_queue_->try_reserve(kInitialReadQueueCapacity);
+      }
+    }
     UniquePtr<std::byte[]> payload_buf;
+    bool alloc_ok = true;
     if (!payload.empty()) {
       payload_buf = read_alloc->MakeUnique<std::byte[]>(payload.size());
       if (payload_buf == nullptr) {
-        PW_LOG_ERROR("Data frame payload allocation failed");
-        auto state = connection_.LockState();
-        Stream* stream = state->LookupStream(frame.stream_id);
-        // RFC 9113 §6.9: error frames must always count towards flow-control
-        PW_TRY(state->UpdateRecvWindow(stream, frame.payload_length));
-        if (stream) {
-          PW_TRY(
-              SendRstStreamAndClose(state, stream, Http2Error::INTERNAL_ERROR));
-        }
-        return OkStatus();
+        alloc_ok = false;
+      } else {
+        std::copy(payload.begin(), payload.end(), payload_buf.get());
       }
-      std::copy(payload.begin(), payload.end(), payload_buf.get());
     }
-
-    PW_TRY(connection_.read_dispatcher_->Post(
-        [this, frame, buf = std::move(payload_buf)](pw::async::Context&,
-                                                    pw::Status status) mutable {
-          if (!status.ok()) {
-            return;
-          }
-          ByteSpan payload_span = buf != nullptr
-                                      ? pw::ByteSpan(buf.get(), buf.size())
-                                      : pw::ByteSpan();
-          ProcessDataFramePosted(frame, payload_span);
-        }));
+    if (alloc_ok) {
+      std::lock_guard lock(read_mutex_);
+      if (read_stopping_) {
+        return Status::Unavailable();
+      }
+      alloc_ok = read_queue_->try_push(QueuedDataFrame{
+          .stream_id = frame.stream_id,
+          .payload_length = frame.payload_length,
+          .flags = frame.flags,
+          .payload = std::move(payload_buf),
+      });
+      if (alloc_ok && !read_scheduled_) {
+        read_scheduled_ = true;
+        connection_.read_dispatcher_->Post(read_task_);
+      }
+    }
+    if (!alloc_ok) {
+      {
+        std::lock_guard lock(read_mutex_);
+        if (read_queue_->empty()) {
+          read_queue_->reset();
+        }
+      }
+      PW_LOG_ERROR("Data frame payload allocation failed");
+      auto state = connection_.LockState();
+      Stream* stream = state->LookupStream(frame.stream_id);
+      // RFC 9113 §6.9: error frames must always count towards flow-control
+      PW_TRY(state->UpdateRecvWindow(stream, frame.payload_length));
+      if (stream) {
+        PW_TRY(
+            SendRstStreamAndClose(state, stream, Http2Error::INTERNAL_ERROR));
+      }
+      return OkStatus();
+    }
   } else {
     ProcessDataFramePosted(frame, payload);
   }
@@ -1155,6 +1261,9 @@ void Connection::Reader::ProcessDataFramePosted(const FrameHeader& frame,
 Status Connection::Reader::ProcessDataFramePayload(const FrameHeader& frame,
                                                    ByteSpan payload) {
   auto state = connection_.LockState();
+  if (state->connection_closed()) {
+    return OkStatus();
+  }
   Stream* stream = state->LookupStream(frame.stream_id);
   if (stream && stream->end_stream_latched) {
     stream = nullptr;
@@ -1281,6 +1390,9 @@ Status Connection::Reader::ProcessDataFramePayload(const FrameHeader& frame,
     msg_buf.Reset();
 
     state = connection_.LockState();
+    if (state->connection_closed()) {
+      return OkStatus();
+    }
     stream = state->LookupStream(frame.stream_id);
     if (!stream) {
       return OkStatus();
@@ -1531,7 +1643,7 @@ Status Connection::SharedState::UpdateRecvWindow(Stream* stream,
             SendWindowUpdates(stream, connection_increment, stream_increment);
         !status.ok()) {
       if (status.IsResourceExhausted() &&
-          connection_.read_dispatcher_.has_value()) {
+          connection_.read_dispatcher_ != nullptr) {
         owed_window_update_ = true;
         connection_.MarkDrainNeeded();
         return OkStatus();
@@ -1679,7 +1791,7 @@ Status Connection::Reader::ProcessSettingsFrame(const FrameHeader& frame,
     auto state = connection_.LockState();
     if (auto status = state->SendSettingsAck(); !status.ok()) {
       if (status.IsResourceExhausted() &&
-          connection_.read_dispatcher_.has_value()) {
+          connection_.read_dispatcher_ != nullptr) {
         state->DeferSettingsAck();
       } else {
         return status;
@@ -1722,7 +1834,7 @@ Status Connection::Reader::ProcessPingFrame(const FrameHeader& frame) {
     auto state = connection_.LockState();
     if (auto status = state->SendPingAck(opaque_data); !status.ok()) {
       if (status.IsResourceExhausted() &&
-          connection_.read_dispatcher_.has_value()) {
+          connection_.read_dispatcher_ != nullptr) {
         state->DeferPingAck(opaque_data);
       } else {
         return status;

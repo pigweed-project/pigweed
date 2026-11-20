@@ -21,7 +21,6 @@
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/synchronized_allocator.h"
 #include "pw_async/dispatcher.h"
-#include "pw_async/heap_dispatcher.h"
 #include "pw_async/task.h"
 #include "pw_bytes/byte_builder.h"
 #include "pw_bytes/span.h"
@@ -88,13 +87,16 @@ inline constexpr uint32_t kMaxMethodNameSize = 127;
 // test_pw_rpc_server.cc for an example implementation of this.
 //
 // If a read_dispatcher and read_allocator are provided, incoming DATA frame
-// payloads are copied using read_allocator and posted to read_dispatcher for
-// processing off the reader thread. This prevents request handling from
-// blocking the reader thread from processing incoming control frames (like
-// WINDOW_UPDATE or RST_STREAM). If read_dispatcher or read_allocator is null,
-// request callbacks are executed synchronously directly on the reader thread.
-// The read_dispatcher is also required for asynchronous END_STREAM trailer and
-// control-frame backpressure recovery when SendQueue is full.
+// payloads are copied using read_allocator and queued for processing on
+// read_dispatcher off the reader thread. Because read_allocator also backs the
+// async DATA frame DynamicQueue, size read_allocator with headroom beyond
+// kTargetConnectionWindowSize for queue storage and allocator block overhead
+// (see test_pw_rpc_server.cc). This prevents request handling from blocking the
+// reader thread from processing incoming control frames (like WINDOW_UPDATE or
+// RST_STREAM). If read_dispatcher or read_allocator is null, request callbacks
+// are executed synchronously directly on the reader thread. The read_dispatcher
+// is also required for asynchronous END_STREAM trailer and control-frame
+// backpressure recovery when SendQueue is full.
 //
 // By default, each gRPC message must be entirely contained within a single
 // HTTP2 DATA frame, as supporting fragmented messages requires buffering
@@ -517,14 +519,23 @@ class Connection {
    public:
     Reader(Connection& connection,
            RequestCallbacks& callbacks,
-           stream::Reader& reader)
-        : connection_(connection), callbacks_(callbacks), reader_(reader) {}
+           stream::Reader& reader,
+           Allocator* read_allocator);
 
     Status ProcessConnectionPreface();
     Status ProcessFrame();
+    void Drain() PW_LOCKS_EXCLUDED(read_mutex_);
 
    private:
+    struct QueuedDataFrame {
+      StreamId stream_id = 0;
+      uint32_t payload_length = 0;
+      uint8_t flags = 0;
+      UniquePtr<std::byte[]> payload;
+    };
+
     void CloseStream(Stream* stream);
+    void RunReadTask(pw::Status status) PW_LOCKS_EXCLUDED(read_mutex_);
 
     Status ProcessDataFrame(const internal::FrameHeader&);
     void ProcessDataFramePosted(const internal::FrameHeader& frame,
@@ -555,12 +566,25 @@ class Connection {
 
     std::array<std::byte, internal::kMaxFramePayloadSize> payload_scratch_{};
     StreamId last_stream_id_ = 0;
+
+    pw::async::Task read_task_;
+    // Lock acquisition order:
+    //   read_mutex_ -> read_allocator_ internal mutex
+    //   read_mutex_ -> read_dispatcher_ internal lock
+    // read_mutex_ must never be held when locking shared_state_ or calling
+    // into send_queue_.
+    pw::sync::Mutex read_mutex_;
+    std::optional<DynamicQueue<QueuedDataFrame>> read_queue_
+        PW_GUARDED_BY(read_mutex_);
+    bool read_scheduled_ PW_GUARDED_BY(read_mutex_) = false;
+    bool read_stopping_ PW_GUARDED_BY(read_mutex_) = false;
+    bool read_waiting_ PW_GUARDED_BY(read_mutex_) = false;
+    pw::sync::ThreadNotification read_done_;
   };
 
   Status HandleReadError(Status status) {
     if (!status.ok()) {
-      auto state = LockState();
-      state->Close();
+      reader_.Drain();
     }
     return status;
   }
@@ -574,7 +598,7 @@ class Connection {
     static_cast<void>(moved_state);
   }
 
-  std::optional<pw::async::HeapDispatcher> read_dispatcher_;
+  pw::async::Dispatcher* read_dispatcher_ = nullptr;
   SendQueue& send_queue_;
   pw::async::Task drain_task_;
   // Lock acquisition order:

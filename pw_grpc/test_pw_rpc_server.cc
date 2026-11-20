@@ -460,8 +460,9 @@ int main(int argc, char* argv[]) {
     constexpr size_t kMaxActiveBlocks = 64;
     constexpr size_t kReadAllocatorOverhead =
         kMaxActiveBlocks * ReadBlockAllocator::BlockType::kBlockOverhead;
+    constexpr size_t kReadQueueOverhead = 2 * 1024;
     constexpr size_t kMaxReadBufferSize =
-        kMaxReadWindowSize + kReadAllocatorOverhead;
+        kMaxReadWindowSize + kReadAllocatorOverhead + kReadQueueOverhead;
     pw::allocator::LibCAllocator raw_message_assembly_allocator;
     pw::allocator::SynchronizedAllocator<pw::sync::Mutex>
         message_assembly_allocator(raw_message_assembly_allocator);

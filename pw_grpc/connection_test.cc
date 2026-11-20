@@ -27,6 +27,8 @@
 #include "pw_allocator/best_fit.h"
 #include "pw_allocator/forwarding_allocator.h"
 #include "pw_allocator/synchronized_allocator.h"
+#include "pw_async/dispatcher.h"
+#include "pw_async_basic/dispatcher.h"
 #include "pw_bytes/array.h"
 #include "pw_bytes/byte_builder.h"
 #include "pw_bytes/endian.h"
@@ -82,6 +84,7 @@ constexpr size_t kMaxRecordedMessageSize = 64;
 constexpr size_t kMaxTrackedStreams = 8;
 constexpr size_t kSendAllocatorPoolSize = 32 * 1024;
 constexpr size_t kAssemblyAllocatorPoolSize = 256;
+constexpr size_t kReadAllocatorPoolSize = 4 * 1024;
 
 constexpr std::string_view kClientPrefaceLiteral(
     "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n");
@@ -414,6 +417,21 @@ class RecordingSendQueue : public SendQueue {
   InlineDeque<RecordedFrame, kMaxRecordedFrames> frames_ PW_GUARDED_BY(mutex_);
 };
 
+class MessageGate {
+ public:
+  void EnterAndWait() {
+    entered_.release();
+    allow_return_.acquire();
+  }
+
+  void WaitUntilEntered() { entered_.acquire(); }
+  void AllowReturn() { allow_return_.release(); }
+
+ private:
+  sync::ThreadNotification entered_;
+  sync::ThreadNotification allow_return_;
+};
+
 class RecordingCallbacks : public Connection::RequestCallbacks {
  public:
   void OnNewConnection() override PW_LOCKS_EXCLUDED(mutex_) {
@@ -432,11 +450,22 @@ class RecordingCallbacks : public Connection::RequestCallbacks {
 
   Status OnMessage(StreamId id, ByteSpan message) override
       PW_LOCKS_EXCLUDED(mutex_) {
-    std::lock_guard<sync::Mutex> lock(mutex_);
-    last_message_stream_id_ = id;
-    last_message_.clear();
-    last_message_.append(message);
-    return last_message_.status();
+    MessageGate* gate = nullptr;
+    Status status = OkStatus();
+    {
+      std::lock_guard<sync::Mutex> lock(mutex_);
+      ++message_count_;
+      last_message_stream_id_ = id;
+      last_message_.clear();
+      last_message_.append(message);
+      status = last_message_.status();
+      gate = message_gate_;
+      message_gate_ = nullptr;
+    }
+    if (gate != nullptr) {
+      gate->EnterAndWait();
+    }
+    return status;
   }
 
   void OnHalfClose(StreamId id) override PW_LOCKS_EXCLUDED(mutex_) {
@@ -467,6 +496,11 @@ class RecordingCallbacks : public Connection::RequestCallbacks {
     on_cancel_reentry_connection_ = &connection;
   }
 
+  void SetNextOnMessageGate(MessageGate& gate) PW_LOCKS_EXCLUDED(mutex_) {
+    std::lock_guard<sync::Mutex> lock(mutex_);
+    message_gate_ = &gate;
+  }
+
   Status on_cancel_reentry_status() const {
     return Status(static_cast<pw_Status>(
         on_cancel_reentry_code_.load(std::memory_order_acquire)));
@@ -475,6 +509,11 @@ class RecordingCallbacks : public Connection::RequestCallbacks {
   size_t new_connection_count() const PW_LOCKS_EXCLUDED(mutex_) {
     std::lock_guard<sync::Mutex> lock(mutex_);
     return new_connection_count_;
+  }
+
+  size_t message_count() const PW_LOCKS_EXCLUDED(mutex_) {
+    std::lock_guard<sync::Mutex> lock(mutex_);
+    return message_count_;
   }
 
   StreamId last_stream_id() const PW_LOCKS_EXCLUDED(mutex_) {
@@ -520,6 +559,7 @@ class RecordingCallbacks : public Connection::RequestCallbacks {
  private:
   mutable sync::Mutex mutex_;
   size_t new_connection_count_ PW_GUARDED_BY(mutex_) = 0;
+  size_t message_count_ PW_GUARDED_BY(mutex_) = 0;
   StreamId last_stream_id_ PW_GUARDED_BY(mutex_) = 0;
   InlineString<kMaxMethodNameSize> last_method_ PW_GUARDED_BY(mutex_);
   StreamId last_message_stream_id_ PW_GUARDED_BY(mutex_) = 0;
@@ -528,6 +568,7 @@ class RecordingCallbacks : public Connection::RequestCallbacks {
       PW_GUARDED_BY(mutex_);
   Vector<StreamId, kMaxTrackedStreams> canceled_streams_ PW_GUARDED_BY(mutex_);
   Connection* on_cancel_reentry_connection_ PW_GUARDED_BY(mutex_) = nullptr;
+  MessageGate* message_gate_ PW_GUARDED_BY(mutex_) = nullptr;
   std::atomic<int> on_cancel_reentry_code_{PW_STATUS_UNKNOWN};
 };
 
@@ -732,8 +773,37 @@ class RecordingAssemblyAllocator final : public allocator::ForwardingAllocator {
   std::atomic<size_t> last_requested_size_{0};
 };
 
+// Runs BasicDispatcher::Run() on a dedicated background thread.
+class DispatcherRunner final : public thread::ThreadCore {
+ public:
+  explicit DispatcherRunner(async::BasicDispatcher& dispatcher)
+      : dispatcher_(dispatcher), thread_(context_.options(), *this) {}
+
+  ~DispatcherRunner() override { StopAndJoin(); }
+
+  DispatcherRunner(const DispatcherRunner&) = delete;
+  DispatcherRunner& operator=(const DispatcherRunner&) = delete;
+  DispatcherRunner(DispatcherRunner&&) = delete;
+  DispatcherRunner& operator=(DispatcherRunner&&) = delete;
+
+  void StopAndJoin() {
+    if (thread_.joinable()) {
+      dispatcher_.RequestStop();
+      thread_.join();
+    }
+  }
+
+ private:
+  void Run() override { dispatcher_.Run(); }
+
+  async::BasicDispatcher& dispatcher_;
+  thread::test::TestThreadContext context_;
+  thread::Thread thread_;
+};
+
 struct ConnectionHarness {
-  explicit ConnectionHarness(bool enable_assembly_allocator = false)
+  explicit ConnectionHarness(bool enable_assembly_allocator = false,
+                             async::Dispatcher* read_dispatcher = nullptr)
       : assembly_allocator(raw_assembly_allocator),
         sync_assembly_allocator(assembly_allocator),
         connection(
@@ -750,14 +820,21 @@ struct ConnectionHarness {
                   connection.SendResponseComplete(/*stream_id=*/1, OkStatus());
               close_callback_reentry_code.store(status.code(),
                                                 std::memory_order_release);
-            }) {}
+            },
+            /*read_allocator=*/
+            read_dispatcher != nullptr ? &read_allocator : nullptr,
+            read_dispatcher) {}
 
   std::array<std::byte, kSendAllocatorPoolSize> send_pool{};
   std::array<std::byte, kAssemblyAllocatorPoolSize> assembly_pool{};
+  std::array<std::byte, kReadAllocatorPoolSize> read_pool{};
   std::array<std::byte, internal::kMaxGrpcMessageSize> drain_scratch{};
   allocator::BestFitAllocator<> raw_send_allocator{send_pool};
   allocator::SynchronizedAllocator<sync::Mutex> send_allocator{
       raw_send_allocator};
+  allocator::BestFitAllocator<> raw_read_allocator{read_pool};
+  allocator::SynchronizedAllocator<sync::Mutex> read_allocator{
+      raw_read_allocator};
   allocator::BestFitAllocator<> raw_assembly_allocator{assembly_pool};
   RecordingAssemblyAllocator assembly_allocator;
   allocator::SynchronizedAllocator<sync::Mutex> sync_assembly_allocator;
@@ -819,12 +896,13 @@ class ConnectionTest : public ::testing::Test {
     }
   }
 
-  void ResetHarness(bool enable_assembly_allocator) {
+  void ResetHarness(bool enable_assembly_allocator,
+                    async::Dispatcher* read_dispatcher = nullptr) {
     if (g_harness.has_value()) {
       StopReader();
       g_harness.reset();
     }
-    g_harness.emplace(enable_assembly_allocator);
+    g_harness.emplace(enable_assembly_allocator, read_dispatcher);
     std::fill(g_harness->drain_scratch.begin(),
               g_harness->drain_scratch.end(),
               std::byte{0x5a});
@@ -1573,6 +1651,103 @@ TEST_F(ConnectionTest,
   harness().send_queue.TakeStreamFrames(kAtMaxLimitStream, rst_frames);
   ExpectSingleRstStreamFrame(
       rst_frames, kAtMaxLimitStream, kHttp2ErrorInternalError);
+}
+
+TEST_F(ConnectionTest, AsyncDataDispatchesQueuedFramesInFifoOrder) {
+  async::BasicDispatcher read_dispatcher;
+  ResetHarness(/*enable_assembly_allocator=*/false, &read_dispatcher);
+  StartConnection();
+
+  constexpr StreamId kStreamId = 1;
+  constexpr auto kPayload = bytes::Array<0x11, 0x22, 0x33, 0x44>();
+  OpenStream(kStreamId);
+  harness().reader.PushRequestData(kStreamId, kPayload, /*end_stream=*/false);
+  harness().reader.PushRawDataFrame(
+      kStreamId, ConstByteSpan(), /*end_stream=*/true);
+  harness().reader.WaitUntilIdle();
+
+  EXPECT_EQ(harness().callbacks.message_count(), 0U);
+  EXPECT_FALSE(harness().callbacks.WasHalfClosed(kStreamId));
+
+  read_dispatcher.RunUntilIdle();
+  EXPECT_EQ(harness().callbacks.message_count(), 1U);
+  EXPECT_EQ(harness().callbacks.last_message_stream_id(), kStreamId);
+  EXPECT_TRUE(harness().callbacks.WasHalfClosed(kStreamId));
+  EXPECT_EQ(harness().raw_read_allocator.GetAllocated(), 0U);
+
+  StopReader();
+  g_harness.reset();
+  read_dispatcher.RunUntilIdle();
+}
+
+TEST_F(ConnectionTest, AsyncDataTeardownCancelsQueuedTasksAndFreesBuffers) {
+  async::BasicDispatcher read_dispatcher;
+  ResetHarness(/*enable_assembly_allocator=*/false, &read_dispatcher);
+  StartConnection();
+
+  constexpr StreamId kStreamId = 1;
+  constexpr auto kPayload = bytes::Array<0x11, 0x22, 0x33, 0x44>();
+  OpenStream(kStreamId);
+  harness().reader.PushRequestData(kStreamId, kPayload, /*end_stream=*/false);
+  harness().reader.PushRequestData(kStreamId, kPayload, /*end_stream=*/true);
+  harness().reader.WaitUntilIdle();
+
+  EXPECT_GT(harness().raw_read_allocator.GetAllocated(), 0U);
+  EXPECT_EQ(harness().callbacks.message_count(), 0U);
+
+  // Reader EOF and Connection destruction must cancel queued read_dispatcher
+  // work and release all read_allocator blocks before read_dispatcher runs.
+  StopReader();
+  EXPECT_EQ(harness().raw_read_allocator.GetAllocated(), 0U);
+  g_harness.reset();
+
+  read_dispatcher.RunUntilIdle();
+}
+
+TEST_F(ConnectionTest, AsyncDataTeardownWaitsForInFlightOnMessageCallback) {
+  async::BasicDispatcher read_dispatcher;
+  DispatcherRunner dispatcher_runner(read_dispatcher);
+  ResetHarness(/*enable_assembly_allocator=*/false, &read_dispatcher);
+  StartConnectionWithWindow(/*initial_window=*/0);
+
+  MessageGate gate;
+  harness().callbacks.SetNextOnMessageGate(gate);
+
+  constexpr StreamId kStreamId = 1;
+  constexpr auto kPayload1 = bytes::Array<0xaa, 0xbb>();
+  constexpr auto kPayload2 = bytes::Array<0xcc, 0xdd>();
+  constexpr auto kResponsePayload = bytes::Array<0x61, 0x62>();
+  OpenStream(kStreamId);
+  harness().reader.PushRequestData(kStreamId, kPayload1, /*end_stream=*/false);
+  gate.WaitUntilEntered();
+
+  // Queue a second DATA(END_STREAM) frame while OnMessage() is in flight on
+  // read_dispatcher.
+  harness().reader.PushRequestData(kStreamId, kPayload2, /*end_stream=*/true);
+  harness().reader.WaitUntilIdle();
+
+  // Park a writer on the zero send window so CloseStreams() at the start of
+  // Reader::Drain() signals deterministically when ReaderRunner enters Drain()
+  // while OnMessage() is still blocked on gate.
+  RecordingRpcHandler rpc_handler;
+  GrpcChannelOutput output;
+  output.set_callbacks(rpc_handler);
+  output.set_connection(harness().connection);
+  PacketWriter writer(output, kStreamId, kResponsePayload);
+  rpc_handler.WaitUntilEntered();
+
+  harness().reader.Close();
+  EXPECT_EQ(writer.Join(), Status::Unavailable());
+
+  gate.AllowReturn();
+  StopReader();
+  EXPECT_EQ(harness().callbacks.message_count(), 1U);
+  EXPECT_FALSE(harness().callbacks.WasHalfClosed(kStreamId));
+  EXPECT_EQ(harness().raw_read_allocator.GetAllocated(), 0U);
+
+  output.clear_connection();
+  g_harness.reset();
+  dispatcher_runner.StopAndJoin();
 }
 
 }  // namespace
