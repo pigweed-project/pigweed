@@ -735,12 +735,13 @@ class RecordingAssemblyAllocator final : public allocator::ForwardingAllocator {
 struct ConnectionHarness {
   explicit ConnectionHarness(bool enable_assembly_allocator = false)
       : assembly_allocator(raw_assembly_allocator),
+        sync_assembly_allocator(assembly_allocator),
         connection(
             reader,
             send_queue,
             callbacks,
             /*message_assembly_allocator=*/
-            enable_assembly_allocator ? &assembly_allocator : nullptr,
+            enable_assembly_allocator ? &sync_assembly_allocator : nullptr,
             send_allocator,
             /*close_connection_callback=*/
             [this]() {
@@ -759,6 +760,7 @@ struct ConnectionHarness {
       raw_send_allocator};
   allocator::BestFitAllocator<> raw_assembly_allocator{assembly_pool};
   RecordingAssemblyAllocator assembly_allocator;
+  allocator::SynchronizedAllocator<sync::Mutex> sync_assembly_allocator;
   BlockingInMemoryReader reader;
   RecordingSendQueue send_queue;
   RecordingCallbacks callbacks;

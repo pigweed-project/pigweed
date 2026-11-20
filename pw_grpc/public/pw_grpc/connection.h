@@ -16,6 +16,7 @@
 #include <atomic>
 #include <cstdint>
 #include <optional>
+#include <type_traits>
 
 #include "pw_allocator/allocator.h"
 #include "pw_allocator/synchronized_allocator.h"
@@ -98,9 +99,9 @@ inline constexpr uint32_t kMaxMethodNameSize = 127;
 // By default, each gRPC message must be entirely contained within a single
 // HTTP2 DATA frame, as supporting fragmented messages requires buffering
 // up to the maximum message size per stream. To support fragmented messages,
-// provide a message_assembly_allocator, which will be used to allocate
-// temporary storage for fragmented gRPC messages when required. Because
-// pw_grpc passes allocation requests up to
+// provide an externally synchronized message_assembly_allocator, which will be
+// used to allocate temporary storage for fragmented gRPC messages when
+// required. Because pw_grpc passes allocation requests up to
 // internal::kMaxGrpcMessageAssemblySize (4 MiB) per active stream based on the
 // peer's length prefix, message_assembly_allocator must be a bounded, failable
 // allocator (not an abort-on-OOM system heap), or nullptr to reject fragmented
@@ -150,20 +151,60 @@ class Connection {
   ///    teardown.
   using CloseConnectionCallback = pw::Function<void()>;
 
-  template <typename LockType>
-  Connection(
-      stream::Reader& reader,
-      SendQueue& send_queue,
-      RequestCallbacks& callbacks,
-      Allocator* message_assembly_allocator,
-      allocator::SynchronizedAllocator<LockType>& send_allocator,
-      CloseConnectionCallback&& close_connection_callback = nullptr,
-      allocator::SynchronizedAllocator<LockType>* read_allocator = nullptr,
-      pw::async::Dispatcher* read_dispatcher = nullptr)
+  Connection(stream::Reader& reader,
+             SendQueue& send_queue,
+             RequestCallbacks& callbacks,
+             allocator::SynchronizedAllocator<pw::sync::Mutex>*
+                 message_assembly_allocator,
+             allocator::SynchronizedAllocator<pw::sync::Mutex>& send_allocator,
+             CloseConnectionCallback&& close_connection_callback = nullptr,
+             allocator::SynchronizedAllocator<pw::sync::Mutex>* read_allocator =
+                 nullptr,
+             pw::async::Dispatcher* read_dispatcher = nullptr)
       : Connection(reader,
                    send_queue,
                    callbacks,
-                   message_assembly_allocator,
+                   static_cast<Allocator*>(message_assembly_allocator),
+                   static_cast<Allocator&>(send_allocator),
+                   std::move(close_connection_callback),
+                   read_allocator,
+                   read_dispatcher) {}
+
+  // Temporary soft-transition overload for callers still passing an
+  // unsynchronized Allocator*. Constrained to exclude
+  // SynchronizedAllocator<pw::sync::Mutex>* so nullptr and synchronized
+  // allocator calls remain unambiguous.
+  template <typename AllocatorType,
+            typename = std::enable_if_t<
+                std::is_convertible_v<AllocatorType*, Allocator*> &&
+                !std::is_convertible_v<
+                    AllocatorType*,
+                    allocator::SynchronizedAllocator<pw::sync::Mutex>*>>>
+  [[deprecated(
+      "Pass allocator::SynchronizedAllocator<pw::sync::Mutex>* for "
+      "message_assembly_allocator")]] Connection(stream::Reader& reader,
+                                                 SendQueue& send_queue,
+                                                 RequestCallbacks& callbacks,
+                                                 AllocatorType*
+                                                     message_assembly_allocator,
+                                                 allocator::
+                                                     SynchronizedAllocator<
+                                                         pw::sync::Mutex>&
+                                                         send_allocator,
+                                                 CloseConnectionCallback&&
+                                                     close_connection_callback =
+                                                         nullptr,
+                                                 allocator::
+                                                     SynchronizedAllocator<
+                                                         pw::sync::Mutex>*
+                                                         read_allocator =
+                                                             nullptr,
+                                                 pw::async::Dispatcher*
+                                                     read_dispatcher = nullptr)
+      : Connection(reader,
+                   send_queue,
+                   callbacks,
+                   static_cast<Allocator*>(message_assembly_allocator),
                    static_cast<Allocator&>(send_allocator),
                    std::move(close_connection_callback),
                    read_allocator,

@@ -358,7 +358,8 @@ class ConnectionThread : private ConnectionThreadBase,
       const pw::thread::Options& send_thread_options,
       pw::grpc::Connection::RequestCallbacks& callbacks,
       ConnectionCloseCallback&& connection_close_callback,
-      pw::Allocator* message_assembly_allocator,
+      pw::allocator::SynchronizedAllocator<pw::sync::Mutex>*
+          message_assembly_allocator,
       pw::allocator::SynchronizedAllocator<pw::sync::Mutex>& send_allocator,
       pw::allocator::SynchronizedAllocator<pw::sync::Mutex>* read_allocator)
       : ConnectionThreadBase(stream, send_allocator),
@@ -461,7 +462,9 @@ int main(int argc, char* argv[]) {
         kMaxActiveBlocks * ReadBlockAllocator::BlockType::kBlockOverhead;
     constexpr size_t kMaxReadBufferSize =
         kMaxReadWindowSize + kReadAllocatorOverhead;
-    pw::allocator::LibCAllocator message_assembly_allocator;
+    pw::allocator::LibCAllocator raw_message_assembly_allocator;
+    pw::allocator::SynchronizedAllocator<pw::sync::Mutex>
+        message_assembly_allocator(raw_message_assembly_allocator);
 
     std::array<std::byte, kMaxReadBufferSize> read_allocator_data;
     ReadBlockAllocator raw_read_allocator(read_allocator_data);

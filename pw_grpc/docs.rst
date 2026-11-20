@@ -51,8 +51,10 @@ messages that span multiple HTTP/2 ``DATA`` frames. Because ``pw_grpc`` passes
 allocation requests up to ``internal::kMaxGrpcMessageAssemblySize`` (4 MiB) per
 active stream based on the peer's gRPC length prefix:
 
-* ``message_assembly_allocator`` **must** be a bounded, failable allocator (not
-  an abort-on-OOM system heap), or ``nullptr`` to reject fragmented messages.
+* ``message_assembly_allocator`` **must** be an externally synchronized,
+  bounded, failable allocator (such as a bounded pool wrapped in
+  :cc:`pw::allocator::SynchronizedAllocator<pw::sync::Mutex>`, not an
+  abort-on-OOM system heap), or ``nullptr`` to reject fragmented messages.
 * Messages exceeding ``internal::kMaxGrpcMessageAssemblySize`` reset the stream
   with ``ENHANCE_YOUR_CALM`` before allocating.
 * When ``message_assembly_allocator`` is ``nullptr`` or allocation fails,

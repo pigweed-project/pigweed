@@ -1278,6 +1278,7 @@ Status Connection::Reader::ProcessDataFramePayload(const FrameHeader& frame,
     // Release state lock before callback, reacquire after.
     connection_.UnlockState(std::move(state));
     const auto status = callbacks_.OnMessage(frame.stream_id, message_span);
+    msg_buf.Reset();
 
     state = connection_.LockState();
     stream = state->LookupStream(frame.stream_id);
