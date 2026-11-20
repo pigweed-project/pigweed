@@ -104,8 +104,8 @@
 /// 32-bit enum token. For non-tokenizing backends, returns the string name of
 /// the enumerator (`const char*`).
 ///
-/// With `pw_log/status.h` included, also accepts statuses with enum codes and
-/// `pw::Result`, and logs their status code.
+/// With `pw_log/status.h` included, also accepts statuses with enum codes,
+/// `pw::StatusWithSize`, and `pw::Result`, and logs their status code.
 #define PW_LOG_ENUM(...) \
   ::pw::EnumToString(::pw::log::internal::ToEnum(__VA_ARGS__))
 
@@ -160,8 +160,8 @@ template <typename T, typename = void>
 struct LoggedEnum {
   static constexpr T Get(T value) {
     static_assert(std::is_enum_v<T>,
-                  "PW_LOG_ENUM requires an enum. To log the code of a status "
-                  "or Result, include pw_log/status.h.");
+                  "PW_LOG_ENUM requires an enum. To log the code of a status, "
+                  "StatusWithSize, or Result, include pw_log/status.h.");
     return value;
   }
 };

@@ -24,6 +24,7 @@
 #include "pw_result/result.h"
 #include "pw_status/status.h"
 #include "pw_status/status_base.h"
+#include "pw_status/status_with_size.h"
 #include "pw_string/format.h"
 #include "pw_string/string.h"
 #include "pw_tokenizer/enum.h"
@@ -147,6 +148,10 @@ LogString LoggedLink(const char* name, Link link) {
   return Logged(name, LINK_DOMAIN, link);
 }
 
+LogString LoggedPwStatus(const char* name, pw_Status code) {
+  return Logged(name, PW_STATUS_DOMAIN, code);
+}
+
 // Returns what logging an enumerator with PW_LOG_ENUM_VERSIONED formats as: its
 // name or, with a tokenizing backend, the tokens of its enum's domain and its
 // value.
@@ -161,6 +166,19 @@ LogString LoggedVersioned(const char* name, Enum enumerator) {
 }
 
 TEST(LogStatus, LogEnumAcceptsStatusAndCarriers) {
+  EXPECT_EQ(LoggedPwStatus("NOT_FOUND", PW_STATUS_NOT_FOUND),
+            FormatLog(PW_STATUS_CODE_FMT, PW_LOG_ENUM(PW_STATUS_NOT_FOUND)));
+  EXPECT_EQ(LoggedPwStatus("NOT_FOUND", PW_STATUS_NOT_FOUND),
+            FormatLog(PW_STATUS_CODE_FMT, PW_LOG_ENUM(Status::NotFound())));
+  EXPECT_EQ(LoggedPwStatus("RESOURCE_EXHAUSTED", PW_STATUS_RESOURCE_EXHAUSTED),
+            FormatLog(PW_STATUS_CODE_FMT,
+                      PW_LOG_ENUM(StatusWithSize::ResourceExhausted(12))));
+  EXPECT_EQ(LoggedPwStatus("UNAVAILABLE", PW_STATUS_UNAVAILABLE),
+            FormatLog(PW_STATUS_CODE_FMT,
+                      PW_LOG_ENUM(Result<int>(Status::Unavailable()))));
+  EXPECT_EQ(LoggedPwStatus("OK", PW_STATUS_OK),
+            FormatLog(PW_STATUS_CODE_FMT, PW_LOG_ENUM(Result<int>(99))));
+
   const BusStatus nack(BusCode::kNack);
   EXPECT_EQ(LoggedBus("NACK", BusCode::kNack),
             FormatLog(BUS_STATUS_CODE_FMT, PW_LOG_ENUM(nack)));
@@ -195,6 +213,31 @@ TEST(LogStatus, MacrosEvaluateArgumentOnce) {
   EXPECT_EQ(LoggedBus("TIMEOUT", BusCode::kTimeout),
             FormatLog(BUS_STATUS_FMT, PW_LOG_STATUS(next_status())));
   EXPECT_EQ(3, calls);
+}
+
+TEST(LogStatus, PwStatus) {
+  const Status ok = OkStatus();
+  const Status not_found = Status::NotFound();
+
+  EXPECT_EQ(LoggedPwStatus("OK", PW_STATUS_OK),
+            FormatLog(PW_STATUS_FMT, PW_LOG_STATUS(ok)));
+  EXPECT_EQ(LoggedPwStatus("NOT_FOUND", PW_STATUS_NOT_FOUND),
+            FormatLog(PW_STATUS_FMT, PW_LOG_STATUS(not_found)));
+  EXPECT_EQ(LoggedPwStatus("DATA_LOSS", PW_STATUS_DATA_LOSS),
+            FormatLog(PW_STATUS_FMT, PW_LOG_STATUS(Status::DataLoss())));
+}
+
+TEST(LogStatus, Carriers) {
+  const StatusWithSize sws = StatusWithSize::DataLoss(7);
+  const Result<int> value = 42;
+  const Result<int> error = Status::PermissionDenied();
+
+  EXPECT_EQ(LoggedPwStatus("DATA_LOSS", PW_STATUS_DATA_LOSS),
+            FormatLog(PW_STATUS_FMT, PW_LOG_STATUS(sws)));
+  EXPECT_EQ(LoggedPwStatus("OK", PW_STATUS_OK),
+            FormatLog(PW_STATUS_FMT, PW_LOG_STATUS(value)));
+  EXPECT_EQ(LoggedPwStatus("PERMISSION_DENIED", PW_STATUS_PERMISSION_DENIED),
+            FormatLog(PW_STATUS_FMT, PW_LOG_STATUS(error)));
 }
 
 TEST(LogStatus, CustomStatus) {
@@ -241,8 +284,14 @@ TEST(LogStatus, AcceptsAnyExpression) {
 
 TEST(LogStatus, CompilesAndRunsWithPwLogMacros) {
   const BusStatus bus_status(BusCode::kBusError);
+  const Status status = Status::Aborted();
+  const Result<int> result = status;
+
+  PW_LOG_INFO("Code: " PW_STATUS_CODE_FMT, PW_LOG_ENUM(status));
   PW_LOG_INFO("Versioned code: " PW_LOG_ENUM_VERSIONED_FMT(),
               PW_LOG_ENUM_VERSIONED(bus_status));
+  PW_LOG_INFO("Status: " PW_STATUS_FMT, PW_LOG_STATUS(status));
+  PW_LOG_INFO("Result: " PW_STATUS_FMT, PW_LOG_STATUS(result));
   PW_LOG_INFO("Bus: " BUS_STATUS_FMT, PW_LOG_STATUS(bus_status));
   PW_LOG_INFO("Link: " LINK_STATUS_FMT, PW_LOG_STATUS(LinkStatus(Link::kDown)));
 }

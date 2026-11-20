@@ -203,7 +203,7 @@ infrastructure.
 * **Argument macro**: Include :cs:`pw_log/tokenized_args.h` and use
   :cc:`PW_LOG_ENUM(value) <PW_LOG_ENUM>` as the argument to the log
   statement. With :cs:`pw_log/status.h` included, :cc:`PW_LOG_ENUM` also
-  accepts statuses with enum codes and ``pw::Result``.
+  accepts statuses with enum codes, ``pw::StatusWithSize``, and ``pw::Result``.
 
 When using a tokenizing logging backend, the generated format macro evaluates to
 ``PW_TOKEN_FMT(::namespace::Enum)``, and :cc:`PW_LOG_ENUM` resolves to
@@ -228,8 +228,8 @@ reliable detokenization), you can use the versioned logging macro:
 * **Versioned argument macro**: Include :cs:`pw_log/tokenized_args.h` and use
   :cc:`PW_LOG_ENUM_VERSIONED` as the argument to the log statement,
   paired with the format specifier :cc:`PW_LOG_ENUM_VERSIONED_FMT`. Like
-  :cc:`PW_LOG_ENUM`, :cc:`PW_LOG_ENUM_VERSIONED` accepts enums, statuses, and
-  ``pw::Result``.
+  :cc:`PW_LOG_ENUM`, :cc:`PW_LOG_ENUM_VERSIONED` accepts enums, statuses,
+  ``pw::StatusWithSize``, and ``pw::Result``.
 
 When using a tokenizing logging backend, the format macro evaluates to a nested
 token format specifier (e.g. ``"${$#%08" PRIx32 "}#%08" PRIx32``), and

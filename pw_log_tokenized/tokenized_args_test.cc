@@ -23,6 +23,7 @@
 #include "pw_span/span.h"
 #include "pw_status/status.h"
 #include "pw_status/status_base.h"
+#include "pw_status/status_with_size.h"
 #include "pw_tokenizer/detokenize.h"
 #include "pw_tokenizer/enum.h"
 #include "pw_tokenizer/hash.h"
@@ -194,6 +195,13 @@ PW_CONSTEXPR_TEST(
     });
 
 PW_CONSTEXPR_TEST(TokenizedArgs, LogEnumFromStatusAndCarriers_Tokenizing, {
+  PW_TEST_EXPECT_EQ(static_cast<uint32_t>(PW_STATUS_NOT_FOUND),
+                    PW_LOG_ENUM(pw::Status::NotFound()));
+  PW_TEST_EXPECT_EQ(static_cast<uint32_t>(PW_STATUS_RESOURCE_EXHAUSTED),
+                    PW_LOG_ENUM(pw::StatusWithSize::ResourceExhausted(16)));
+  PW_TEST_EXPECT_EQ(static_cast<uint32_t>(PW_STATUS_UNAVAILABLE),
+                    PW_LOG_ENUM(pw::Result<int>(pw::Status::Unavailable())));
+
   constexpr I2cStatus kNack(I2cCode::kNack);
   PW_TEST_EXPECT_EQ(static_cast<uint32_t>(I2cCode::kNack), PW_LOG_ENUM(kNack));
   PW_TEST_EXPECT_EQ(static_cast<uint32_t>(I2cCode::kNack),
@@ -210,18 +218,28 @@ PW_CONSTEXPR_TEST(TokenizedArgs, LogEnumFromStatusAndCarriers_Tokenizing, {
   PW_TEST_EXPECT_EQ(pw::tokenizer::Hash("::this_is_a_test::I2cCode"),
                     versioned.domain);
   PW_TEST_EXPECT_EQ(static_cast<uint32_t>(I2cCode::kNack), versioned.value);
+
+  constexpr VersionedArgs sws_versioned =
+      capture(PW_LOG_ENUM_VERSIONED(pw::StatusWithSize::DataLoss(4)));
+  PW_TEST_EXPECT_EQ(pw::tokenizer::Hash(PW_STATUS_DOMAIN),
+                    sws_versioned.domain);
+  PW_TEST_EXPECT_EQ(static_cast<uint32_t>(PW_STATUS_DATA_LOSS),
+                    sws_versioned.value);
 });
 
 // A status is logged as one argument: the token of its code.
 TEST(TokenizedArgs, LogStatusIsItsCode_TokenizingBackend) {
   EXPECT_STREQ(I2C_STATUS_FMT, "${::this_is_a_test::I2cCode}#%08" PRIx32);
   EXPECT_STREQ(LINK_STATUS_FMT, "${::this_is_a_test::Link}#%08" PRIx32);
+  EXPECT_STREQ(PW_STATUS_FMT, "${::pw::Status}#%08" PRIx32);
 
   const I2cStatus nack(I2cCode::kNack);
   const pw::Result<int, LinkStatus> link_up(0);
   EXPECT_EQ(PW_LOG_STATUS(nack), 1u);
   EXPECT_EQ(PW_LOG_STATUS(LinkStatus(Link::kDown)), 0u);
   EXPECT_EQ(PW_LOG_STATUS(link_up), 1u);
+  EXPECT_EQ(PW_LOG_STATUS(pw::Status::NotFound()), 5u);
+  EXPECT_EQ(PW_LOG_STATUS(pw::StatusWithSize::ResourceExhausted(8)), 8u);
 }
 
 TEST(TokenizedArgs, LogStatusEvaluatesArgumentOnce_TokenizingBackend) {
@@ -249,19 +267,23 @@ void AddToken(std::string& csv,
 // Statuses are logged like any other tokenized argument. The C++ detokenizer
 // resolves the code's token.
 TEST(TokenizedArgs, LogStatusDetokenizes_TokenizingBackend) {
+  const pw::Status not_found = pw::Status::NotFound();
   const I2cStatus nack(I2cCode::kNack);
   const pw::Result<int, I2cStatus> result(nack);
 
+  constexpr const char* kFmtPwStatus = "pw=" PW_STATUS_FMT;
   constexpr const char* kFmtStatic = "i2c=" I2C_STATUS_FMT;
   constexpr const char* kFmtCodeOnly = "code=" PW_LOG_ENUM_VERSIONED_FMT();
 
   std::string csv;
+  AddToken(csv, pw::tokenizer::Hash(kFmtPwStatus), "", kFmtPwStatus);
   AddToken(csv, pw::tokenizer::Hash(kFmtStatic), "", kFmtStatic);
   AddToken(csv, pw::tokenizer::Hash(kFmtCodeOnly), "", kFmtCodeOnly);
   AddToken(csv,
            pw::tokenizer::Hash("::this_is_a_test::I2cCode"),
            "enum_domain",
            "::this_is_a_test::I2cCode");
+  AddToken(csv, PW_STATUS_NOT_FOUND, "::pw::Status", "NOT_FOUND");
   AddToken(csv,
            static_cast<uint32_t>(I2cCode::kNack),
            "::this_is_a_test::I2cCode",
@@ -285,6 +307,8 @@ TEST(TokenizedArgs, LogStatusDetokenizes_TokenizingBackend) {
                      PW_LOG_ENUM_VERSIONED(result));
 
   EXPECT_DETOKENIZED("i2c=NACK", "i2c=" I2C_STATUS_FMT, PW_LOG_STATUS(nack));
+  EXPECT_DETOKENIZED(
+      "pw=NOT_FOUND", "pw=" PW_STATUS_FMT, PW_LOG_STATUS(not_found));
 
 #undef EXPECT_DETOKENIZED
 }

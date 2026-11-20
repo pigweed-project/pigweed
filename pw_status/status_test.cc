@@ -20,6 +20,7 @@
 #include <utility>
 
 #include "pw_enum/to_string.h"
+#include "pw_enum/traits.h"
 #include "pw_status/try.h"
 #include "pw_unit_test/constexpr.h"
 #include "pw_unit_test/framework.h"
@@ -159,8 +160,6 @@ TEST(Status, Strings) {
   EXPECT_STREQ("DATA_LOSS", Status::DataLoss().str());
   EXPECT_STREQ("UNAUTHENTICATED", Status::Unauthenticated().str());
 
-  EXPECT_STREQ("OK", PwEnumToString(PW_STATUS_OK));
-  EXPECT_STREQ("CANCELLED", PwEnumToString(PW_STATUS_CANCELLED));
   EXPECT_STREQ("OK", EnumToString(PW_STATUS_OK));
   EXPECT_STREQ("CANCELLED", EnumToString(PW_STATUS_CANCELLED));
   EXPECT_STREQ("OK", pw_StatusString(OkStatus()));
@@ -170,7 +169,6 @@ TEST(Status, Strings) {
 TEST(Status, UnknownString) {
   EXPECT_STREQ("INVALID STATUS", Status(kInvalidCode).str());
   EXPECT_STREQ("INVALID STATUS", pw_StatusString(Status(kInvalidCode)));
-  EXPECT_STREQ("INVALID STATUS", PwEnumToString(kInvalidCode));
   EXPECT_STREQ("INVALID STATUS", EnumToString(kInvalidCode));
 }
 
@@ -184,10 +182,22 @@ TEST(Status, Update) {
   EXPECT_EQ(status, Status::Cancelled());
 }
 
-TEST(Status, EnumToStringIsAvailable) {
+PW_CONSTEXPR_TEST(Status, EnumTraits, {
+  static_assert(has_enum_traits_v<pw_Status>);
   static_assert(has_enum_to_string_v<pw_Status>);
   static_assert(internal::status_has_str_v<Status>);
-}
+
+  PW_TEST_EXPECT_EQ("pw_Status", EnumTraits<pw_Status>::kName);
+  PW_TEST_EXPECT_EQ("::pw_Status", EnumTraits<pw_Status>::kFullyQualifiedName);
+  PW_TEST_EXPECT_EQ("::pw::Status", EnumTraits<pw_Status>::kTokenDomain);
+  PW_TEST_EXPECT_TRUE(IsValidEnum(PW_STATUS_OK));
+  PW_TEST_EXPECT_TRUE(IsValidEnum(PW_STATUS_LAST));
+  PW_TEST_EXPECT_FALSE(IsValidEnum(
+      PW_STATUS_DO_NOT_USE_RESERVED_FOR_FUTURE_EXPANSION_USE_DEFAULT_IN_SWITCH_INSTEAD_));
+  PW_TEST_EXPECT_FALSE(IsValidEnum(kInvalidCode));
+  PW_TEST_EXPECT_FALSE(IsValidEnum<pw_Status>(-1));
+  PW_TEST_EXPECT_FALSE(IsValidEnum<pw_Status>(99));
+});
 
 // Types that implicitly convert to pw::Status work with PW_TRY.
 struct ConvertsToStatus {

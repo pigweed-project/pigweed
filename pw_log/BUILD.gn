@@ -84,6 +84,7 @@ pw_source_set("status") {
   public_deps = [
     ":args",
     dir_pw_status,
+    dir_pw_tokenizer,
   ]
   public = [ "public/pw_log/status.h" ]
 }

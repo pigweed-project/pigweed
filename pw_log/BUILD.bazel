@@ -95,6 +95,7 @@ cc_library(
     deps = [
         ":args",
         "//pw_status",
+        "//pw_tokenizer",
     ],
 )
 

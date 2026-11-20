@@ -19,6 +19,50 @@
 #include "pw_log/tokenized_args.h"
 #include "pw_status/status.h"
 #include "pw_status/status_base.h"
+#include "pw_tokenizer/enum.h"
+
+/// @submodule{pw_log,tokenized_args}
+
+/// Tokenizer domain for `pw_Status` and `pw::Status` codes.
+#define PW_STATUS_DOMAIN "::pw::Status"
+
+/// Format specifier for logging the code of a `pw::Status`, `pw_Status`,
+/// `pw::StatusWithSize`, or `pw::Result<T>` with `PW_LOG_ENUM`.
+#define PW_STATUS_CODE_FMT PW_LOG_TOKEN_FMT(PW_STATUS_DOMAIN)
+
+/// Format specifier for logging a `pw::Status`, `pw::StatusWithSize`, or
+/// `pw::Result<T>` with `PW_LOG_STATUS`.
+#define PW_STATUS_FMT PW_LOG_STATUS_DOMAIN_FMT(PW_STATUS_DOMAIN)
+
+/// @endsubmodule
+
+/// @cond
+static_assert(PW_STATUS_LAST == PW_STATUS_UNAUTHENTICATED,
+              "Update tokenized pw_Status entries when adding status codes");
+static_assert(
+    ::pw::EnumTraits<pw_Status>::kTokenDomain == PW_STATUS_DOMAIN,
+    "PW_STATUS_DOMAIN must match EnumTraits<pw_Status>::kTokenDomain");
+
+_PW_TOKENIZE_ENUM_DOMAIN(::pw_Status,
+                         PW_STATUS_DOMAIN,
+                         (PW_STATUS_OK, "OK"),
+                         (PW_STATUS_CANCELLED, "CANCELLED"),
+                         (PW_STATUS_UNKNOWN, "UNKNOWN"),
+                         (PW_STATUS_INVALID_ARGUMENT, "INVALID_ARGUMENT"),
+                         (PW_STATUS_DEADLINE_EXCEEDED, "DEADLINE_EXCEEDED"),
+                         (PW_STATUS_NOT_FOUND, "NOT_FOUND"),
+                         (PW_STATUS_ALREADY_EXISTS, "ALREADY_EXISTS"),
+                         (PW_STATUS_PERMISSION_DENIED, "PERMISSION_DENIED"),
+                         (PW_STATUS_RESOURCE_EXHAUSTED, "RESOURCE_EXHAUSTED"),
+                         (PW_STATUS_FAILED_PRECONDITION, "FAILED_PRECONDITION"),
+                         (PW_STATUS_ABORTED, "ABORTED"),
+                         (PW_STATUS_OUT_OF_RANGE, "OUT_OF_RANGE"),
+                         (PW_STATUS_UNIMPLEMENTED, "UNIMPLEMENTED"),
+                         (PW_STATUS_INTERNAL, "INTERNAL"),
+                         (PW_STATUS_UNAVAILABLE, "UNAVAILABLE"),
+                         (PW_STATUS_DATA_LOSS, "DATA_LOSS"),
+                         (PW_STATUS_UNAUTHENTICATED, "UNAUTHENTICATED"));
+/// @endcond
 
 /// @submodule{pw_log,tokenized_args}
 
@@ -32,8 +76,8 @@
 #define PW_LOG_STATUS_DOMAIN_FMT(domain) PW_LOG_TOKEN_FMT(domain)
 
 /// Expands to the argument needed to log a status with `<STATUS>_FMT`.
-/// Accepts statuses with enum codes and `pw::Result`. Evaluates its argument
-/// once.
+/// Accepts `pw::Status`, other statuses with enum codes, `pw::StatusWithSize`,
+/// and `pw::Result`. Evaluates its argument once.
 #define PW_LOG_STATUS(...) \
   PW_LOG_ENUM(::pw::log::internal::LoggedStatus(__VA_ARGS__))
 
@@ -42,7 +86,7 @@
 namespace pw::log::internal {
 
 // Returns the status to log for a status or an object with a status() function,
-// such as pw::Result.
+// such as pw::Result or pw::StatusWithSize.
 template <typename T, std::enable_if_t<::pw::internal::is_status_v<T>, int> = 0>
 constexpr const T& ToStatus(const T& value) {
   return value;
@@ -68,7 +112,7 @@ struct LoggedEnum<T, std::enable_if_t<!std::is_enum_v<T>>> {
   static constexpr auto Get(const T& value) {
     static_assert(kHasEnumStatusCode<T>,
                   "PW_LOG_ENUM and PW_LOG_STATUS require an enum, a status "
-                  "with an enum code, or Result.");
+                  "with an enum code, StatusWithSize, or Result.");
     if constexpr (kHasEnumStatusCode<T>) {
       return ToStatus(value).code();
     } else {
@@ -81,8 +125,8 @@ struct LoggedEnum<T, std::enable_if_t<!std::is_enum_v<T>>> {
 template <typename T>
 constexpr const T& LoggedStatus(const T& status) {
   static_assert(!std::is_enum_v<T>,
-                "PW_LOG_STATUS requires a status or Result. Log enums with "
-                "PW_LOG_ENUM.");
+                "PW_LOG_STATUS requires a status, StatusWithSize, or Result. "
+                "Log enums with PW_LOG_ENUM.");
   return status;
 }
 

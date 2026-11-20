@@ -63,6 +63,7 @@ pw_add_library(pw_log.status INTERFACE
   PUBLIC_DEPS
     pw_log.args
     pw_status
+    pw_tokenizer
 )
 
 pw_add_library(pw_log.rate_limited STATIC

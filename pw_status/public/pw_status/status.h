@@ -37,7 +37,7 @@ extern "C" {
 // guide when deciding which status code to use.
 
 /// C API for status codes. In C++, use the pw::Status class instead.
-typedef enum {
+typedef enum pw_Status {
   /// @see @OK
   PW_STATUS_OK = 0,  // Use OkStatus() in C++
   /// @see @CANCELLED
@@ -95,20 +95,76 @@ const char* pw_StatusString(pw_Status status);
 
 }  // extern "C"
 
+#include <array>
+#include <cstddef>
+#include <string_view>
 #include <type_traits>
 
-#include "pw_enum/to_string.h"      // IWYU pragma: keep
+#include "pw_enum/traits.h"         // IWYU pragma: keep
 #include "pw_status/status_base.h"  // IWYU pragma: export
-
-/// Returns a string representation of a given `pw_Status` enumerator.
-///
-/// This implements the FTADLE extension point for `pw::EnumToString`.
-inline const char* PwEnumToString(pw_Status status) {
-  return pw_StatusString(status);
-}
 
 /// The Pigweed namespace
 namespace pw {
+
+/// @cond
+// pw_Status is a C enum that is not defined with pw_enum, so its EnumTraits
+// specialization is implemented manually rather than generated.
+template <>
+struct EnumTraits<pw_Status> {
+  static constexpr bool _pw_enum_internal_tag_do_not_use = true;
+
+  using enum_type = pw_Status;
+  using underlying_type = std::underlying_type_t<pw_Status>;
+
+  static constexpr std::string_view kName = "pw_Status";
+  static constexpr std::string_view kFullyQualifiedName = "::pw_Status";
+  static constexpr std::string_view kTokenDomain = "::pw::Status";
+
+  static constexpr size_t kDistinctValueCount =
+      static_cast<size_t>(PW_STATUS_LAST) + 1;
+  static constexpr bool kIsContiguous = true;
+
+  static constexpr pw_Status kMin = PW_STATUS_OK;
+  static constexpr pw_Status kMax = PW_STATUS_LAST;
+
+  static constexpr std::array<pw_Status, kDistinctValueCount> kValues = {{
+      PW_STATUS_OK,
+      PW_STATUS_CANCELLED,
+      PW_STATUS_UNKNOWN,
+      PW_STATUS_INVALID_ARGUMENT,
+      PW_STATUS_DEADLINE_EXCEEDED,
+      PW_STATUS_NOT_FOUND,
+      PW_STATUS_ALREADY_EXISTS,
+      PW_STATUS_PERMISSION_DENIED,
+      PW_STATUS_RESOURCE_EXHAUSTED,
+      PW_STATUS_FAILED_PRECONDITION,
+      PW_STATUS_ABORTED,
+      PW_STATUS_OUT_OF_RANGE,
+      PW_STATUS_UNIMPLEMENTED,
+      PW_STATUS_INTERNAL,
+      PW_STATUS_UNAVAILABLE,
+      PW_STATUS_DATA_LOSS,
+      PW_STATUS_UNAUTHENTICATED,
+  }};
+
+  [[nodiscard]] static constexpr bool IsValid(pw_Status value) {
+    return value >= kMin && value <= kMax;
+  }
+
+  template <typename Integer,
+            typename = std::enable_if_t<internal::kIsInteger<Integer>>>
+  [[nodiscard]] static constexpr bool IsValid(Integer value) {
+    return internal::IsValidInteger<pw_Status>(value);
+  }
+
+  [[nodiscard]] static const char* ToString(pw_Status value) {
+    return pw_StatusString(value);
+  }
+};
+
+static_assert(EnumTraits<pw_Status>::kValues.back() == PW_STATUS_LAST,
+              "Update EnumTraits<pw_Status>::kValues when adding status codes");
+/// @endcond
 
 /// @module{pw_status}
 
@@ -459,6 +515,8 @@ template <
   }
 }
 
+/// @endmodule
+
 namespace internal {
 
 // Converts to pw::Status for use by internal macros like PW_TRY and
@@ -468,8 +526,6 @@ namespace internal {
 constexpr Status ConvertToStatus(Status status) noexcept { return status; }
 
 }  // namespace internal
-
-/// @endmodule
 
 }  // namespace pw
 
