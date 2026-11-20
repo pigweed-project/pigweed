@@ -15,8 +15,42 @@ package {
     default_applicable_licenses: ["external_pigweed_license"],
 }
 
-cc_library {
-    name: "pw_file",
+filegroup {
+    name: "pw_file_src_files",
+    srcs: [
+        "flat_file_system.cc",
+    ],
+}
+
+// Do not use this directly. It is used by pw_file_defaults to keep the path to
+// the "public" directory relative to this module.
+cc_library_headers {
+    name: "pw_file_include_dirs",
+    export_include_dirs: [
+        "public",
+    ],
+    defaults: [
+        "pw_android_common_target_support",
+    ],
+}
+
+// This rule must be instantiated, i.e.
+//
+//   cc_library_static {
+//       name: "pw_file_<instance_name>",
+//       defaults: [
+//           "pw_rpc_cflags_<instance_name>",
+//           "pw_file_defaults",
+//       ],
+//   }
+//
+// where pw_rpc_cflags_<instance_name> defines the same pw_rpc flags as the
+// rest of the binary. pw_file only uses the pw_rpc headers. It does not
+// compile pw_rpc, so link the binary's own pw_rpc instance as well.
+//
+// see pw_rpc_defaults
+cc_defaults {
+    name: "pw_file_defaults",
     defaults: [
         "pw_android_common_backends",
         "pw_android_common_target_support",
@@ -24,17 +58,22 @@ cc_library {
         "pw_rpc_raw_defaults",
     ],
     srcs: [
-        "flat_file_system.cc",
+        ":pw_file_src_files",
+    ],
+    // Take only the pw_rpc headers and dependencies. The pw_rpc sources come
+    // from the binary's pw_rpc instance.
+    exclude_srcs: [
+        ":pw_rpc_raw_src_files",
+        ":pw_rpc_src_files",
     ],
     header_libs: [
+        "pw_file_include_dirs",
         "pw_file_pwpb",
-        "pw_protobuf_pwpb"
+        "pw_protobuf_pwpb",
     ],
     export_header_lib_headers: [
+        "pw_file_include_dirs",
         "pw_file_pwpb",
-    ],
-    export_include_dirs: [
-        "public",
     ],
     static_libs: [
         "pw_bytes",
