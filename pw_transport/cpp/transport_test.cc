@@ -28,56 +28,16 @@
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_sync/interrupt_spin_lock.h"
 #include "pw_transport/socket.h"
+#include "pw_transport/testing.h"
 #include "pw_unit_test/framework.h"
 
 namespace pw::transport {
 namespace {
 
-/// A mock transport base that vends connections.
-template <typename ListenerBase, typename ConnectorBase>
-class BasicMockTransport : public ListenerBase, public ConnectorBase {
- public:
-  using AcceptFuture = typename ListenerBase::AcceptFuture;
-  using ConnectFuture = typename ConnectorBase::ConnectFuture;
-  using ResultType = typename AcceptFuture::value_type;
-
-  using ListenerBase::WrapSocket;
-
-  ~BasicMockTransport() override {
-    accept_provider_.Resolve(Status::FailedPrecondition());
-    connect_provider_.Resolve(Status::FailedPrecondition());
-  }
-
-  void ResolveAccept(ResultType&& connection) {
-    accept_provider_.Resolve(std::move(connection));
-  }
-
-  void ResolveConnect(ResultType&& connection) {
-    connect_provider_.Resolve(std::move(connection));
-  }
-
- protected:
-  AcceptFuture NextAcceptFuture() { return accept_provider_.Get(); }
-  ConnectFuture NextConnectFuture() { return connect_provider_.Get(); }
-
- private:
-  typename ListenerBase::AcceptProvider accept_provider_;
-  typename ConnectorBase::ConnectProvider connect_provider_;
-};
-
-class MockTransport final
-    : public BasicMockTransport<ReliableListener, ReliableConnector> {
- private:
-  AcceptFuture DoAcceptReliable() override { return NextAcceptFuture(); }
-  ConnectFuture DoConnectReliable() override { return NextConnectFuture(); }
-};
-
-class MockDatagramTransport final
-    : public BasicMockTransport<Listener, Connector> {
- private:
-  AcceptFuture DoAccept() override { return NextAcceptFuture(); }
-  ConnectFuture DoConnect() override { return NextConnectFuture(); }
-};
+using test::MockConnector;
+using test::MockListener;
+using test::MockReliableConnector;
+using test::MockReliableListener;
 
 /// Exposes the protected `ReliableListener` and `ReliableConnector` provider
 /// aliases to tests. Abstract and never instantiated.
@@ -554,19 +514,19 @@ TEST(TransportTest, TaskInteractionFlow) {
 
 TEST(TransportTest, AcceptFlow) {
   const size_t kCapacity = 4096;
-  pw::allocator::test::AllocatorForTest<kCapacity> allocator;
+  allocator::test::AllocatorForTest<kCapacity> allocator;
 
-  MockTransport transport;
+  MockReliableListener listener;
   async2::DispatcherForTest dispatcher;
   dispatcher.AllowBlocking();
 
-  AcceptTask task(transport);
+  AcceptTask task(listener);
   dispatcher.Post(task);
 
   EXPECT_TRUE(dispatcher.RunUntilStalled());
   EXPECT_EQ(task.result().status(), Status::Unknown());
 
-  transport.ResolveAccept(MockSocket::Allocated(allocator));
+  listener.ResolveAccept(MockSocket::Allocated(allocator));
 
   dispatcher.RunToCompletion();
 
@@ -586,7 +546,7 @@ TEST(TransportTest, AcceptFlow) {
   dispatcher.RunToCompletion();
 
   // Verify data.
-  const pw::ConstBuf& buf = reader.result();
+  const ConstBuf& buf = reader.result();
   ASSERT_NE(buf, nullptr);
   ASSERT_FALSE(buf.empty());
 
@@ -597,20 +557,20 @@ TEST(TransportTest, AcceptFlow) {
 
 TEST(TransportTest, ConnectFlow) {
   const size_t kCapacity = 4096;
-  pw::allocator::test::AllocatorForTest<kCapacity> allocator;
+  allocator::test::AllocatorForTest<kCapacity> allocator;
 
-  MockTransport transport;
+  MockReliableConnector connector;
 
   async2::DispatcherForTest dispatcher;
   dispatcher.AllowBlocking();
 
-  ConnectTask task(transport);
+  ConnectTask task(connector);
   dispatcher.Post(task);
 
   EXPECT_TRUE(dispatcher.RunUntilStalled());
   EXPECT_EQ(task.result().status(), Status::Unknown());
 
-  transport.ResolveConnect(MockSocket::Allocated(allocator));
+  connector.ResolveConnect(MockSocket::Allocated(allocator));
 
   dispatcher.RunToCompletion();
 
@@ -630,7 +590,7 @@ TEST(TransportTest, ConnectFlow) {
   dispatcher.RunToCompletion();
 
   // Verify data.
-  const pw::ConstBuf& buf = reader.result();
+  const ConstBuf& buf = reader.result();
   ASSERT_NE(buf, nullptr);
   ASSERT_FALSE(buf.empty());
 
@@ -643,16 +603,16 @@ TEST(TransportTest, ListenerDestructionResolvesWithFailedPrecondition) {
   async2::DispatcherForTest dispatcher;
   dispatcher.AllowBlocking();
 
-  std::optional<MockTransport> transport;
-  transport.emplace();
+  std::optional<MockReliableListener> listener;
+  listener.emplace();
 
-  AcceptTask task(*transport);
+  AcceptTask task(*listener);
   dispatcher.Post(task);
 
   EXPECT_TRUE(dispatcher.RunUntilStalled());
   EXPECT_EQ(task.result().status(), Status::Unknown());
 
-  transport.reset();
+  listener.reset();
 
   dispatcher.RunToCompletion();
   EXPECT_EQ(task.result().status(), Status::FailedPrecondition());
@@ -662,16 +622,16 @@ TEST(TransportTest, ConnectorDestructionResolvesWithFailedPrecondition) {
   async2::DispatcherForTest dispatcher;
   dispatcher.AllowBlocking();
 
-  std::optional<MockTransport> transport;
-  transport.emplace();
+  std::optional<MockReliableConnector> connector;
+  connector.emplace();
 
-  ConnectTask task(*transport);
+  ConnectTask task(*connector);
   dispatcher.Post(task);
 
   EXPECT_TRUE(dispatcher.RunUntilStalled());
   EXPECT_EQ(task.result().status(), Status::Unknown());
 
-  transport.reset();
+  connector.reset();
 
   dispatcher.RunToCompletion();
   EXPECT_EQ(task.result().status(), Status::FailedPrecondition());
@@ -1925,13 +1885,14 @@ TEST(TransportTest, LayeredSocketOverUnreliableSocket) {
 
 TEST(TransportTest, UnreliableListenerAndConnector) {
   constexpr size_t kCapacity = 4096;
-  pw::allocator::test::AllocatorForTest<kCapacity> allocator;
-  MockDatagramTransport transport;
+  allocator::test::AllocatorForTest<kCapacity> allocator;
+  MockListener listener;
+  MockConnector connector;
   async2::DispatcherForTest dispatcher;
   dispatcher.AllowBlocking();
 
-  BasicAcceptTask<Listener> accept_task(transport);
-  BasicConnectTask<Connector> connect_task(transport);
+  BasicAcceptTask<Listener> accept_task(listener);
+  BasicConnectTask<Connector> connect_task(connector);
   dispatcher.Post(accept_task);
   dispatcher.Post(connect_task);
   EXPECT_TRUE(dispatcher.RunUntilStalled());
@@ -1939,8 +1900,8 @@ TEST(TransportTest, UnreliableListenerAndConnector) {
   auto* accepted_impl =
       allocator.New<MockUnreliableSocket>(allocator, allocator, nullptr);
   ASSERT_NE(accepted_impl, nullptr);
-  transport.ResolveAccept(MockDatagramTransport::WrapSocket(*accepted_impl));
-  transport.ResolveConnect(MockUnreliableSocket::Allocated(allocator));
+  listener.ResolveAccept(accepted_impl->WrapSocket());
+  connector.ResolveConnect(MockUnreliableSocket::Allocated(allocator));
 
   dispatcher.RunToCompletion();
   ASSERT_TRUE(accept_task.result().ok());
@@ -1968,18 +1929,18 @@ static_assert(sizeof(ReliableListener::AcceptFuture) ==
 
 TEST(TransportTest, ReliableListenerUsedAsListener) {
   constexpr size_t kCapacity = 4096;
-  pw::allocator::test::AllocatorForTest<kCapacity> allocator;
-  MockTransport reliable_transport;
+  allocator::test::AllocatorForTest<kCapacity> allocator;
+  MockReliableListener reliable_listener;
 
   async2::DispatcherForTest dispatcher;
   dispatcher.AllowBlocking();
 
-  BasicAcceptTask<Listener> accept_task(reliable_transport);
+  BasicAcceptTask<Listener> accept_task(reliable_listener);
   dispatcher.Post(accept_task);
   EXPECT_TRUE(dispatcher.RunUntilStalled());
 
   const ReliableSocket socket = MockSocket::Allocated(allocator);
-  reliable_transport.ResolveAccept(socket);
+  reliable_listener.ResolveAccept(socket);
   dispatcher.RunToCompletion();
 
   ASSERT_TRUE(accept_task.result().ok());
@@ -1987,33 +1948,35 @@ TEST(TransportTest, ReliableListenerUsedAsListener) {
 }
 
 TEST(TransportTest, ReliableConnectorUsedAsConnector) {
-  MockTransport reliable_transport;
+  MockReliableConnector reliable_connector;
 
   async2::DispatcherForTest dispatcher;
   dispatcher.AllowBlocking();
 
-  BasicConnectTask<Connector> connect_task(reliable_transport);
+  BasicConnectTask<Connector> connect_task(reliable_connector);
   dispatcher.Post(connect_task);
   EXPECT_TRUE(dispatcher.RunUntilStalled());
 
-  reliable_transport.ResolveConnect(Status::Unavailable());
+  reliable_connector.ResolveConnect(Status::Unavailable());
   dispatcher.RunToCompletion();
   EXPECT_EQ(connect_task.result().status(), Status::Unavailable());
 }
 
 TEST(TransportTest, CancelConvertedFuture) {
-  MockTransport reliable_transport;
-  Listener& listener = reliable_transport;
+  ReliableProviders::AcceptProvider provider;
 
-  Listener::AcceptFuture future = listener.Accept();
+  Listener::AcceptFuture future = provider.Get();
   EXPECT_TRUE(future.is_pendable());
+  EXPECT_TRUE(provider.has_future());
   future.Cancel();
   EXPECT_FALSE(future.is_pendable());
+  EXPECT_FALSE(provider.has_future());
 
-  // MockTransport uses a one-to-one AcceptProvider, which asserts if a vended
-  // future is still pending, so this verifies that Cancel() released it.
-  ReliableListener::AcceptFuture next = reliable_transport.Accept();
+  // `AcceptProvider` is one-to-one and asserts if a vended future is still
+  // pending, so this verifies that `Cancel()` released it.
+  ReliableListener::AcceptFuture next = provider.Get();
   EXPECT_TRUE(next.is_pendable());
+  next.Cancel();
 }
 
 TEST(TransportTest, TransportFutureProvider) {

@@ -661,6 +661,10 @@
 /// @ingroup pw_tokenizer
 /// @brief Tokenization customization options
 
+/// @defgroup pw_transport_testing Testing
+/// @ingroup pw_transport
+/// @brief Mock listeners and connectors for unit testing
+
 /// @defgroup pw_unit_test_declaration Test declaration
 /// @ingroup pw_unit_test
 

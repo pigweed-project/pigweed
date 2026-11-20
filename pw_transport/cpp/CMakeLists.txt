@@ -59,6 +59,41 @@ pw_add_library(pw_transport.cpp.forwarding_socket STATIC
     forwarding_socket.cc
 )
 
+pw_add_library(pw_transport.cpp.testing INTERFACE
+  HEADERS
+    public/pw_transport/testing.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_assert.check
+    pw_containers.inline_deque
+    pw_result
+    pw_status
+    pw_sync.interrupt_spin_lock
+    pw_sync.lock_annotations
+    pw_transport.cpp.socket
+)
+
+pw_add_test(pw_transport.cpp.testing_test
+  SOURCES
+    testing_test.cc
+  PRIVATE_DEPS
+    pw_allocator.testing
+    pw_async2
+    pw_async2.testing
+    pw_buf
+    pw_result
+    pw_status
+    pw_sync.interrupt_spin_lock
+    pw_transport.cpp.forwarding_socket
+    pw_transport.cpp.socket
+    pw_transport.cpp.testing
+    pw_unit_test.status_macros
+  GROUPS
+    modules
+    pw_transport
+)
+
 pw_add_test(pw_transport.cpp.forwarding_socket_test
   SOURCES
     forwarding_socket_test.cc
@@ -83,6 +118,7 @@ pw_add_test(pw_transport.cpp.transport_test
     transport_test.cc
   PRIVATE_DEPS
     pw_transport.cpp.socket
+    pw_transport.cpp.testing
     pw_allocator.testing
     pw_async2
     pw_async2.testing

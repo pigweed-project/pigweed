@@ -69,6 +69,21 @@ pw_source_set("forwarding_socket") {
   sources = [ "forwarding_socket.cc" ]
 }
 
+pw_source_set("testing") {
+  testonly = pw_unit_test_TESTONLY
+  public_configs = [ ":public_include_path" ]
+  public = [ "public/pw_transport/testing.h" ]
+  public_deps = [
+    ":socket",
+    "$dir_pw_assert:check",
+    "$dir_pw_containers:inline_deque",
+    "$dir_pw_result",
+    "$dir_pw_status",
+    "$dir_pw_sync:interrupt_spin_lock",
+    "$dir_pw_sync:lock_annotations",
+  ]
+}
+
 # Intended for tests and examples, so restricted to upstream Pigweed.
 pw_source_set("framed_tcp") {
   public_configs = [ ":public_include_path" ]
@@ -119,6 +134,7 @@ pw_test("transport_test") {
   enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != ""
   deps = [
     ":socket",
+    ":testing",
     "$dir_pw_allocator:testing",
     "$dir_pw_async2",
     "$dir_pw_async2:testing",
@@ -152,10 +168,30 @@ pw_test("framed_tcp_test") {
   sources = [ "framed_tcp_test.cc" ]
 }
 
+pw_test("testing_test") {
+  enable_if = pw_async2_DISPATCHER_FOR_TEST_BACKEND != "" &&
+              pw_sync_INTERRUPT_SPIN_LOCK_BACKEND != ""
+  deps = [
+    ":forwarding_socket",
+    ":socket",
+    ":testing",
+    "$dir_pw_allocator:testing",
+    "$dir_pw_async2",
+    "$dir_pw_async2:testing",
+    "$dir_pw_buf",
+    "$dir_pw_result",
+    "$dir_pw_status",
+    "$dir_pw_sync:interrupt_spin_lock",
+    "$dir_pw_unit_test:status_macros",
+  ]
+  sources = [ "testing_test.cc" ]
+}
+
 pw_test_group("tests") {
   tests = [
     ":forwarding_socket_test",
     ":framed_tcp_test",
+    ":testing_test",
     ":transport_test",
   ]
 }

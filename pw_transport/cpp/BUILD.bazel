@@ -78,6 +78,22 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "testing",
+    testonly = True,
+    hdrs = ["public/pw_transport/testing.h"],
+    strip_include_prefix = "public",
+    deps = [
+        ":socket",
+        "//pw_assert:check",
+        "//pw_containers:inline_deque",
+        "//pw_result",
+        "//pw_status",
+        "//pw_sync:interrupt_spin_lock",
+        "//pw_sync:lock_annotations",
+    ],
+)
+
 # Intended for tests and examples, so restricted to upstream Pigweed.
 cc_library(
     name = "framed_tcp",
@@ -112,7 +128,26 @@ filegroup(
         "public/pw_transport/forwarding_socket.h",
         "public/pw_transport/internal/transport_futures.h",
         "public/pw_transport/socket.h",
+        "public/pw_transport/testing.h",
         "public/pw_transport/transport.h",
+    ],
+)
+
+pw_cc_test(
+    name = "testing_test",
+    srcs = ["testing_test.cc"],
+    deps = [
+        ":forwarding_socket",
+        ":socket",
+        ":testing",
+        "//pw_allocator:testing",
+        "//pw_async2",
+        "//pw_async2:testing",
+        "//pw_buf",
+        "//pw_result",
+        "//pw_status",
+        "//pw_sync:interrupt_spin_lock",
+        "//pw_unit_test:status_macros",
     ],
 )
 
@@ -139,6 +174,7 @@ pw_cc_test(
     has_nc_test = True,
     deps = [
         ":socket",
+        ":testing",
         "//pw_allocator:testing",
         "//pw_async2",
         "//pw_async2:testing",

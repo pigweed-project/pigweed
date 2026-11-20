@@ -203,6 +203,23 @@ When an interface requires a :cc:`ReliableListener
 inbound ``Accept()`` calls automatically, configured via
 :cc:`ForwardingSocketOptions <pw::transport::ForwardingSocketOptions>`.
 
+Testing
+=======
+``pw_transport/testing.h`` (``//pw_transport/cpp:testing``) provides manually
+controlled mock endpoints for unit tests that need to inject transport errors,
+leave ``Accept()`` or ``Connect()`` pending, or supply custom mock sockets:
+
+- :cc:`test::MockListener <pw::transport::test::MockListener>` and
+  :cc:`test::MockConnector <pw::transport::test::MockConnector>` for unreliable
+  datagram connections.
+- :cc:`test::MockReliableListener
+  <pw::transport::test::MockReliableListener>` and
+  :cc:`test::MockReliableConnector
+  <pw::transport::test::MockReliableConnector>` for reliable connections.
+- :cc:`test::BasicMockListener <pw::transport::test::BasicMockListener>` and
+  :cc:`test::BasicMockConnector <pw::transport::test::BasicMockConnector>` when
+  customizing the pre-resolve queue capacity.
+
 ------------
 Implementing
 ------------
