@@ -75,6 +75,14 @@ Learn more
       all ``pw_async2`` users to internalize this concept before attempting to
       use ``pw_async2``!
 
+   .. grid-item-card:: :octicon:`checklist` Contract
+      :link: module-pw_async2-contract
+      :link-type: ref
+      :class-item: sales-pitch-cta-primary
+
+      The normative behavioral rules for ``pw_async2`` futures, providers,
+      wakers, tasks, and dispatchers.
+
    .. grid-item-card:: :octicon:`beaker` Codelab
       :link: module-pw_async2-codelab
       :link-type: ref
@@ -160,6 +168,7 @@ Learn more
    why
    quickstart
    informed_poll
+   contract
    codelab/docs
    guides
    dispatcher

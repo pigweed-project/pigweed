@@ -944,6 +944,7 @@ sphinx_docs_library(
     srcs = [
         "channels.rst",
         "code_size.rst",
+        "contract.rst",
         "coroutines.rst",
         "dispatcher.rst",
         "docs.rst",
