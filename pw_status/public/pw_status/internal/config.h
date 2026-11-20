@@ -22,6 +22,46 @@
 #define PW_STATUS_CFG_CHECK_IF_USED 0
 #endif  // PW_STATUS_CFG_CHECK_IF_USED
 
+/// `PW_STATUS_CFG_MESSAGES` value: statuses do not store messages.
+/// `PW_STATUS_MSG` arguments are discarded at compile time and statuses are
+/// exactly as large as their code.
+#define PW_STATUS_CFG_MESSAGES_NONE 0
+
+/// `PW_STATUS_CFG_MESSAGES` value: statuses store a pointer to the message's
+/// string literal. Use with `pw_log` backends that do not tokenize logs.
+#define PW_STATUS_CFG_MESSAGES_STRING 1
+
+/// `PW_STATUS_CFG_MESSAGES` value: statuses store the message's `pw_tokenizer`
+/// token. Use with `pw_log` backends that tokenize logs, such as
+/// `pw_log_tokenized`.
+#define PW_STATUS_CFG_MESSAGES_TOKENIZED 2
+
+/// Selects how `pw::Status` and other `pw::StatusBase`-derived statuses store
+/// optional error messages, which are created with `PW_STATUS_MSG("...")` and
+/// logged with `PW_LOG_STATUS`. Set to `PW_STATUS_CFG_MESSAGES_NONE` (the
+/// default), `PW_STATUS_CFG_MESSAGES_STRING`, or
+/// `PW_STATUS_CFG_MESSAGES_TOKENIZED`.
+///
+/// Messages are stored in the form the `pw_log` backend emits, so this option
+/// must match the backend. `pw_log/status.h` fails to compile if it does not.
+///
+/// In Bazel, set the `@pigweed//pw_status:messages` flag to `none`, `string`,
+/// or `tokenized` instead.
+///
+/// @warning When messages are stored as tokens, status codes must be valid
+/// enumerators. See `pw::StatusBase`.
+#ifndef PW_STATUS_CFG_MESSAGES
+#define PW_STATUS_CFG_MESSAGES PW_STATUS_CFG_MESSAGES_NONE
+#endif  // PW_STATUS_CFG_MESSAGES
+
+#if PW_STATUS_CFG_MESSAGES != PW_STATUS_CFG_MESSAGES_NONE &&   \
+    PW_STATUS_CFG_MESSAGES != PW_STATUS_CFG_MESSAGES_STRING && \
+    PW_STATUS_CFG_MESSAGES != PW_STATUS_CFG_MESSAGES_TOKENIZED
+#error \
+    "PW_STATUS_CFG_MESSAGES must be PW_STATUS_CFG_MESSAGES_NONE, \
+PW_STATUS_CFG_MESSAGES_STRING, or PW_STATUS_CFG_MESSAGES_TOKENIZED"
+#endif  // PW_STATUS_CFG_MESSAGES
+
 /// @}
 
 // Set internal macro that optionally adds the [[nodiscard]] attribute.

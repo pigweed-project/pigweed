@@ -2143,7 +2143,8 @@ static_assert(std::is_trivially_copyable_v<Result<void>>);
 // Empty base optimization check: linear inheritance must add zero padding
 // bytes.
 static_assert(sizeof(Result<uint8_t, TestStatus>) == 2);
-static_assert(sizeof(Result<int>) == 2 * sizeof(int));
+static_assert(PW_STATUS_CFG_MESSAGES != PW_STATUS_CFG_MESSAGES_NONE ||
+              sizeof(Result<int>) == 2 * sizeof(int));
 
 PW_CONSTEXPR_TEST(ResultOptionalAlign, TrivialCopyMoveConstexpr, {
   Result<int> a = 42;
@@ -2941,13 +2942,13 @@ class [[nodiscard]] MoveOnlyStatus final
   // Moving clears the source status to OK (`TestStatusCode::kOk`), catching any
   // premature move from a `Result`'s status before that `Result` is returned.
   constexpr MoveOnlyStatus(MoveOnlyStatus&& other) noexcept
-      : StatusBase(other.code_) {
-    other.code_ = TestStatusCode::kOk;
+      : StatusBase(other) {
+    other.StatusBase::operator=(MoveOnlyStatus());
   }
   constexpr MoveOnlyStatus& operator=(MoveOnlyStatus&& other) noexcept {
     if (this != &other) {
-      code_ = other.code_;
-      other.code_ = TestStatusCode::kOk;
+      StatusBase::operator=(other);
+      other.StatusBase::operator=(MoveOnlyStatus());
     }
     return *this;
   }

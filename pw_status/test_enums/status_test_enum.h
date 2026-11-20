@@ -37,9 +37,36 @@ enum class NonZeroOkStatusCode {
   kError = 2,
 };
 
+enum UnscopedGeneratedError {
+  kUnscopedOk = 10,
+  kUnscopedFailed = 20,
+};
+
+// Has a negative value, so it cannot share a word with a message token.
+enum class SignedGeneratedError : int16_t {
+  kOk = 0,
+  kNegative = -1,
+};
+
+// The widest codes that can share a word with a message token: 16 bits.
+enum class SixteenBitGeneratedError : uint16_t {
+  kOk = 0,
+  kLast = 65535,
+};
+
+// Needs 17 bits, so it cannot share a word with a message token.
+enum class SeventeenBitGeneratedError : uint32_t {
+  kOk = 0,
+  kLast = 65536,
+};
+
 }  // namespace pw::status_test
 
 PW_ENUM(pw::status_test::GeneratedEnum, kOk, kNotFound, kPermissionDenied);
+PW_ENUM(pw::status_test::UnscopedGeneratedError, kUnscopedOk, kUnscopedFailed);
+PW_ENUM(pw::status_test::SignedGeneratedError, kOk, kNegative);
+PW_ENUM(pw::status_test::SixteenBitGeneratedError, kOk, kLast);
+PW_ENUM(pw::status_test::SeventeenBitGeneratedError, kOk, kLast);
 PW_ENUM_STATUS(pw::status_test::TestStatus,
                TestStatusCode::kOk,
                kOk,

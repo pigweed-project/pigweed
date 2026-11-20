@@ -284,9 +284,12 @@ PW_CONSTEXPR_TEST(Status, StatusFromCodeOrUnknown, {
 // Functions for executing the C pw_Status tests.
 extern "C" {
 
-Status::Code PassStatusFromC(Status status);
+pw_Status PassStatusFromC(pw_Status status);
 
-Status::Code PassStatusFromCpp(Status status) { return status.code(); }
+pw_Status PassStatusFromCpp(pw_Status status) {
+  Status cpp_status = status;
+  return cpp_status.code();
+}
 
 int TestStatusFromC(void);
 
@@ -296,10 +299,10 @@ int TestStatusStringsFromC(void);
 
 TEST(StatusCLinkage, CallCFunctionWithStatus) {
   EXPECT_EQ(Status::Aborted(), PassStatusFromC(PW_STATUS_ABORTED));
-  EXPECT_EQ(Status::Unknown(), PassStatusFromC(Status::Unknown()));
+  EXPECT_EQ(Status::Unknown(), PassStatusFromC(Status::Unknown().code()));
 
-  EXPECT_EQ(Status::NotFound(), PassStatusFromC(PW_STATUS_NOT_FOUND));
-  EXPECT_EQ(OkStatus(), PassStatusFromC(OkStatus()));
+  EXPECT_EQ(Status::NotFound(), Status(PassStatusFromC(PW_STATUS_NOT_FOUND)));
+  EXPECT_EQ(OkStatus(), Status(PassStatusFromC(OkStatus().code())));
 }
 
 TEST(StatusCLinkage, TestStatusFromC) { EXPECT_EQ(0, TestStatusFromC()); }

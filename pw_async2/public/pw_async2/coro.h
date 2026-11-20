@@ -224,7 +224,8 @@ enum class CoroState : uint8_t {
   kReady,
 };
 
-using CoroPollStatus = ::pw::StatusOf<CoroState::kReady>;
+using CoroPollStatus =
+    ::pw::StatusOf<CoroState::kReady, ::pw::StatusMessages::kDisabled>;
 
 template <typename T>
 using CoroPoll = ::pw::Result<T, CoroPollStatus>;

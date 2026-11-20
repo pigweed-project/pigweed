@@ -14,13 +14,19 @@
 
 #include "pw_status/status_base.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <type_traits>
 #include <utility>
 
 #include "pw_compilation_testing/negative_compilation.h"
+#include "pw_enum/traits.h"
+#include "pw_status/message.h"
 #include "pw_status/status.h"
 #include "pw_status/try.h"
+#include "pw_tokenizer/hash.h"
+#include "pw_tokenizer/tokenize.h"
 #include "pw_unit_test/constexpr.h"
 #include "pw_unit_test/framework.h"
 
@@ -47,50 +53,114 @@ constexpr const char* PwEnumToString(CustomError e) {
   return "Unknown";
 }
 
-}  // namespace custom_err
-
-namespace {
-
-using ::custom_err::CustomError;
-using ::pw::StatusBase;
-using ::pw::StatusOf;
-
-class [[nodiscard]] TestStatus final
-    : public StatusBase<TestStatus, CustomError::kOk> {
- public:
-  constexpr TestStatus() = default;
-  explicit constexpr TestStatus(CustomError code) : StatusBase(code) {}
-};
-
-using AliasStatus = StatusOf<CustomError::kOk>;
-
 enum UnscopedError {
   kUnscopedOk = 10,
   kUnscopedFailed = 20,
 };
-
-using UnscopedStatus = StatusOf<kUnscopedOk>;
 
 enum class SignedError : int16_t {
   kOk = 0,
   kNegative = -1,
 };
 
+}  // namespace custom_err
+
+namespace {
+
+using ::custom_err::CustomError;
+using ::custom_err::kUnscopedFailed;
+using ::custom_err::kUnscopedOk;
+using ::custom_err::SignedError;
+using ::custom_err::UnscopedError;
+using ::pw::StatusBase;
+using ::pw::StatusMessages;
+using ::pw::StatusOf;
+using ::pw::internal::kStatusCodeBits;
+using ::pw::internal::kStatusMessageType;
+using ::pw::internal::StatusMessageType;
+using ::pw::internal::StatusStorage;
+
+// Whether PW_STATUS_CFG_MESSAGES enables messages. The tests in this file pass
+// either way.
+constexpr bool kMessagesEnabled =
+    kStatusMessageType != StatusMessageType::kNone;
+
+// Hand-written StatusBase subclass. CustomError is not registered with PW_ENUM,
+// so this status does not support messages.
+class [[nodiscard]] TestStatus final
+    : public StatusBase<TestStatus, CustomError::kOk> {
+ public:
+  constexpr TestStatus() noexcept = default;
+  explicit constexpr TestStatus(CustomError code) noexcept : StatusBase(code) {}
+};
+
+using AliasStatus = StatusOf<CustomError::kOk>;
+
+using UnscopedStatus = StatusOf<kUnscopedOk>;
 using SignedStatus = StatusOf<SignedError::kOk>;
 
 class [[nodiscard]] IntStatus final : public StatusBase<IntStatus, 200> {
  public:
-  constexpr IntStatus() = default;
-  explicit constexpr IntStatus(int code) : StatusBase(code) {}
+  constexpr IntStatus() noexcept = default;
+  explicit constexpr IntStatus(int code) noexcept : StatusBase(code) {}
 };
+
+// Statuses that support messages: their codes are enums that have
+// pw::EnumTraits, as pw_Status does, and need at most 16 bits.
+class [[nodiscard]] MessageStatus final
+    : public StatusBase<MessageStatus, PW_STATUS_OK> {
+ public:
+  constexpr MessageStatus() noexcept = default;
+  explicit constexpr MessageStatus(pw_Status code) noexcept
+      : StatusBase(code) {}
+  constexpr MessageStatus(pw_Status code, Message message) noexcept
+      : StatusBase(code, message) {}
+};
+
+using AliasMessageStatus = StatusOf<PW_STATUS_OK>;
+
+// Has a code that supports messages, but opts out of them.
+using NoMessageStatus = StatusOf<PW_STATUS_OK, StatusMessages::kDisabled>;
+
+static_assert(std::is_nothrow_default_constructible_v<AliasStatus>);
+static_assert(std::is_nothrow_constructible_v<AliasStatus, CustomError>);
+static_assert(std::is_nothrow_default_constructible_v<AliasMessageStatus>);
+static_assert(std::is_nothrow_constructible_v<AliasMessageStatus, pw_Status>);
+static_assert(noexcept(std::declval<const AliasMessageStatus&>().ok()));
+static_assert(noexcept(std::declval<const AliasMessageStatus&>().code()));
+static_assert(
+    noexcept(std::declval<const AliasMessageStatus&>().has_message()));
+static_assert(noexcept(std::declval<const AliasMessageStatus&>().message()));
 
 static_assert(std::is_same_v<TestStatus::Code, CustomError>);
 static_assert(std::is_same_v<AliasStatus::Code, CustomError>);
-static_assert(sizeof(TestStatus) == sizeof(uint8_t));
-static_assert(sizeof(AliasStatus) == sizeof(uint8_t));
-static_assert(sizeof(SignedStatus) == sizeof(int16_t));
 static_assert(std::is_same_v<IntStatus::Code, int>);
+
+// The bits a code needs to share a word with a message token; 0 if it cannot.
+static_assert(kStatusCodeBits<pw_Status> == 5);
+static_assert(kStatusCodeBits<CustomError> == 0, "No pw::EnumTraits");
+static_assert(kStatusCodeBits<UnscopedError> == 0, "No pw::EnumTraits");
+static_assert(kStatusCodeBits<SignedError> == 0, "No pw::EnumTraits");
+static_assert(kStatusCodeBits<int> == 0, "Not an enum");
+
+// Statuses that do not support messages are only their code in every
+// configuration.
+static_assert(sizeof(NoMessageStatus) == sizeof(pw_Status));
+static_assert(sizeof(TestStatus) == sizeof(CustomError));
+static_assert(sizeof(AliasStatus) == sizeof(CustomError));
+static_assert(sizeof(SignedStatus) == sizeof(SignedError));
 static_assert(sizeof(IntStatus) == sizeof(int));
+
+// Without messages, every status is only its code. Tokenized messages share one
+// 32-bit word with the code; string literal messages store a pointer next to
+// the code.
+constexpr size_t kExpectedMessageStatusSize =
+    PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_NONE ? sizeof(pw_Status)
+    : PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_TOKENIZED
+        ? sizeof(uint32_t)
+        : 2 * sizeof(const char*);
+static_assert(sizeof(pw::Status) == kExpectedMessageStatusSize);
+static_assert(sizeof(MessageStatus) == kExpectedMessageStatusSize);
 
 static_assert(
     std::is_base_of_v<StatusBase<pw::Status, PW_STATUS_OK>, pw::Status>);
@@ -512,6 +582,347 @@ PW_CONSTEXPR_TEST(StatusBaseTest, Str, {
   PW_TEST_EXPECT_STREQ(alias_fail.str(), "Failed");
 });
 
+// DOCSTAG: [pw_status-status_base-message]
+pw::Status ReadSector(int sector) {
+  if (sector < 0) {
+    return pw::Status::InvalidArgument(
+        PW_STATUS_MSG("Sector cannot be negative"));
+  }
+  return pw::OkStatus();
+}
+// DOCSTAG: [pw_status-status_base-message]
+
+TEST(StatusBaseTest, ExampleMessage) {
+  const pw::Status invalid = ReadSector(-1);
+  EXPECT_TRUE(invalid.IsInvalidArgument());
+  EXPECT_EQ(invalid.has_message(), kMessagesEnabled);
+
+  const pw::Status ok = ReadSector(0);
+  PW_TEST_EXPECT_OK(ok);
+  EXPECT_FALSE(ok.has_message());
+}
+
+TEST(StatusBaseTest, Message_NoneByDefault) {
+  const MessageStatus ok;
+  EXPECT_FALSE(ok.has_message());
+  EXPECT_TRUE(ok.message().empty());
+
+  const MessageStatus failed(PW_STATUS_INTERNAL);
+  EXPECT_FALSE(failed.has_message());
+  EXPECT_TRUE(failed.message().empty());
+
+  EXPECT_TRUE(MessageStatus::Message().empty());
+
+  // Statuses that do not support messages have the same API.
+  const TestStatus unsupported(CustomError::kFailed);
+  EXPECT_FALSE(unsupported.has_message());
+  EXPECT_TRUE(unsupported.message().empty());
+}
+
+TEST(StatusBaseTest, Message_StoredIfEnabled) {
+  const MessageStatus failed(PW_STATUS_DATA_LOSS,
+                             PW_STATUS_MSG("Disk read failure"));
+  EXPECT_FALSE(failed.ok());
+  EXPECT_EQ(failed.code(), PW_STATUS_DATA_LOSS);
+  EXPECT_STREQ(failed.str(), "DATA_LOSS");
+  EXPECT_EQ(failed.has_message(), kMessagesEnabled);
+  EXPECT_EQ(failed.message().empty(), !kMessagesEnabled);
+
+  const AliasMessageStatus timeout(PW_STATUS_DEADLINE_EXCEEDED,
+                                   PW_STATUS_MSG("No response"));
+  EXPECT_EQ(timeout.code(), PW_STATUS_DEADLINE_EXCEEDED);
+  EXPECT_EQ(timeout.has_message(), kMessagesEnabled);
+}
+
+TEST(StatusBaseTest, Message_EveryCodeKeepsItsValue) {
+  for (pw_Status code : pw::EnumTraits<pw_Status>::kValues) {
+    const MessageStatus status(code, PW_STATUS_MSG("Same message"));
+    EXPECT_EQ(status.code(), code);
+    EXPECT_EQ(status.ok(), code == PW_STATUS_OK);
+    EXPECT_EQ(status.has_message(), kMessagesEnabled && code != PW_STATUS_OK);
+  }
+}
+
+// A message with no text is still a message. Only a status that was not given
+// a message has none.
+TEST(StatusBaseTest, Message_EmptyStringIsAMessage) {
+  const MessageStatus failed(PW_STATUS_INTERNAL, PW_STATUS_MSG(""));
+  EXPECT_EQ(failed.code(), PW_STATUS_INTERNAL);
+  EXPECT_EQ(failed.has_message(), kMessagesEnabled);
+  EXPECT_EQ(failed.message().empty(), !kMessagesEnabled);
+}
+
+TEST(StatusBaseTest, Message_DroppedForOk) {
+  const MessageStatus ok(PW_STATUS_OK, PW_STATUS_MSG("Ignored"));
+  EXPECT_TRUE(ok.ok());
+  EXPECT_FALSE(ok.has_message());
+  EXPECT_TRUE(ok.message().empty());
+}
+
+TEST(StatusBaseTest, Message_IgnoredByEquality) {
+  const MessageStatus with_message(PW_STATUS_INTERNAL,
+                                   PW_STATUS_MSG("Disk read failure"));
+  EXPECT_EQ(with_message, MessageStatus(PW_STATUS_INTERNAL));
+  EXPECT_EQ(with_message, PW_STATUS_INTERNAL);
+  EXPECT_EQ(with_message,
+            MessageStatus(PW_STATUS_INTERNAL, PW_STATUS_MSG("Other text")));
+  EXPECT_NE(with_message, MessageStatus(PW_STATUS_UNKNOWN));
+}
+
+TEST(StatusBaseTest, Message_KeptByUpdate) {
+  MessageStatus status;
+  status.Update(
+      MessageStatus(PW_STATUS_INTERNAL, PW_STATUS_MSG("First error")));
+  EXPECT_EQ(status.code(), PW_STATUS_INTERNAL);
+  EXPECT_EQ(status.has_message(), kMessagesEnabled);
+
+  // Later errors do not replace the first error or its message.
+  status.Update(MessageStatus(PW_STATUS_UNKNOWN));
+  EXPECT_EQ(status.code(), PW_STATUS_INTERNAL);
+  EXPECT_EQ(status.has_message(), kMessagesEnabled);
+}
+
+TEST(StatusBaseTest, Message_KeptByTry) {
+  auto fn = []() -> AliasMessageStatus {
+    PW_TRY(AliasMessageStatus(PW_STATUS_INTERNAL, PW_STATUS_MSG("Inner")));
+    return AliasMessageStatus();
+  };
+  const AliasMessageStatus result = fn();
+  EXPECT_EQ(result.code(), PW_STATUS_INTERNAL);
+  EXPECT_EQ(result.has_message(), kMessagesEnabled);
+}
+
+TEST(StatusBaseTest, Message_MovesToAnotherCode) {
+  const MessageStatus failed(PW_STATUS_INTERNAL,
+                             PW_STATUS_MSG("Disk read failure"));
+  const MessageStatus unavailable(PW_STATUS_UNAVAILABLE, failed.message());
+  EXPECT_EQ(unavailable.code(), PW_STATUS_UNAVAILABLE);
+  EXPECT_EQ(unavailable.has_message(), kMessagesEnabled);
+
+  const MessageStatus no_message(PW_STATUS_UNAVAILABLE,
+                                 MessageStatus().message());
+  EXPECT_FALSE(no_message.has_message());
+}
+
+TEST(StatusBaseTest, Message_PwStatus) {
+  struct Case {
+    pw::Status (*factory)(pw::Status::Message);
+    pw_Status code;
+  };
+  constexpr Case kCases[] = {
+      {&pw::Status::Cancelled, PW_STATUS_CANCELLED},
+      {&pw::Status::Unknown, PW_STATUS_UNKNOWN},
+      {&pw::Status::InvalidArgument, PW_STATUS_INVALID_ARGUMENT},
+      {&pw::Status::DeadlineExceeded, PW_STATUS_DEADLINE_EXCEEDED},
+      {&pw::Status::NotFound, PW_STATUS_NOT_FOUND},
+      {&pw::Status::AlreadyExists, PW_STATUS_ALREADY_EXISTS},
+      {&pw::Status::PermissionDenied, PW_STATUS_PERMISSION_DENIED},
+      {&pw::Status::ResourceExhausted, PW_STATUS_RESOURCE_EXHAUSTED},
+      {&pw::Status::FailedPrecondition, PW_STATUS_FAILED_PRECONDITION},
+      {&pw::Status::Aborted, PW_STATUS_ABORTED},
+      {&pw::Status::OutOfRange, PW_STATUS_OUT_OF_RANGE},
+      {&pw::Status::Unimplemented, PW_STATUS_UNIMPLEMENTED},
+      {&pw::Status::Internal, PW_STATUS_INTERNAL},
+      {&pw::Status::Unavailable, PW_STATUS_UNAVAILABLE},
+      {&pw::Status::DataLoss, PW_STATUS_DATA_LOSS},
+      {&pw::Status::Unauthenticated, PW_STATUS_UNAUTHENTICATED},
+  };
+  static_assert(std::size(kCases) + 1 ==
+                pw::EnumTraits<pw_Status>::kDistinctValueCount);
+
+  for (const Case& test : kCases) {
+    const pw::Status status = test.factory(PW_STATUS_MSG("Detail"));
+    EXPECT_EQ(status.code(), test.code);
+    EXPECT_EQ(status.has_message(), kMessagesEnabled);
+    EXPECT_EQ(status, pw::Status(test.code));
+  }
+
+  const pw::Status not_found =
+      pw::Status::NotFound(PW_STATUS_MSG("No such key"));
+  EXPECT_TRUE(not_found.IsNotFound());
+  EXPECT_STREQ(not_found.str(), "NOT_FOUND");
+
+  const pw::Status internal(PW_STATUS_INTERNAL, not_found.message());
+  EXPECT_TRUE(internal.IsInternal());
+  EXPECT_EQ(internal.has_message(), kMessagesEnabled);
+
+  const pw::Status ok(PW_STATUS_OK, PW_STATUS_MSG("Ignored"));
+  EXPECT_TRUE(ok.ok());
+  EXPECT_FALSE(ok.has_message());
+
+  EXPECT_FALSE(pw::Status::DataLoss().has_message());
+}
+
+TEST(StatusBaseTest, Message_Noexcept) {
+  auto message = PW_STATUS_MSG("missing");
+  static_assert(noexcept(MessageStatus(PW_STATUS_NOT_FOUND, message)));
+  static_assert(noexcept(AliasMessageStatus(PW_STATUS_NOT_FOUND, message)));
+  static_assert(noexcept(pw::Status(PW_STATUS_NOT_FOUND, message)));
+  static_assert(noexcept(pw::Status::NotFound(message)));
+}
+
+#if defined(__cpp_constexpr) && __cpp_constexpr >= 202211L
+
+// A status with a message can be created in a constant expression in C++23.
+constexpr AliasMessageStatus kConstantWithMessage(PW_STATUS_INTERNAL,
+                                                  PW_STATUS_MSG("Constant"));
+static_assert(kConstantWithMessage.code() == PW_STATUS_INTERNAL);
+static_assert(kConstantWithMessage.has_message() == kMessagesEnabled);
+
+#else
+#if PW_NC_TEST(MessageNotConstexprBeforeCpp23)
+PW_NC_EXPECT("constant expression|non-'?constexpr");
+constexpr AliasMessageStatus kNotConstexpr(PW_STATUS_INTERNAL,
+                                           PW_STATUS_MSG("Constant"));
+#endif  // PW_NC_TEST
+#endif  // __cpp_constexpr >= 202211L
+
+// A PW_STATUS_MSG is evaluated for the storage of the status it is passed to.
+TEST(StatusMessageTest, StoredFormDependsOnStorageType) {
+  using NoStorage = StatusStorage<PW_STATUS_OK, StatusMessageType::kNone>;
+  using StringStorage =
+      StatusStorage<PW_STATUS_OK, StatusMessageType::kStringLiteral>;
+  using TokenStorage = StatusStorage<PW_STATUS_OK, StatusMessageType::kToken>;
+
+  const auto enabled = _PW_STATUS_MSG_ENABLED("Sector CRC error");
+  const auto enabled_empty = _PW_STATUS_MSG_ENABLED("");
+
+  static_assert(std::is_same_v<decltype(enabled.Evaluate<NoStorage>()),
+                               pw::internal::EmptyStatusMessage>);
+
+  // Messages are stored with the ": " separator that is logged between the
+  // status code and message.
+  EXPECT_STREQ(enabled.Evaluate<StringStorage>(), ": Sector CRC error");
+  EXPECT_STREQ(enabled_empty.Evaluate<StringStorage>(), ": ");
+
+  // The token is the one PW_TOKENIZE_STRING_MASK gives the stored string with
+  // the storage's token mask. pw_Status codes use the low 5 bits.
+  EXPECT_EQ(enabled.Evaluate<TokenStorage>(),
+            pw::tokenizer::Hash(": Sector CRC error") & 0xFFFFFFE0u);
+  EXPECT_EQ(enabled_empty.Evaluate<TokenStorage>(),
+            pw::tokenizer::Hash(": ") & 0xFFFFFFE0u);
+
+  const auto disabled = _PW_STATUS_MSG_DISABLED("Sector CRC error");
+  static_assert(std::is_same_v<decltype(disabled.Evaluate<NoStorage>()),
+                               pw::internal::EmptyStatusMessage>);
+  static_assert(std::is_same_v<decltype(disabled.Evaluate<StringStorage>()),
+                               pw::internal::EmptyStatusMessage>);
+  static_assert(std::is_same_v<decltype(disabled.Evaluate<TokenStorage>()),
+                               pw::internal::EmptyStatusMessage>);
+  static_cast<void>(disabled);
+
+  const auto message = PW_STATUS_MSG("Sector CRC error");
+  EXPECT_EQ(!pw::internal::IsEmpty(message.Evaluate<StringStorage>()),
+            kMessagesEnabled);
+}
+
+// Message tokens are in a domain named for the status code's domain.
+PW_CONSTEXPR_TEST(StatusMessageTest, DomainIsCodeDomainWithSuffix, {
+  PW_TEST_EXPECT_STREQ(PW_STATUS_MSG_DOMAIN("::my::Code"),
+                       "::my::Code::Message");
+  PW_TEST_EXPECT_STREQ(pw::internal::kStatusMessageDomain<pw_Status>.chars,
+                       "::pw::Status::Message");
+  PW_TEST_EXPECT_EQ(sizeof(pw::internal::kStatusMessageDomain<pw_Status>.chars),
+                    sizeof("::pw::Status::Message"));
+});
+
+// Token 0 means "no message", so a message never uses it.
+PW_CONSTEXPR_TEST(StatusMessageTest, ZeroHashUsesLowestMaskBit, {
+  using pw::internal::NonZeroStatusMessageToken;
+  PW_TEST_EXPECT_EQ(NonZeroStatusMessageToken(0u, UINT32_MAX), 1u);
+  PW_TEST_EXPECT_EQ(NonZeroStatusMessageToken(0u, 0xFFFFFFE0u), 0x20u);
+  PW_TEST_EXPECT_EQ(NonZeroStatusMessageToken(0x12345660u, 0xFFFFFFE0u),
+                    0x12345660u);
+});
+
+// The storage classes are tested directly so that every layout is covered in
+// every configuration.
+
+PW_CONSTEXPR_TEST(StatusStorageTest, None, {
+  using Storage = StatusStorage<CustomError::kOk, StatusMessageType::kNone>;
+  static_assert(sizeof(Storage) == sizeof(CustomError));
+
+  Storage ok;
+  PW_TEST_EXPECT_TRUE(ok.ok());
+  PW_TEST_EXPECT_FALSE(ok.has_message());
+
+  Storage err(CustomError::kOther, pw::internal::EmptyStatusMessage{});
+  PW_TEST_EXPECT_FALSE(err.ok());
+  PW_TEST_EXPECT_EQ(err.code(), CustomError::kOther);
+  PW_TEST_EXPECT_FALSE(err.has_message());
+});
+
+PW_CONSTEXPR_TEST(StatusStorageTest, StringLiteral, {
+  using Storage =
+      StatusStorage<PW_STATUS_OK, StatusMessageType::kStringLiteral>;
+  static_assert(sizeof(Storage) == 2 * sizeof(const char*));
+
+  // No message is a null pointer.
+  Storage ok;
+  PW_TEST_EXPECT_TRUE(ok.ok());
+  PW_TEST_EXPECT_FALSE(ok.has_message());
+  PW_TEST_EXPECT_TRUE(ok.message() == nullptr);
+
+  Storage code_only(PW_STATUS_INTERNAL);
+  PW_TEST_EXPECT_FALSE(code_only.ok());
+  PW_TEST_EXPECT_FALSE(code_only.has_message());
+  PW_TEST_EXPECT_TRUE(code_only.message() == nullptr);
+
+  Storage no_message(PW_STATUS_INTERNAL, nullptr);
+  PW_TEST_EXPECT_FALSE(no_message.has_message());
+
+  Storage err(PW_STATUS_INTERNAL, ": Detail");
+  PW_TEST_EXPECT_FALSE(err.ok());
+  PW_TEST_EXPECT_EQ(err.code(), PW_STATUS_INTERNAL);
+  PW_TEST_EXPECT_TRUE(err.has_message());
+  PW_TEST_EXPECT_STREQ(err.message(), ": Detail");
+
+  // An empty string is a message, unlike a null pointer.
+  Storage empty_message(PW_STATUS_INTERNAL, "");
+  PW_TEST_EXPECT_TRUE(empty_message.has_message());
+  PW_TEST_EXPECT_STREQ(empty_message.message(), "");
+
+  Storage ok_with_message(PW_STATUS_OK, ": Detail");
+  PW_TEST_EXPECT_TRUE(ok_with_message.ok());
+  PW_TEST_EXPECT_FALSE(ok_with_message.has_message());
+  PW_TEST_EXPECT_TRUE(ok_with_message.message() == nullptr);
+});
+
+// pw_Status codes are 0 to 16, so the code uses the low 5 bits of the word.
+PW_CONSTEXPR_TEST(StatusStorageTest, Token_PwStatus, {
+  using Storage = StatusStorage<PW_STATUS_OK, StatusMessageType::kToken>;
+
+  static_assert(sizeof(Storage) == sizeof(uint32_t));
+  static_assert(Storage::kCodeBits == 5);
+  static_assert(Storage::kTokenMask == 0xFFFFFFE0u);
+
+  Storage ok;
+  PW_TEST_EXPECT_TRUE(ok.ok());
+  PW_TEST_EXPECT_EQ(ok.code(), PW_STATUS_OK);
+  PW_TEST_EXPECT_FALSE(ok.has_message());
+  PW_TEST_EXPECT_EQ(ok.message(), 0u);
+
+  Storage code_only(PW_STATUS_UNAUTHENTICATED);
+  PW_TEST_EXPECT_FALSE(code_only.ok());
+  PW_TEST_EXPECT_EQ(code_only.code(), PW_STATUS_UNAUTHENTICATED);
+  PW_TEST_EXPECT_FALSE(code_only.has_message());
+
+  Storage err(PW_STATUS_UNAUTHENTICATED, 0xFFFFFFE0);
+  PW_TEST_EXPECT_FALSE(err.ok());
+  PW_TEST_EXPECT_EQ(err.code(), PW_STATUS_UNAUTHENTICATED);
+  PW_TEST_EXPECT_TRUE(err.has_message());
+  PW_TEST_EXPECT_EQ(err.message(), 0xFFFFFFE0u);
+
+  Storage other(PW_STATUS_CANCELLED, 0x12345660);
+  PW_TEST_EXPECT_EQ(other.code(), PW_STATUS_CANCELLED);
+  PW_TEST_EXPECT_EQ(other.message(), 0x12345660u);
+
+  Storage ok_with_token(PW_STATUS_OK, 0xFFFFFFE0);
+  PW_TEST_EXPECT_TRUE(ok_with_token.ok());
+  PW_TEST_EXPECT_FALSE(ok_with_token.has_message());
+  PW_TEST_EXPECT_EQ(ok_with_token.message(), 0u);
+});
+
 [[maybe_unused]] void NonEnumStatusBaseStr() {
 #if PW_NC_TEST(NonEnumStatusBaseStr)
   PW_NC_EXPECT("only supported for status types with enum codes");
@@ -529,6 +940,45 @@ PW_CONSTEXPR_TEST(StatusBaseTest, Str, {
   PW_NC_EXPECT("no viable conversion|cannot convert|non-scalar type");
   AliasStatus s = CustomError::kFailed;
   (void)s;
+#elif PW_NC_TEST(RawStringLiteralMessageRejected)
+  PW_NC_EXPECT("deleted");
+  AliasMessageStatus status(PW_STATUS_INTERNAL, "raw literal not allowed");
+  status.IgnoreError();
+#elif PW_NC_TEST(RawStringLiteralMessageRejectedByPwStatus)
+  PW_NC_EXPECT("deleted");
+  pw::Status status(PW_STATUS_INTERNAL, "raw literal not allowed");
+  status.IgnoreError();
+#elif PW_NC_TEST(NonLiteralStatusMessageRejected)
+  PW_NC_EXPECT("expected|string literal operator");
+  const char* runtime_msg = "not a literal";
+  AliasMessageStatus status(PW_STATUS_INTERNAL, PW_STATUS_MSG(runtime_msg));
+  status.IgnoreError();
+#elif PW_NC_TEST(WideStringStatusMessageRejected)
+  PW_NC_EXPECT("static_cast|no matching function");
+  AliasMessageStatus status(PW_STATUS_INTERNAL, PW_STATUS_MSG(L"wide"));
+  status.IgnoreError();
+#elif PW_NC_TEST(MessageRejectedIfDisabledForType)
+  PW_NC_EXPECT("This status type cannot carry a message");
+  NoMessageStatus status(PW_STATUS_INTERNAL, PW_STATUS_MSG("Opted out"));
+  status.IgnoreError();
+#elif PW_NC_TEST(MessageRejectedForEnumWithoutEnumTraits)
+  PW_NC_EXPECT("This status type cannot carry a message");
+  AliasStatus status(CustomError::kFailed, PW_STATUS_MSG("No PW_ENUM"));
+  status.IgnoreError();
+#elif PW_NC_TEST(MessageRejectedForIntegerCode)
+  PW_NC_EXPECT("This status type cannot carry a message");
+  StatusBase<IntStatus, 200>::Message message = PW_STATUS_MSG("Integer");
+  static_cast<void>(message);
+#elif PW_NC_TEST(MessageFromAnotherStatusTypeRejected)
+  PW_NC_EXPECT("no matching|no viable|cannot convert|could not convert");
+  const pw::Status not_found =
+      pw::Status::NotFound(PW_STATUS_MSG("No such key"));
+  MessageStatus status(PW_STATUS_NOT_FOUND, not_found.message());
+  status.IgnoreError();
+#elif PW_NC_TEST(TokenStorageRejectsCodeWithoutEnumTraits)
+  PW_NC_EXPECT("does not support messages");
+  StatusStorage<CustomError::kOk, StatusMessageType::kToken> storage;
+  static_cast<void>(storage);
 #endif  // PW_NC_TEST
 }
 

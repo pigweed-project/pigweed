@@ -28,6 +28,7 @@ pw_add_library(pw_status.config INTERFACE
 
 pw_add_library(pw_status STATIC
   HEADERS
+    public/pw_status/internal/status_storage.h
     public/pw_status/status.h
     public/pw_status/status_base.h
     public/pw_status/status_with_size.h
@@ -39,6 +40,17 @@ pw_add_library(pw_status STATIC
     pw_status.config
   SOURCES
     status.cc
+)
+
+pw_add_library(pw_status.message INTERFACE
+  HEADERS
+    public/pw_status/message.h
+  PUBLIC_INCLUDES
+    public
+  PUBLIC_DEPS
+    pw_enum
+    pw_status
+    pw_tokenizer
 )
 
 # Use this for pw_status_CONFIG to require pw::Status objects to be used.
@@ -72,7 +84,10 @@ pw_add_test(pw_status.status_base_test
     status_base_test.cc
   PRIVATE_DEPS
     pw_compilation_testing._pigweed_only_negative_compilation
+    pw_enum
     pw_status
+    pw_status.message
+    pw_tokenizer
     pw_unit_test.constexpr
   GROUPS
     modules
@@ -84,9 +99,12 @@ pw_add_test(pw_status.status_base_enum_test
     status_base_enum_test.cc
   PRIVATE_DEPS
     pw_compilation_testing._pigweed_only_negative_compilation
+    pw_enum
     pw_result
     pw_status
+    pw_status.message
     pw_status.status_test_enum
+    pw_tokenizer
     pw_unit_test.constexpr
   GROUPS
     modules

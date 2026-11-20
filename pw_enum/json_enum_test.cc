@@ -72,6 +72,7 @@ PW_CONSTEXPR_TEST(PwEnumJsonTest, Traits, {
   PW_TEST_EXPECT_FALSE(Traits::kIsContiguous);
   PW_TEST_EXPECT_EQ(Traits::kMin, TomlEnum::kNegative);
   PW_TEST_EXPECT_EQ(Traits::kMax, TomlEnum::kCustomName);
+  PW_TEST_EXPECT_EQ(Traits::kBitWidth, 5u);  // -2 to 12
   PW_TEST_EXPECT_TRUE(Traits::IsValid(-2));
   PW_TEST_EXPECT_FALSE(Traits::IsValid(-1));
   PW_TEST_EXPECT_TRUE(Traits::IsValid(TomlEnum::kFromBase));

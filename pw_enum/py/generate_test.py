@@ -78,6 +78,7 @@ class TestEnumGeneration(unittest.TestCase):
         self.assertIn(
             "static constexpr enum_type kMax = ::my::ns::MyEnum::kB;", footer
         )
+        self.assertIn("static constexpr size_t kBitWidth = 2;", footer)
         self.assertIn(
             "static constexpr std::array<enum_type, kDistinctValueCount> "
             "kValues = {{",
@@ -155,6 +156,51 @@ class TestEnumGeneration(unittest.TestCase):
         )
         self.assertIn("static constexpr bool kIsContiguous = true;", footer)
         self.assertIn("return value == kMin;", footer)
+
+    def test_traits_bit_width(self) -> None:
+        """Test that kBitWidth is the bits needed to represent every value."""
+
+        def footer_for(*values: int) -> str:
+            enums = [
+                EnumDescriptor(
+                    name="Sized",
+                    scopes=("test",),
+                    cc_full_name="::test::Sized",
+                    line=0,
+                    values=tuple(
+                        EnumValue(cc_name=f"k{i}", value=value, name=f"V{i}")
+                        for i, value in enumerate(values)
+                    ),
+                )
+            ]
+            return "\n".join(generate_footer(enums)) + "\n"
+
+        for values, bits in (
+            # Without negative values: the bit width of the largest value.
+            ((0,), 1),
+            ((1, 0), 1),
+            ((0, 2), 2),
+            ((3, 16), 5),
+            ((0, 65535), 16),
+            ((0, 65536), 17),
+            ((0, 2**64 - 1), 64),
+            # With negative values: the narrowest two's complement integer.
+            ((0, -1), 1),
+            ((-1, 1), 2),
+            ((-2, 1), 2),
+            ((-3, 0), 3),
+            ((-5, 7), 4),
+            ((-8, 8), 5),
+            ((-128, 127), 8),
+            ((-129, 0), 9),
+            ((-32768, -32767), 16),
+            ((-(2**63), 0), 64),
+        ):
+            with self.subTest(values=values):
+                self.assertIn(
+                    f"static constexpr size_t kBitWidth = {bits};",
+                    footer_for(*values),
+                )
 
     def test_traits_non_contiguous_with_aliases(self) -> None:
         """Test traits generation for non-contiguous enums with aliases."""

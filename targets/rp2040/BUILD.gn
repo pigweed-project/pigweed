@@ -142,6 +142,7 @@ pw_system_target("rp2040") {
 
     pw_log_BACKEND = dir_pw_log_tokenized
     pw_log_tokenized_HANDLER_BACKEND = "$dir_pw_system:log_backend.impl"
+    pw_status_CONFIG = "$dir_pw_status:tokenized_messages"
 
     pw_third_party_freertos_CONFIG =
         "$dir_pigweed/targets/rp2040:rp2040_freertos_config"

@@ -178,6 +178,7 @@ common --//pw_env_setup/py:pigweed_json=//:pigweed_json
 common --experimental_propagate_custom_flag=//pw_env_setup/py:pigweed_json
 
 build --//pw_function:config_override=//pw_function:upstream_default_config
+build --//pw_status:messages=string
 
 # These flags may be read by tooling running in the exec configuration.
 common --experimental_propagate_custom_flag=//pw_build/luci:is_ci

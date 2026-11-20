@@ -83,6 +83,7 @@ common_link_deps =
 common_build_args = {
   pw_log_BACKEND = dir_pw_log_tokenized
   pw_log_tokenized_HANDLER_BACKEND = "$dir_pw_system:log_backend.impl"
+  pw_status_CONFIG = "$dir_pw_status:tokenized_messages"
   pw_perf_test_TIMER_INTERFACE_BACKEND = "$dir_pw_perf_test:arm_cortex_timer"
   pw_third_party_freertos_CONFIG = "$dir_pigweed/targets/stm32f429i_disc1_stm32cube:stm32f4xx_freertos_config"
   pw_third_party_freertos_PORT = "$pw_external_freertos:arm_cm4f"

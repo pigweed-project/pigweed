@@ -113,6 +113,19 @@ def _is_contiguous(distinct_values: Sequence[EnumValue]) -> bool:
     return span == len(distinct_values)
 
 
+def _bit_width(distinct_values: Sequence[EnumValue]) -> int:
+    """Returns the bits needed to represent every value; at least 1.
+
+    If any value is negative, this is the width of the narrowest two's
+    complement integer that holds all of the values.
+    """
+    lowest = distinct_values[0].value
+    highest = distinct_values[-1].value
+    if lowest >= 0:
+        return max(1, highest.bit_length())
+    return max((~lowest).bit_length(), max(highest, 0).bit_length()) + 1
+
+
 def _generate_is_valid(
     enum_desc: EnumDescriptor,
     distinct_values: Sequence[EnumValue],
@@ -219,6 +232,8 @@ def _generate_enum_traits(
         "  static constexpr enum_type kMax = "
         f"{cc_name}::{distinct_values[-1].cc_name};"
     )
+    bit_width = _bit_width(distinct_values)
+    yield f"  static constexpr size_t kBitWidth = {bit_width};"
     yield ""
     yield (
         "  static constexpr std::array<enum_type, kDistinctValueCount> "

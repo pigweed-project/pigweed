@@ -284,6 +284,18 @@ PW_CONSTEXPR_TEST(EnumTraitsTest, MinAndMax, {
   PW_TEST_EXPECT_EQ(StandaloneTraits::kMax, ::pw::enum_test::Standalone::kTwo);
 });
 
+PW_CONSTEXPR_TEST(EnumTraitsTest, BitWidth, {
+  // Without negative values, the bit width is that of the largest value.
+  PW_TEST_EXPECT_EQ(BoolTraits::kBitWidth, 1u);         // 0 to 1
+  PW_TEST_EXPECT_EQ(StandaloneTraits::kBitWidth, 2u);   // 1 to 2
+  PW_TEST_EXPECT_EQ(SingleValueTraits::kBitWidth, 2u);  // 2
+  PW_TEST_EXPECT_EQ(NestedTraits::kBitWidth, 4u);       // 5 to 10
+
+  // With negative values, it is the width of the narrowest two's complement
+  // integer that holds every value. ComplexEnum is -1 to 17.
+  PW_TEST_EXPECT_EQ(ComplexTraits::kBitWidth, 6u);
+});
+
 PW_CONSTEXPR_TEST(EnumTraitsTest, DistinctValueCountIgnoresAliases, {
   PW_TEST_EXPECT_EQ(TestTraits::kDistinctValueCount, 3u);
   PW_TEST_EXPECT_EQ(ComplexTraits::kDistinctValueCount, 7u);
@@ -574,6 +586,7 @@ struct EnumTraits<UntaggedTraitsEnum> {
 
   static constexpr enum_type kMin = UntaggedTraitsEnum::kValue;
   static constexpr enum_type kMax = UntaggedTraitsEnum::kValue;
+  static constexpr size_t kBitWidth = 1;
 
   static constexpr std::array<enum_type, kDistinctValueCount> kValues = {{
       UntaggedTraitsEnum::kValue,

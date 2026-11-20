@@ -12,12 +12,15 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+#include <cstddef>
+#include <cstdint>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
 #include "pw_compilation_testing/negative_compilation.h"
 #include "pw_result/result.h"
+#include "pw_status/message.h"
 #include "pw_status/status_base.h"
 #include "pw_status/try.h"
 #include "pw_unit_test/constexpr.h"
@@ -26,7 +29,43 @@
 
 namespace {
 
+using ::pw::internal::kStatusCodeBits;
+using ::pw::internal::kStatusMessageType;
+using ::pw::internal::StatusMessageType;
+using ::pw::internal::StatusStorage;
+
+constexpr bool kMessagesEnabled =
+    kStatusMessageType != StatusMessageType::kNone;
+
 using PwEnumStatus = ::pw::StatusOf<::pw::status_test::GeneratedEnum::kOk>;
+
+// Enums registered with PW_ENUM have a known range. They support messages if
+// their values are not negative and need at most 16 bits.
+static_assert(kStatusCodeBits<::pw::status_test::GeneratedEnum> == 2);
+static_assert(kStatusCodeBits<::pw::status_test::NonZeroOkStatusCode> == 2);
+static_assert(kStatusCodeBits<::pw::status_test::UnscopedGeneratedError> == 5);
+static_assert(kStatusCodeBits<::pw::status_test::SixteenBitGeneratedError> ==
+              16);
+static_assert(kStatusCodeBits<::pw::status_test::SeventeenBitGeneratedError> ==
+              0);
+static_assert(kStatusCodeBits<::pw::status_test::SignedGeneratedError> == 0);
+
+// Statuses that do not support messages are only their code in every
+// configuration.
+static_assert(
+    sizeof(
+        ::pw::StatusOf<::pw::status_test::SeventeenBitGeneratedError::kOk>) ==
+    sizeof(::pw::status_test::SeventeenBitGeneratedError));
+static_assert(
+    sizeof(::pw::StatusOf<::pw::status_test::SignedGeneratedError::kOk>) ==
+    sizeof(::pw::status_test::SignedGeneratedError));
+
+static_assert(sizeof(PwEnumStatus) ==
+              (PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_NONE
+                   ? sizeof(::pw::status_test::GeneratedEnum)
+               : PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_TOKENIZED
+                   ? sizeof(uint32_t)
+                   : 2 * sizeof(const char*)));
 
 template <typename T, typename = void>
 struct HasIsOk : std::false_type {};
@@ -231,6 +270,124 @@ PW_CONSTEXPR_TEST(StatusBaseTest, StatusEnumResult, {
   PW_TEST_EXPECT_FALSE(error.ok());
   PW_TEST_EXPECT_EQ(error.status(), TestStatus::NotFound());
   PW_TEST_EXPECT_STREQ(error.status().str(), "NOT_FOUND");
+});
+
+TEST(StatusBaseTest, Message_PwEnum) {
+  using ::pw::status_test::GeneratedEnum;
+
+  const PwEnumStatus not_found(GeneratedEnum::kNotFound,
+                               PW_STATUS_MSG("Missing key"));
+  EXPECT_EQ(not_found.code(), GeneratedEnum::kNotFound);
+  EXPECT_STREQ(not_found.str(), "NOT_FOUND");
+  EXPECT_EQ(not_found.has_message(), kMessagesEnabled);
+  EXPECT_EQ(not_found, PwEnumStatus(GeneratedEnum::kNotFound));
+
+  const PwEnumStatus ok(GeneratedEnum::kOk, PW_STATUS_MSG("Ignored"));
+  EXPECT_TRUE(ok.ok());
+  EXPECT_FALSE(ok.has_message());
+
+  // The message is carried through pw::Result.
+  const ::pw::Result<int, PwEnumStatus> result(not_found);
+  EXPECT_EQ(result.status().code(), GeneratedEnum::kNotFound);
+  EXPECT_EQ(result.status().has_message(), kMessagesEnabled);
+}
+
+// GeneratedEnum has values 0 to 2, so its code uses the low 2 bits of the word.
+PW_CONSTEXPR_TEST(StatusStorageTest, Token_GeneratedEnum, {
+  using ::pw::status_test::GeneratedEnum;
+  using Storage = StatusStorage<GeneratedEnum::kOk, StatusMessageType::kToken>;
+
+  static_assert(sizeof(Storage) == sizeof(uint32_t));
+  static_assert(Storage::kTokenMask == 0xFFFFFFFCu);
+
+  Storage ok;
+  PW_TEST_EXPECT_TRUE(ok.ok());
+  PW_TEST_EXPECT_EQ(ok.code(), GeneratedEnum::kOk);
+  PW_TEST_EXPECT_FALSE(ok.has_message());
+  PW_TEST_EXPECT_EQ(ok.message(), 0u);
+
+  Storage code_only(GeneratedEnum::kPermissionDenied);
+  PW_TEST_EXPECT_FALSE(code_only.ok());
+  PW_TEST_EXPECT_EQ(code_only.code(), GeneratedEnum::kPermissionDenied);
+  PW_TEST_EXPECT_FALSE(code_only.has_message());
+
+  Storage err(GeneratedEnum::kNotFound, 0xAABBCCDC);
+  PW_TEST_EXPECT_FALSE(err.ok());
+  PW_TEST_EXPECT_EQ(err.code(), GeneratedEnum::kNotFound);
+  PW_TEST_EXPECT_TRUE(err.has_message());
+  PW_TEST_EXPECT_EQ(err.message(), 0xAABBCCDCu);
+
+  Storage ok_with_token(GeneratedEnum::kOk, 0xAABBCCDC);
+  PW_TEST_EXPECT_TRUE(ok_with_token.ok());
+  PW_TEST_EXPECT_FALSE(ok_with_token.has_message());
+});
+
+// The OK code does not have to be 0.
+PW_CONSTEXPR_TEST(StatusStorageTest, Token_NonZeroOkCode, {
+  using ::pw::status_test::NonZeroOkStatusCode;
+  using Storage =
+      StatusStorage<NonZeroOkStatusCode::kReady, StatusMessageType::kToken>;
+
+  Storage ok;
+  PW_TEST_EXPECT_TRUE(ok.ok());
+  PW_TEST_EXPECT_EQ(ok.code(), NonZeroOkStatusCode::kReady);
+
+  Storage busy(NonZeroOkStatusCode::kBusy, 0xAABBCCDC);
+  PW_TEST_EXPECT_FALSE(busy.ok());
+  PW_TEST_EXPECT_EQ(busy.code(), NonZeroOkStatusCode::kBusy);
+  PW_TEST_EXPECT_EQ(busy.message(), 0xAABBCCDCu);
+
+  Storage busy_code_only(NonZeroOkStatusCode::kBusy);
+  PW_TEST_EXPECT_FALSE(busy_code_only.ok());
+  PW_TEST_EXPECT_FALSE(busy_code_only.has_message());
+
+  Storage ok_with_token(NonZeroOkStatusCode::kReady, 0xAABBCCDC);
+  PW_TEST_EXPECT_TRUE(ok_with_token.ok());
+  PW_TEST_EXPECT_FALSE(ok_with_token.has_message());
+});
+
+// Codes are stored as is, not as an offset from the smallest enumerator, so
+// that the code's bits are the value that is tokenized for the enum.
+// UnscopedGeneratedError's values are 10 and 20, which need 5 bits.
+PW_CONSTEXPR_TEST(StatusStorageTest, Token_NonZeroMinimum, {
+  using ::pw::status_test::kUnscopedFailed;
+  using ::pw::status_test::kUnscopedOk;
+  using Storage = StatusStorage<kUnscopedOk, StatusMessageType::kToken>;
+
+  static_assert(Storage::kTokenMask == 0xFFFFFFE0u);
+
+  Storage ok;
+  PW_TEST_EXPECT_TRUE(ok.ok());
+  PW_TEST_EXPECT_EQ(ok.code(), kUnscopedOk);
+  PW_TEST_EXPECT_FALSE(ok.has_message());
+
+  Storage err(kUnscopedFailed, 0xAABBCCC0);
+  PW_TEST_EXPECT_FALSE(err.ok());
+  PW_TEST_EXPECT_EQ(err.code(), kUnscopedFailed);
+  PW_TEST_EXPECT_EQ(err.message(), 0xAABBCCC0u);
+});
+
+PW_CONSTEXPR_TEST(StatusStorageTest, Token_SixteenBitCode, {
+  using ::pw::status_test::SixteenBitGeneratedError;
+  using Storage =
+      StatusStorage<SixteenBitGeneratedError::kOk, StatusMessageType::kToken>;
+
+  static_assert(Storage::kTokenMask == 0xFFFF0000u);
+
+  Storage err(SixteenBitGeneratedError::kLast, 0xFFFF0000);
+  PW_TEST_EXPECT_FALSE(err.ok());
+  PW_TEST_EXPECT_EQ(err.code(), SixteenBitGeneratedError::kLast);
+  PW_TEST_EXPECT_EQ(err.message(), 0xFFFF0000u);
+});
+
+// Codes are not range checked or masked, so that a value that does not fit in
+// the code's bits can never be mistaken for the OK code.
+PW_CONSTEXPR_TEST(StatusStorageTest, Token_OutOfRangeCodeIsNeverOk, {
+  using ::pw::status_test::GeneratedEnum;
+  using Storage = StatusStorage<GeneratedEnum::kOk, StatusMessageType::kToken>;
+
+  PW_TEST_EXPECT_FALSE(Storage(static_cast<GeneratedEnum>(4)).ok());
+  PW_TEST_EXPECT_FALSE(Storage(static_cast<GeneratedEnum>(4), 0xFFFFFFFC).ok());
 });
 
 [[maybe_unused]] void NegativeCompilationTests() {

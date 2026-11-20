@@ -15,7 +15,6 @@
 #include "pw_rpc2/status.h"
 
 #include <iterator>
-#include <type_traits>
 
 #include "pw_enum/to_string.h"
 #include "pw_enum/traits.h"
@@ -26,11 +25,6 @@ namespace {
 using ::pw::rpc2::RpcCode;
 using ::pw::rpc2::RpcResult;
 using ::pw::rpc2::RpcStatus;
-
-// `RpcStatus` is a single `RpcCode`, so it is cheap to return and store.
-static_assert(sizeof(RpcStatus) == 1);
-static_assert(std::is_same_v<RpcStatus::Code, RpcCode>);
-static_assert(std::is_trivially_copyable_v<RpcStatus>);
 
 static_assert(RpcStatus().ok());
 static_assert(RpcStatus().code() == RpcCode::kOk);

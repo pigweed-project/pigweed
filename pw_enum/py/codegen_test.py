@@ -123,6 +123,7 @@ struct EnumTraits<::my::pkg::MyEnum> {
 
   static constexpr enum_type kMin = ::my::pkg::MyEnum::kNegative;
   static constexpr enum_type kMax = ::my::pkg::MyEnum::kCustom;
+  static constexpr size_t kBitWidth = 4;
 
   static constexpr std::array<enum_type, kDistinctValueCount> kValues = {{
       ::my::pkg::MyEnum::kNegative,
@@ -196,6 +197,7 @@ struct EnumTraits<::my::pkg::Code> {
 
   static constexpr enum_type kMin = ::my::pkg::Code::kOk;
   static constexpr enum_type kMax = ::my::pkg::Code::kBusy;
+  static constexpr size_t kBitWidth = 1;
 
   static constexpr std::array<enum_type, kDistinctValueCount> kValues = {{
       ::my::pkg::Code::kOk,

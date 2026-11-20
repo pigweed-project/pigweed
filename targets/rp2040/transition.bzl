@@ -43,6 +43,7 @@ RP2_SYSTEM_FLAGS = FREERTOS_FLAGS | {
     "@pigweed//pw_log:backend_impl": str(Label("//pw_log_tokenized:impl")),
     "@pigweed//pw_log_tokenized:handler_backend": str(Label("//pw_system:log_backend")),
     "@pigweed//pw_perf_test:test_timer_backend": str(Label("//pw_perf_test:arm_cortex_timer")),
+    "@pigweed//pw_status:messages": "tokenized",
     "@pigweed//pw_sys_io:backend": str(Label("//pw_sys_io_rp2040")),
     "@pigweed//pw_system:device_handler_backend": str(Label("//targets/rp2040:device_handler")),
     "@pigweed//pw_system:extra_platform_libs": str(Label("//targets/rp2040:extra_platform_libs")),

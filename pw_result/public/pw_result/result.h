@@ -67,11 +67,18 @@ constexpr T&& ConvertToValue(Result<T, StatusType>& result) noexcept;
 
 /// Status type used by `pw::Optional<T>` (`pw::Result<T, pw::HasValue>`) to
 /// indicate whether a value is present (`ok() == true`).
+// Status messages are disabled so `pw::Optional<T>` stays the size of
+// `std::optional<T>`. Messages may be enabled in the future.
 class [[nodiscard]] HasValue final
-    : public StatusBase<HasValue, internal_result::HasValueCode::kHasValue> {
+    : public StatusBase<HasValue,
+                        internal_result::HasValueCode::kHasValue,
+                        StatusMessages::kDisabled> {
+  using Base = StatusBase<HasValue,
+                          internal_result::HasValueCode::kHasValue,
+                          StatusMessages::kDisabled>;
+
  public:
-  using typename StatusBase<HasValue,
-                            internal_result::HasValueCode::kHasValue>::Code;
+  using typename Base::Code;
 
   static constexpr Code kEmpty = Code::kEmpty;
   static constexpr Code kHasValue = Code::kHasValue;
@@ -82,7 +89,7 @@ class [[nodiscard]] HasValue final
 
   /// Explicitly constructs a `HasValue` status from `HasValue::kEmpty` or
   /// `HasValue::kHasValue`.
-  explicit constexpr HasValue(Code code) noexcept : StatusBase(code) {}
+  explicit constexpr HasValue(Code code) noexcept : Base(code) {}
 };
 
 /// `pw::Optional<T>` is an alias for `pw::Result<T, pw::HasValue>` that

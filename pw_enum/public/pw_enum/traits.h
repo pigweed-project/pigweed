@@ -44,6 +44,10 @@ namespace pw {
 /// - `kIsContiguous` --- whether the distinct values cover every integer from
 ///   `kMin` to `kMax` with no gaps.
 /// - `kMin` / `kMax` --- smallest and largest enumerator values.
+/// - `kBitWidth` --- number of bits needed to represent every enumerator
+///   value: the bit width of `kMax` if no value is negative, or the width of
+///   the narrowest two's complement integer that holds `kMin` and `kMax`
+///   otherwise. At least 1.
 /// - `kValues` --- `std::array<enum_type, kDistinctValueCount>` of the distinct
 ///   values in ascending order.
 /// - `IsValid(value)` --- returns whether an enumerator or integer value is a

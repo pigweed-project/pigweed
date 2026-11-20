@@ -15,6 +15,7 @@
 import("//build_overrides/pigweed.gni")
 
 import("$dir_pigweed/targets/host/target_toolchains.gni")
+import("$dir_pw_build/target_types.gni")
 import("$dir_pw_toolchain/generate_toolchain.gni")
 
 assert(
@@ -22,6 +23,15 @@ assert(
     "The host toolchains in targets/host/pigweed_internal may only be used " +
         "for building upstream Pigweed. Use the host toolchains in " +
         "targets/host for downstream code.")
+
+if (current_toolchain != default_toolchain) {
+  pw_source_set("pw_status_config") {
+    public_deps = [
+      "$dir_pw_status:check_if_used",
+      "$dir_pw_status:string_messages",
+    ]
+  }
+}
 
 generate_toolchains("internal_host_toolchains") {
   toolchains = pw_internal_host_toolchains

@@ -45,8 +45,19 @@ pw_source_set("pw_status") {
   ]
   sources = [
     "public/pw_status/internal/config.h",
+    "public/pw_status/internal/status_storage.h",
     "status.cc",
   ]
+}
+
+pw_source_set("message") {
+  public_configs = [ ":public_include_path" ]
+  public_deps = [
+    ":pw_status",
+    "$dir_pw_enum",
+    "$dir_pw_tokenizer",
+  ]
+  public = [ "public/pw_status/message.h" ]
 }
 
 config("check_if_used_config") {
@@ -59,16 +70,35 @@ pw_source_set("check_if_used") {
   public_configs = [ ":check_if_used_config" ]
 }
 
+config("string_messages_config") {
+  defines = [ "PW_STATUS_CFG_MESSAGES=PW_STATUS_CFG_MESSAGES_STRING" ]
+  visibility = [ ":*" ]
+}
+
+# Use this for pw_status_CONFIG to store status messages as string pointers.
+pw_source_set("string_messages") {
+  public_configs = [ ":string_messages_config" ]
+}
+
+config("tokenized_messages_config") {
+  defines = [ "PW_STATUS_CFG_MESSAGES=PW_STATUS_CFG_MESSAGES_TOKENIZED" ]
+  visibility = [ ":*" ]
+}
+
+# Use this for pw_status_CONFIG to store status messages as pw_tokenizer tokens.
+pw_source_set("tokenized_messages") {
+  public_configs = [ ":tokenized_messages_config" ]
+}
+
 pw_test_group("tests") {
   tests = [
+    ":message_token_test",
     ":status_test",
+    ":status_base_enum_test",
     ":status_base_test",
     ":status_with_size_test",
     ":try_test",
   ]
-  if (host_os != "win") {
-    tests += [ ":status_base_enum_test" ]
-  }
 }
 
 pw_test("status_test") {
@@ -83,32 +113,54 @@ pw_test("status_test") {
   ]
 }
 
-if (host_os != "win") {
-  pw_cc_enum_source_set("status_test_enum") {
-    enum_headers = [ "test_enums/status_test_enum.h" ]
-    include_dirs = [ "test_enums" ]
-    testonly = pw_unit_test_TESTONLY
-  }
+pw_cc_enum_source_set("status_test_enum") {
+  enum_headers = [ "test_enums/status_test_enum.h" ]
+  include_dirs = [ "test_enums" ]
+  testonly = pw_unit_test_TESTONLY
+}
 
-  pw_test("status_base_enum_test") {
-    deps = [
-      ":pw_status",
-      ":status_test_enum",
-      "$dir_pw_result",
-      "$dir_pw_unit_test:constexpr",
-    ]
-    sources = [ "status_base_enum_test.cc" ]
-    negative_compilation_tests = true
-  }
+pw_test("status_base_enum_test") {
+  deps = [
+    ":message",
+    ":pw_status",
+    ":status_test_enum",
+    "$dir_pw_enum",
+    "$dir_pw_result",
+    "$dir_pw_tokenizer",
+    "$dir_pw_unit_test:constexpr",
+  ]
+  sources = [ "status_base_enum_test.cc" ]
+  negative_compilation_tests = true
 }
 
 pw_test("status_base_test") {
   deps = [
+    ":message",
     ":pw_status",
+    "$dir_pw_enum",
+    "$dir_pw_tokenizer",
     "$dir_pw_unit_test:constexpr",
   ]
   sources = [ "status_base_test.cc" ]
   negative_compilation_tests = true
+}
+
+pw_test("message_token_test") {
+  deps = [
+    ":message",
+    ":pw_status",
+    "$dir_pw_bytes",
+    "$dir_pw_result",
+    "$dir_pw_tokenizer:decoder",
+    "$dir_pw_tokenizer:detokenize_from_this_program",
+  ]
+  sources = [ "message_token_test.cc" ]
+
+  # This test requires a linker script to load the tokenizer sections. This is
+  # currently only supported on Linux.
+  enable_if = current_os == "linux"
+
+  configs = [ "$dir_pw_tokenizer:detokenize_from_this_program_linker_script" ]
 }
 
 pw_test("status_with_size_test") {

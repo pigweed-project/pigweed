@@ -24,9 +24,9 @@ extern "C" {
 // This is the pw_Status enum. pw_Status is used to return the status from an
 // operation.
 //
-// In C++, use the pw::Status class instead of the pw_Status enum. pw_Status and
-// Status implicitly convert to one another and can be passed cleanly between C
-// and C++ APIs.
+// In C++, use the pw::Status class instead of the pw_Status enum. pw_Status
+// implicitly converts to Status; use Status::code() to convert a Status to
+// pw_Status for C APIs.
 //
 // pw_Status uses the canonical Google error codes. The following enum was based
 // on Abseil's status/status.h. The values are all-caps and prefixed with
@@ -126,6 +126,7 @@ struct EnumTraits<pw_Status> {
 
   static constexpr pw_Status kMin = PW_STATUS_OK;
   static constexpr pw_Status kMax = PW_STATUS_LAST;
+  static constexpr size_t kBitWidth = 5;
 
   static constexpr std::array<pw_Status, kDistinctValueCount> kValues = {{
       PW_STATUS_OK,
@@ -164,14 +165,18 @@ struct EnumTraits<pw_Status> {
 
 static_assert(EnumTraits<pw_Status>::kValues.back() == PW_STATUS_LAST,
               "Update EnumTraits<pw_Status>::kValues when adding status codes");
+static_assert(
+    (PW_STATUS_LAST >> EnumTraits<pw_Status>::kBitWidth) == 0 &&
+        (PW_STATUS_LAST >> (EnumTraits<pw_Status>::kBitWidth - 1)) != 0,
+    "Update EnumTraits<pw_Status>::kBitWidth when adding status codes");
 /// @endcond
 
 /// @module{pw_status}
 
 /// `Status` is a thin, zero-cost abstraction around the `pw_Status` enum. It
 /// initializes to `pw::OkStatus()` by default and adds `ok()` and `str()`
-/// methods. Implicit conversions are permitted between `pw_Status` and
-/// `pw::Status`.
+/// methods. `Status` implicitly converts from `pw_Status`; use `code()` to
+/// convert a `Status` to `pw_Status`.
 ///
 /// An OK status is created by the `pw::OkStatus()` function or by the default
 /// `Status` constructor. Non-OK `Status` is created with a static member
@@ -185,6 +190,12 @@ static_assert(EnumTraits<pw_Status>::kValues.back() == PW_STATUS_LAST,
 ///      return Status::DataLoss();
 ///   }
 /// @endcode
+///
+/// A non-OK `Status` may carry an optional error message created with
+/// `PW_STATUS_MSG` (e.g. `Status::NotFound(PW_STATUS_MSG("No such key"))`).
+/// Messages are discarded at compile time unless `PW_STATUS_CFG_MESSAGES`
+/// enables them. Unlike `absl::Status`, equality comparisons (`==` and `!=`)
+/// consider only the status code and ignore messages.
 class _PW_STATUS_NO_DISCARD Status final
     : public StatusBase<Status, PW_STATUS_OK> {
  public:
@@ -400,9 +411,78 @@ class _PW_STATUS_NO_DISCARD Status final
   }
   // clang-format on
 
+  /// @name Factories with a message
+  ///
+  /// Overloads of the functions above that attach a `PW_STATUS_MSG`.
+  /// @{
+  [[nodiscard]] static constexpr Status Cancelled(Message message) noexcept {
+    return Status(PW_STATUS_CANCELLED, message);
+  }
+  [[nodiscard]] static constexpr Status Unknown(Message message) noexcept {
+    return Status(PW_STATUS_UNKNOWN, message);
+  }
+  [[nodiscard]] static constexpr Status InvalidArgument(
+      Message message) noexcept {
+    return Status(PW_STATUS_INVALID_ARGUMENT, message);
+  }
+  [[nodiscard]] static constexpr Status DeadlineExceeded(
+      Message message) noexcept {
+    return Status(PW_STATUS_DEADLINE_EXCEEDED, message);
+  }
+  [[nodiscard]] static constexpr Status NotFound(Message message) noexcept {
+    return Status(PW_STATUS_NOT_FOUND, message);
+  }
+  [[nodiscard]] static constexpr Status AlreadyExists(
+      Message message) noexcept {
+    return Status(PW_STATUS_ALREADY_EXISTS, message);
+  }
+  [[nodiscard]] static constexpr Status PermissionDenied(
+      Message message) noexcept {
+    return Status(PW_STATUS_PERMISSION_DENIED, message);
+  }
+  [[nodiscard]] static constexpr Status ResourceExhausted(
+      Message message) noexcept {
+    return Status(PW_STATUS_RESOURCE_EXHAUSTED, message);
+  }
+  [[nodiscard]] static constexpr Status FailedPrecondition(
+      Message message) noexcept {
+    return Status(PW_STATUS_FAILED_PRECONDITION, message);
+  }
+  [[nodiscard]] static constexpr Status Aborted(Message message) noexcept {
+    return Status(PW_STATUS_ABORTED, message);
+  }
+  [[nodiscard]] static constexpr Status OutOfRange(Message message) noexcept {
+    return Status(PW_STATUS_OUT_OF_RANGE, message);
+  }
+  [[nodiscard]] static constexpr Status Unimplemented(
+      Message message) noexcept {
+    return Status(PW_STATUS_UNIMPLEMENTED, message);
+  }
+  [[nodiscard]] static constexpr Status Internal(Message message) noexcept {
+    return Status(PW_STATUS_INTERNAL, message);
+  }
+  [[nodiscard]] static constexpr Status Unavailable(Message message) noexcept {
+    return Status(PW_STATUS_UNAVAILABLE, message);
+  }
+  [[nodiscard]] static constexpr Status DataLoss(Message message) noexcept {
+    return Status(PW_STATUS_DATA_LOSS, message);
+  }
+  [[nodiscard]] static constexpr Status Unauthenticated(
+      Message message) noexcept {
+    return Status(PW_STATUS_UNAUTHENTICATED, message);
+  }
+  /// @}
+
   /// Statuses are created with a `Status::Code`.
+  ///
+  /// @pre `code` is a valid status code. Use `pw::StatusFromCodeOrUnknown` to
+  /// convert integers that may not be.
   // C/C++ interoperability: allow implicit conversion from pw_Status
   constexpr Status(Code code = PW_STATUS_OK) noexcept : StatusBase(code) {}
+
+  /// Creates a status with a `PW_STATUS_MSG`.
+  constexpr Status(Code code, Message message) noexcept
+      : StatusBase(code, message) {}
 
   constexpr Status(const Status&) = default;
   constexpr Status& operator=(const Status&) = default;

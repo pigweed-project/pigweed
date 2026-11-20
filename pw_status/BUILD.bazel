@@ -12,6 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
@@ -29,6 +30,7 @@ cc_library(
     ],
     hdrs = [
         "public/pw_status/internal/config.h",
+        "public/pw_status/internal/status_storage.h",
         "public/pw_status/status.h",
         "public/pw_status/status_base.h",
         "public/pw_status/status_with_size.h",
@@ -37,7 +39,56 @@ cc_library(
     strip_include_prefix = "public",
     deps = [
         ":config_override",
+        ":message_config",
         "//pw_enum",
+    ],
+)
+
+# Selects how statuses store optional messages (PW_STATUS_CFG_MESSAGES). Status
+# messages are stored in the form the pw_log backend emits, so set this to
+# "tokenized" with backends that tokenize logs, such as pw_log_tokenized, and
+# to "string" with other backends. pw_status cannot select() on
+# `//pw_log:backend` itself, as that would create a dependency cycle.
+string_flag(
+    name = "messages",
+    build_setting_default = "none",
+    values = [
+        "none",
+        "string",
+        "tokenized",
+    ],
+)
+
+config_setting(
+    name = "messages_string",
+    flag_values = {":messages": "string"},
+    visibility = ["//visibility:private"],
+)
+
+config_setting(
+    name = "messages_tokenized",
+    flag_values = {":messages": "tokenized"},
+    visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "message_config",
+    defines = select({
+        ":messages_string": ["PW_STATUS_CFG_MESSAGES=PW_STATUS_CFG_MESSAGES_STRING"],
+        ":messages_tokenized": ["PW_STATUS_CFG_MESSAGES=PW_STATUS_CFG_MESSAGES_TOKENIZED"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "message",
+    hdrs = ["public/pw_status/message.h"],
+    strip_include_prefix = "public",
+    deps = [
+        ":pw_status",
+        "//pw_enum",
+        "//pw_tokenizer",
     ],
 )
 
@@ -76,7 +127,10 @@ pw_cc_test(
     srcs = ["status_base_test.cc"],
     has_nc_test = True,
     deps = [
+        ":message",
         ":pw_status",
+        "//pw_enum",
+        "//pw_tokenizer",
         "//pw_unit_test:constexpr",
     ],
 )
@@ -86,10 +140,29 @@ pw_cc_test(
     srcs = ["status_base_enum_test.cc"],
     has_nc_test = True,
     deps = [
+        ":message",
         ":pw_status",
         ":status_test_enum",
+        "//pw_enum",
         "//pw_result",
+        "//pw_tokenizer",
         "//pw_unit_test:constexpr",
+    ],
+)
+
+pw_cc_test(
+    name = "message_token_test",
+    srcs = ["message_token_test.cc"],
+    # This test requires a linker script to load the tokenizer sections. This is
+    # currently only supported on Linux.
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":message",
+        ":pw_status",
+        "//pw_bytes",
+        "//pw_result",
+        "//pw_tokenizer:decoder",
+        "//pw_tokenizer:detokenize_from_this_program",
     ],
 )
 
@@ -109,6 +182,7 @@ filegroup(
     name = "doxygen",
     srcs = [
         "public/pw_status/internal/config.h",
+        "public/pw_status/message.h",
         "public/pw_status/status.h",
         "public/pw_status/status_base.h",
         "public/pw_status/status_with_size.h",
