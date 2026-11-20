@@ -84,7 +84,6 @@ cc_library(
         "//pw_chrono:system_clock",
         "//pw_containers:intrusive_forward_list",
         "//pw_containers:intrusive_list",
-        "//pw_containers:intrusive_queue",
         "//pw_function",
         "//pw_log",
         "//pw_log:args",

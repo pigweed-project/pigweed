@@ -377,5 +377,98 @@ TEST(Dispatcher, WakingMultipleTasksAndPostingOnlyWakesOnce) {
   EXPECT_EQ(dispatcher.wake_count(), 2);
 }
 
+TEST(DispatcherForTest, DeregisterFromWokenPreservesOrderOfRemainingTasks) {
+  DispatcherForTest dispatcher;
+  pw::Vector<int, 4> order;
+
+  auto make_recorder = [&order](int id) {
+    return [&order, id](Context&) -> Poll<> {
+      order.push_back(id);
+      return Ready();
+    };
+  };
+
+  FuncTask t0(make_recorder(0));
+  FuncTask t1(make_recorder(1));
+  FuncTask t2(make_recorder(2));
+  FuncTask t3(make_recorder(3));
+  FuncTask t4(make_recorder(4));
+
+  dispatcher.Post(t0);
+  dispatcher.Post(t1);
+  dispatcher.Post(t2);
+  dispatcher.Post(t3);
+  dispatcher.Post(t4);
+
+  // Deregister middle, front, and back tasks from woken_ before running.
+  t2.Deregister();
+  t0.Deregister();
+  t4.Deregister();
+
+  dispatcher.RunToCompletion();
+  ASSERT_EQ(order.size(), 2u);
+  EXPECT_EQ(order[0], 1);
+  EXPECT_EQ(order[1], 3);
+}
+
+TEST(DispatcherForTest, WakeAndDeregisterFromSleepingInArbitraryOrder) {
+  DispatcherForTest dispatcher;
+  std::array<MockTask, 5> tasks;
+  for (MockTask& task : tasks) {
+    dispatcher.Post(task);
+  }
+
+  // Move all 5 tasks to sleeping_.
+  EXPECT_TRUE(dispatcher.RunUntilStalled());
+  for (const MockTask& task : tasks) {
+    EXPECT_EQ(task.polled, 1);
+  }
+
+  // Deregister tasks from the middle, front, and back of sleeping_.
+  tasks[2].Deregister();
+  tasks[4].Deregister();
+  tasks[0].Deregister();
+
+  // Wake the remaining tasks and run to completion.
+  tasks[3].should_complete = true;
+  tasks[1].should_complete = true;
+  tasks[3].last_waker.Wake();
+  tasks[1].last_waker.Wake();
+
+  dispatcher.RunToCompletion();
+  EXPECT_EQ(tasks[0].polled, 1);
+  EXPECT_EQ(tasks[1].polled, 2);
+  EXPECT_EQ(tasks[2].polled, 1);
+  EXPECT_EQ(tasks[3].polled, 2);
+  EXPECT_EQ(tasks[4].polled, 1);
+}
+
+TEST(DispatcherForTest, SelfWokenTaskCompletingPreservesOtherWokenTasks) {
+  DispatcherForTest dispatcher;
+  MockTask other_before;
+  MockTask other_after;
+  other_before.should_complete = true;
+  other_after.should_complete = true;
+
+  Waker self_waker;
+  FuncTask self_waking([&](Context& cx) -> Poll<> {
+    // Transition to kWokenWhileRunning (enqueued in woken_), post another task
+    // behind us in woken_, then complete immediately so RunInDispatcher()
+    // unlists this task from the middle of woken_.
+    PW_ASYNC_STORE_WAKER(cx, self_waker, "self wake");
+    self_waker.Wake();
+    dispatcher.Post(other_after);
+    return Ready();
+  });
+
+  dispatcher.Post(self_waking);
+  dispatcher.Post(other_before);
+
+  dispatcher.RunToCompletion();
+  EXPECT_FALSE(self_waking.IsRegistered());
+  EXPECT_EQ(other_before.polled, 1);
+  EXPECT_EQ(other_after.polled, 1);
+}
+
 }  // namespace
 }  // namespace pw::async2

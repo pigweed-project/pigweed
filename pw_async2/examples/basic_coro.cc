@@ -94,7 +94,7 @@ class CoroExample : public ::testing::Test {
   pw::async2::Sender<int> sender2_;
   pw::async2::Receiver<int> receiver2_;
 
-  AllocatorForTest<512> allocator;
+  AllocatorForTest<1024> allocator;
   pw::async2::DispatcherForTest dispatcher;
 };
 

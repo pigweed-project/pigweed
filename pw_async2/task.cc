@@ -290,9 +290,9 @@ void Task::Wake() {
     case State::kUnposted:
       PW_UNREACHABLE;
     case State::kSleeping:
-      dispatcher_->RemoveSleepingTaskLocked(*this);
       // Wake away!
       state_ = State::kWoken;
+      dispatcher_->RemoveSleepingTaskLocked(*this);
       break;
     case State::kRunning:
       // Wake again to indicate that this task should be run once more,

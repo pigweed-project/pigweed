@@ -27,7 +27,6 @@
 #include "pw_async2/internal/lock.h"
 #include "pw_async2/waker.h"
 #include "pw_async2_private/yield.h"
-#include "pw_containers/intrusive_queue.h"
 #include "pw_log/log.h"
 #include "pw_log/tokenized_args.h"
 
@@ -107,7 +106,7 @@ bool Dispatcher::PopAndRunAllReadyTasks() {
   return has_posted_tasks;
 }
 
-void Dispatcher::UnpostTaskList(IntrusiveQueue<Task>& list) {
+void Dispatcher::UnpostTaskList(containers::future::IntrusiveList<Task>& list) {
   while (!list.empty()) {
     Task& task = list.front();
     list.pop_front();

@@ -21,7 +21,6 @@
 #include "pw_async2/waker.h"
 #include "pw_containers/intrusive_forward_list.h"
 #include "pw_containers/intrusive_list.h"
-#include "pw_containers/intrusive_queue.h"
 #include "pw_log/tokenized_args.h"
 #include "pw_sync/lock_annotations.h"
 
@@ -143,7 +142,8 @@ enum class RunTaskResult {
 /// - Use dynamic task lifetimes. Tasks may be allocated and posted with
 ///   @ref Dispatcher::Post "Dispatcher::Post(allocator_, ...)" overloads. Or, a
 ///   `SharedPtr<Task>` can be posted with `Dispatcher::PostShared`.
-class Task : public IntrusiveQueue<Task>::Item, private Context {
+class Task : public containers::future::IntrusiveList<Task>::Item,
+             private Context {
  public:
   /// Creates a task with the specified name. To generate a name token, use the
   /// `PW_ASYNC_TASK_NAME` macro, e.g.
@@ -354,6 +354,10 @@ class Task : public IntrusiveQueue<Task>::Item, private Context {
     kNoWakerNeeded
   } waker_requirement_ = kWakerNeeded;
 
+  // Optional user-facing name for the task. If set, it will be included in
+  // debug logs.
+  log::Token name_;
+
   // A pointer to the dispatcher this task is associated with.
   //
   // This will be non-null when `state_` is anything other than `kUnposted`.
@@ -371,10 +375,6 @@ class Task : public IntrusiveQueue<Task>::Item, private Context {
   // Linked list of `Waker`s that have awakened this `Task` but are not yet
   // handled.
   IntrusiveForwardList<Waker> woken_wakers_ PW_GUARDED_BY(internal::lock());
-
-  // Optional user-facing name for the task. If set, it will be included in
-  // debug logs.
-  log::Token name_;
 };
 
 /// @endsubmodule
