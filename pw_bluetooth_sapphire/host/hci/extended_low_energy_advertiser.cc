@@ -670,14 +670,14 @@ void ExtendedLowEnergyAdvertiser::OnAdvertisingSetTerminatedEvent(
 
   StagedConnectionParameters staged = staged_parameters_node.mapped();
 
+  // CompleteIncomingConnection synchronously invokes the connection callback,
+  // which may destroy |this|; do not access members after this call.
   CompleteIncomingConnection(connection_handle,
                              staged.role,
                              local_address,
                              staged.peer_address,
                              staged.conn_params,
                              advertisement_id);
-
-  staged_advertising_parameters_.clear();
 }
 
 void ExtendedLowEnergyAdvertiser::OnCurrentOperationComplete() {

@@ -67,6 +67,8 @@ class ExtendedLowEnergyAdvertiserTest : public TestingBase {
 
   ExtendedLowEnergyAdvertiser* advertiser() const { return advertiser_.get(); }
 
+  void DestroyAdvertiser() { advertiser_.reset(); }
+
   ResultFunction<AdvertisementId> MakeExpectSuccessCallback() {
     return [this](Result<AdvertisementId> status) {
       last_status_ = status;
@@ -499,6 +501,134 @@ TEST_F(ExtendedLowEnergyAdvertiserTest, ScanResponseDataLargerThanConfigured) {
                                this->MakeExpectErrorCallback());
   RunUntilIdle();
   EXPECT_FALSE(this->advertiser()->IsAdvertising());
+}
+
+TEST_F(ExtendedLowEnergyAdvertiserTest,
+       DestroyAdvertiserInIncomingConnectionCallback) {
+  constexpr hci_spec::ConnectionHandle kConnectionHandle = 0x0001;
+
+  AdvertisingData ad = GetExampleData();
+  AdvertisingData scan_data;
+  AdvertisingOptions options(kTestInterval,
+                             kDefaultNoAdvFlags,
+                             kExtendedPdu,
+                             /*anonymous=*/false,
+                             /*include_tx_power_level=*/true);
+
+  bool connected = false;
+  std::unique_ptr<LowEnergyConnection> received_link;
+  auto conn_cb = [&](AdvertisementId,
+                     std::unique_ptr<LowEnergyConnection> link) {
+    connected = true;
+    received_link = std::move(link);
+    this->DestroyAdvertiser();
+  };
+
+  std::optional<Result<AdvertisementId>> start_result;
+  this->advertiser()->StartAdvertising(
+      kPublicAddress,
+      ad,
+      scan_data,
+      options,
+      std::move(conn_cb),
+      [&](Result<AdvertisementId> result) { start_result = result; });
+  RunUntilIdle();
+  ASSERT_TRUE(start_result.has_value());
+  ASSERT_TRUE(start_result->is_ok());
+
+  std::optional<hci_spec::AdvertisingHandle> handle =
+      this->advertiser()->LastUsedHandleForTesting();
+  ASSERT_TRUE(handle.has_value());
+
+  this->advertiser()->OnIncomingConnection(
+      kConnectionHandle,
+      pw::bluetooth::emboss::ConnectionRole::PERIPHERAL,
+      kRandomAddress,
+      hci_spec::LEConnectionParameters());
+  test_device()->SendLEAdvertisingSetTerminatedEvent(kConnectionHandle,
+                                                     handle.value());
+  RunUntilIdle();
+
+  EXPECT_TRUE(connected);
+  EXPECT_EQ(nullptr, this->advertiser());
+  ASSERT_NE(nullptr, received_link);
+}
+
+TEST_F(ExtendedLowEnergyAdvertiserTest,
+       IncomingConnectionOnFirstSetDoesNotClobberInFlightSecondSetTxPower) {
+  constexpr hci_spec::ConnectionHandle kConnectionHandle = 0x0001;
+  test_device()->set_num_supported_advertising_sets(2);
+  AdvertisingData ad = GetExampleData();
+  AdvertisingData scan_data;
+  AdvertisingOptions set1_options(kTestInterval,
+                                  kDefaultNoAdvFlags,
+                                  kExtendedPdu,
+                                  /*anonymous=*/false,
+                                  /*include_tx_power_level=*/false);
+  AdvertisingOptions set2_options(kTestInterval,
+                                  kDefaultNoAdvFlags,
+                                  kExtendedPdu,
+                                  /*anonymous=*/false,
+                                  /*include_tx_power_level=*/true);
+
+  std::unique_ptr<LowEnergyConnection> set1_link;
+  this->advertiser()->StartAdvertising(
+      kPublicAddress,
+      ad,
+      scan_data,
+      set1_options,
+      [&](AdvertisementId, std::unique_ptr<LowEnergyConnection> link) {
+        set1_link = std::move(link);
+      },
+      this->MakeExpectSuccessCallback());
+  RunUntilIdle();
+  std::optional<hci_spec::AdvertisingHandle> set1_handle =
+      this->advertiser()->LastUsedHandleForTesting();
+  ASSERT_TRUE(set1_handle.has_value());
+
+  // Begin starting Set 2 with include_tx_power_level=true so
+  // LE_Set_Extended_Advertising_Parameters is in flight while Set 1 receives an
+  // incoming connection and LE_Advertising_Set_Terminated event.
+  fit::closure resume_set2_params;
+  test_device()->pause_responses_for_opcode(
+      hci_spec::kLESetExtendedAdvertisingParameters,
+      [&](fit::closure resume) { resume_set2_params = std::move(resume); });
+  std::optional<Result<AdvertisementId>> set2_result;
+  this->advertiser()->StartAdvertising(
+      kRandomAddress,
+      ad,
+      scan_data,
+      set2_options,
+      nullptr,
+      [&](Result<AdvertisementId> result) { set2_result = result; });
+  std::optional<hci_spec::AdvertisingHandle> set2_handle =
+      this->advertiser()->LastUsedHandleForTesting();
+  ASSERT_TRUE(set2_handle.has_value());
+  EXPECT_NE(*set1_handle, *set2_handle);
+
+  this->advertiser()->OnIncomingConnection(
+      kConnectionHandle,
+      pw::bluetooth::emboss::ConnectionRole::PERIPHERAL,
+      kRandomAddress,
+      hci_spec::LEConnectionParameters());
+  test_device()->SendLEAdvertisingSetTerminatedEvent(kConnectionHandle,
+                                                     set1_handle.value());
+  RunUntilIdle();
+
+  ASSERT_NE(nullptr, set1_link);
+  ASSERT_FALSE(set2_result.has_value());
+  ASSERT_TRUE(resume_set2_params);
+  resume_set2_params();
+  RunUntilIdle();
+
+  ASSERT_TRUE(set2_result.has_value());
+  ASSERT_TRUE(set2_result->is_ok());
+  const LEAdvertisingState& st =
+      test_device()->extended_advertising_state(set2_handle.value());
+  AdvertisingData::ParseResult actual_ad =
+      AdvertisingData::FromBytes(st.advertised_view());
+  ASSERT_EQ(fit::ok(), actual_ad);
+  EXPECT_EQ(hci_spec::kLEAdvertisingTxPowerMax, actual_ad.value().tx_power());
 }
 
 }  // namespace
