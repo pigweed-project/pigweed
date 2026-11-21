@@ -71,6 +71,9 @@ class TestDelegate : public PeriodicAdvertisingSynchronizer::Delegate {
     sync_lost_count_++;
     last_sync_id_ = id;
     last_error_ = error;
+    if (on_sync_lost_cb_) {
+      on_sync_lost_cb_();
+    }
   }
 
   void OnAdvertisingReport(
@@ -111,6 +114,10 @@ class TestDelegate : public PeriodicAdvertisingSynchronizer::Delegate {
     return last_big_info_;
   }
 
+  void set_on_sync_lost_callback(fit::closure cb) {
+    on_sync_lost_cb_ = std::move(cb);
+  }
+
  private:
   int sync_established_count_ = 0;
   int sync_lost_count_ = 0;
@@ -125,6 +132,7 @@ class TestDelegate : public PeriodicAdvertisingSynchronizer::Delegate {
       last_report_;
   std::optional<PeriodicAdvertisingSynchronizer::BroadcastIsochronousGroupInfo>
       last_big_info_;
+  fit::closure on_sync_lost_cb_;
 };
 
 class PeriodicAdvertisingSynchronizerTest : public TestingBase {
@@ -239,6 +247,8 @@ class PeriodicAdvertisingSynchronizerTest : public TestingBase {
   PeriodicAdvertisingSynchronizer* synchronizer() {
     return &synchronizer_.value();
   }
+
+  void DestroySynchronizer() { synchronizer_.reset(); }
 
  private:
   std::optional<PeriodicAdvertisingSynchronizer> synchronizer_;
@@ -2422,6 +2432,269 @@ TEST_F(PeriodicAdvertisingSynchronizerTest, MalformedBigInfoReport) {
 
   EXPECT_EQ(delegate.big_info_count(), 0);
   ExpectTerminateSync(test_device(), kSyncHandle);
+}
+
+TEST_F(PeriodicAdvertisingSynchronizerTest,
+       DuplicateSyncHandleTerminatesAndNotifiesBothDelegates) {
+  TestDelegate delegate_a;
+  DeviceAddress addr_a(DeviceAddress::Type::kLEPublic, {1});
+  constexpr uint8_t kAdvSidA = 1;
+  constexpr hci_spec::SyncHandle kReusedHandle = 0x0042;
+
+  std::optional<PeriodicAdvertisingSync> sync_a =
+      CreateSyncAndExpectSuccess(delegate_a, addr_a, kAdvSidA, kReusedHandle);
+  ASSERT_TRUE(sync_a.has_value());
+  EXPECT_EQ(1, delegate_a.sync_established_count());
+  EXPECT_EQ(0, delegate_a.sync_lost_count());
+
+  // Start a second sync for a different advertiser.
+  TestDelegate delegate_b;
+  DeviceAddress addr_b(DeviceAddress::Type::kLEPublic, {2});
+  constexpr uint8_t kAdvSidB = 2;
+
+  auto add_b_packet =
+      bt::testing::LEAddDeviceToPeriodicAdvertiserListPacket(addr_b, kAdvSidB);
+  auto add_b_complete = bt::testing::CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::LE_ADD_DEVICE_TO_PERIODIC_ADVERTISER_LIST,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(), add_b_packet, &add_b_complete);
+
+  auto create_sync_status = bt::testing::CommandStatusPacket(
+      pw::bluetooth::emboss::OpCode::LE_PERIODIC_ADVERTISING_CREATE_SYNC,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        CreateSyncPacket(/*filter_duplicates=*/true,
+                                         /*use_periodic_advertiser_list=*/true),
+                        &create_sync_status);
+
+  auto sync_b_result = synchronizer()->CreateSync(
+      addr_b, kAdvSidB, {.filter_duplicates = true}, delegate_b);
+  ASSERT_TRUE(sync_b_result.is_ok());
+  RunUntilIdle();
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+
+  // Controller erroneously reuses kReusedHandle for sync B. The host must
+  // remove B from the advertiser list, send Terminate_Sync once for
+  // kReusedHandle, and notify both delegates via OnSyncLost.
+  auto remove_b_packet =
+      bt::testing::LERemoveDeviceFromPeriodicAdvertiserListPacket(addr_b,
+                                                                  kAdvSidB);
+  auto remove_b_complete = bt::testing::CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::
+          LE_REMOVE_DEVICE_FROM_PERIODIC_ADVERTISER_LIST,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(), remove_b_packet, &remove_b_complete);
+  ExpectTerminateSync(test_device(), kReusedHandle);
+
+  DynamicByteBuffer reused_event =
+      bt::testing::LEPeriodicAdvertisingSyncEstablishedEventPacketV1(
+          pw::bluetooth::emboss::StatusCode::SUCCESS,
+          kReusedHandle,
+          kAdvSidB,
+          addr_b,
+          pw::bluetooth::emboss::LEPhy::LE_1M,
+          /*interval=*/0x000A,
+          pw::bluetooth::emboss::LEClockAccuracy::PPM_500);
+  test_device()->SendCommandChannelPacket(reused_event);
+  RunUntilIdle();
+
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+  EXPECT_EQ(1, delegate_a.sync_lost_count());
+  ASSERT_TRUE(delegate_a.last_error().has_value());
+  EXPECT_EQ(Error(HostError::kFailed), *delegate_a.last_error());
+  EXPECT_EQ(sync_a->id(), delegate_a.last_sync_id());
+
+  EXPECT_EQ(0, delegate_b.sync_established_count());
+  EXPECT_EQ(1, delegate_b.sync_lost_count());
+  ASSERT_TRUE(delegate_b.last_error().has_value());
+  EXPECT_EQ(Error(HostError::kFailed), *delegate_b.last_error());
+  EXPECT_EQ(sync_b_result->id(), delegate_b.last_sync_id());
+
+  // Dropping both RAII handles afterward must be a clean no-op (no duplicate
+  // Terminate_Sync commands sent).
+  sync_a.reset();
+  sync_b_result->Cancel();
+  RunUntilIdle();
+}
+
+TEST_F(
+    PeriodicAdvertisingSynchronizerTest,
+    UnsolicitedSyncEstablishedWhileIdleReusingHandleTerminatesAndNotifiesDelegate) {
+  TestDelegate delegate_a;
+  DeviceAddress addr_a(DeviceAddress::Type::kLEPublic, {1});
+  constexpr uint8_t kAdvSidA = 1;
+  constexpr hci_spec::SyncHandle kReusedHandle = 0x0042;
+
+  std::optional<PeriodicAdvertisingSync> sync_a =
+      CreateSyncAndExpectSuccess(delegate_a, addr_a, kAdvSidA, kReusedHandle);
+  ASSERT_TRUE(sync_a.has_value());
+
+  ExpectTerminateSync(test_device(), kReusedHandle);
+
+  DeviceAddress unsolicited_addr(DeviceAddress::Type::kLEPublic, {2});
+  constexpr uint8_t kUnsolicitedSid = 2;
+  DynamicByteBuffer unsolicited_event =
+      bt::testing::LEPeriodicAdvertisingSyncEstablishedEventPacketV1(
+          pw::bluetooth::emboss::StatusCode::SUCCESS,
+          kReusedHandle,
+          kUnsolicitedSid,
+          unsolicited_addr,
+          pw::bluetooth::emboss::LEPhy::LE_1M,
+          /*interval=*/0x000A,
+          pw::bluetooth::emboss::LEClockAccuracy::PPM_500);
+  test_device()->SendCommandChannelPacket(unsolicited_event);
+  RunUntilIdle();
+
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+  EXPECT_EQ(1, delegate_a.sync_lost_count());
+  ASSERT_TRUE(delegate_a.last_error().has_value());
+  EXPECT_EQ(Error(HostError::kFailed), *delegate_a.last_error());
+  EXPECT_EQ(sync_a->id(), delegate_a.last_sync_id());
+
+  sync_a.reset();
+  RunUntilIdle();
+}
+
+TEST_F(
+    PeriodicAdvertisingSynchronizerTest,
+    UnmatchedSyncEstablishedWhilePendingReusingHandleTerminatesAndReissuesCreateSync) {
+  TestDelegate delegate_a;
+  DeviceAddress addr_a(DeviceAddress::Type::kLEPublic, {1});
+  constexpr uint8_t kAdvSidA = 1;
+  constexpr hci_spec::SyncHandle kReusedHandle = 0x0042;
+
+  std::optional<PeriodicAdvertisingSync> sync_a =
+      CreateSyncAndExpectSuccess(delegate_a, addr_a, kAdvSidA, kReusedHandle);
+  ASSERT_TRUE(sync_a.has_value());
+
+  TestDelegate delegate_b;
+  DeviceAddress addr_b(DeviceAddress::Type::kLEPublic, {2});
+  constexpr uint8_t kAdvSidB = 2;
+
+  auto add_b_packet =
+      bt::testing::LEAddDeviceToPeriodicAdvertiserListPacket(addr_b, kAdvSidB);
+  auto add_b_complete = bt::testing::CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::LE_ADD_DEVICE_TO_PERIODIC_ADVERTISER_LIST,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(), add_b_packet, &add_b_complete);
+
+  auto create_sync_status = bt::testing::CommandStatusPacket(
+      pw::bluetooth::emboss::OpCode::LE_PERIODIC_ADVERTISING_CREATE_SYNC,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        CreateSyncPacket(/*filter_duplicates=*/true,
+                                         /*use_periodic_advertiser_list=*/true),
+                        &create_sync_status);
+
+  auto sync_b_result = synchronizer()->CreateSync(
+      addr_b, kAdvSidB, {.filter_duplicates = true}, delegate_b);
+  ASSERT_TRUE(sync_b_result.is_ok());
+  RunUntilIdle();
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+
+  // Unmatched (addr_c, kAdvSidC) arrives reusing kReusedHandle while sync_b is
+  // pending: Terminate_Sync is sent, Create_Sync is re-issued for sync_b, and
+  // only delegate_a is notified of sync loss.
+  ExpectTerminateSync(test_device(), kReusedHandle);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        CreateSyncPacket(/*filter_duplicates=*/true,
+                                         /*use_periodic_advertiser_list=*/true),
+                        &create_sync_status);
+
+  DeviceAddress addr_c(DeviceAddress::Type::kLEPublic, {3});
+  constexpr uint8_t kAdvSidC = 3;
+  DynamicByteBuffer unmatched_event =
+      bt::testing::LEPeriodicAdvertisingSyncEstablishedEventPacketV1(
+          pw::bluetooth::emboss::StatusCode::SUCCESS,
+          kReusedHandle,
+          kAdvSidC,
+          addr_c,
+          pw::bluetooth::emboss::LEPhy::LE_1M,
+          /*interval=*/0x000A,
+          pw::bluetooth::emboss::LEClockAccuracy::PPM_500);
+  test_device()->SendCommandChannelPacket(unmatched_event);
+  RunUntilIdle();
+
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+  EXPECT_EQ(1, delegate_a.sync_lost_count());
+  ASSERT_TRUE(delegate_a.last_error().has_value());
+  EXPECT_EQ(Error(HostError::kFailed), *delegate_a.last_error());
+  EXPECT_EQ(sync_a->id(), delegate_a.last_sync_id());
+
+  EXPECT_EQ(0, delegate_b.sync_established_count());
+  EXPECT_EQ(0, delegate_b.sync_lost_count());
+
+  DestroySynchronizer();
+  sync_a.reset();
+  sync_b_result->Cancel();
+  RunUntilIdle();
+}
+
+TEST_F(
+    PeriodicAdvertisingSynchronizerTest,
+    DuplicateSyncHandleDestroyingSynchronizerInFirstOnSyncLostSkipsSecondDelegate) {
+  TestDelegate delegate_a;
+  DeviceAddress addr_a(DeviceAddress::Type::kLEPublic, {1});
+  constexpr uint8_t kAdvSidA = 1;
+  constexpr hci_spec::SyncHandle kReusedHandle = 0x0042;
+
+  std::optional<PeriodicAdvertisingSync> sync_a =
+      CreateSyncAndExpectSuccess(delegate_a, addr_a, kAdvSidA, kReusedHandle);
+  ASSERT_TRUE(sync_a.has_value());
+
+  delegate_a.set_on_sync_lost_callback([this]() { DestroySynchronizer(); });
+
+  TestDelegate delegate_b;
+  DeviceAddress addr_b(DeviceAddress::Type::kLEPublic, {2});
+  constexpr uint8_t kAdvSidB = 2;
+
+  auto add_b_packet =
+      bt::testing::LEAddDeviceToPeriodicAdvertiserListPacket(addr_b, kAdvSidB);
+  auto add_b_complete = bt::testing::CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::LE_ADD_DEVICE_TO_PERIODIC_ADVERTISER_LIST,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(), add_b_packet, &add_b_complete);
+
+  auto create_sync_status = bt::testing::CommandStatusPacket(
+      pw::bluetooth::emboss::OpCode::LE_PERIODIC_ADVERTISING_CREATE_SYNC,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(),
+                        CreateSyncPacket(/*filter_duplicates=*/true,
+                                         /*use_periodic_advertiser_list=*/true),
+                        &create_sync_status);
+
+  auto sync_b_result = synchronizer()->CreateSync(
+      addr_b, kAdvSidB, {.filter_duplicates = true}, delegate_b);
+  ASSERT_TRUE(sync_b_result.is_ok());
+  RunUntilIdle();
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+
+  auto remove_b_packet =
+      bt::testing::LERemoveDeviceFromPeriodicAdvertiserListPacket(addr_b,
+                                                                  kAdvSidB);
+  auto remove_b_complete = bt::testing::CommandCompletePacket(
+      pw::bluetooth::emboss::OpCode::
+          LE_REMOVE_DEVICE_FROM_PERIODIC_ADVERTISER_LIST,
+      pw::bluetooth::emboss::StatusCode::SUCCESS);
+  EXPECT_CMD_PACKET_OUT(test_device(), remove_b_packet, &remove_b_complete);
+  ExpectTerminateSync(test_device(), kReusedHandle);
+
+  DynamicByteBuffer reused_event =
+      bt::testing::LEPeriodicAdvertisingSyncEstablishedEventPacketV1(
+          pw::bluetooth::emboss::StatusCode::SUCCESS,
+          kReusedHandle,
+          kAdvSidB,
+          addr_b,
+          pw::bluetooth::emboss::LEPhy::LE_1M,
+          /*interval=*/0x000A,
+          pw::bluetooth::emboss::LEClockAccuracy::PPM_500);
+  test_device()->SendCommandChannelPacket(reused_event);
+  RunUntilIdle();
+
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+  EXPECT_EQ(1, delegate_a.sync_lost_count());
+  EXPECT_EQ(0, delegate_b.sync_established_count());
+  EXPECT_EQ(0, delegate_b.sync_lost_count());
 }
 
 }  // namespace

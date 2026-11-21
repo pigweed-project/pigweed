@@ -762,7 +762,12 @@ void PeriodicAdvertisingSynchronizer::OnSyncEstablished(
            "Unexpected sync established event in state: %d",
            static_cast<int>(state_));
     if (parsed_event->status == StatusCode::SUCCESS) {
+      auto existing_node = syncs_.extract(parsed_event->sync_handle);
       SendTerminateSyncCommand(parsed_event->sync_handle);
+      if (!existing_node.empty()) {
+        existing_node.mapped().delegate->OnSyncLost(existing_node.mapped().id,
+                                                    Error(HostError::kFailed));
+      }
     }
     return;
   }
@@ -799,8 +804,13 @@ void PeriodicAdvertisingSynchronizer::OnSyncEstablished(
            "hci",
            "unexpected sync established event, terminating sync (handle: %d)",
            parsed_event->sync_handle);
+    auto existing_node = syncs_.extract(parsed_event->sync_handle);
     SendTerminateSyncCommand(parsed_event->sync_handle);
     MaybeUpdateAdvertiserList();
+    if (!existing_node.empty()) {
+      existing_node.mapped().delegate->OnSyncLost(existing_node.mapped().id,
+                                                  Error(HostError::kFailed));
+    }
     return;
   }
 
@@ -809,9 +819,21 @@ void PeriodicAdvertisingSynchronizer::OnSyncEstablished(
 
   MaybeUpdateAdvertiserList();
 
-  if (parsed_event->status != StatusCode::SUCCESS) {
-    pending_req.delegate->OnSyncLost(
-        pending_req.id, ToResult(parsed_event->status).error_value());
+  if (auto existing_node = syncs_.extract(parsed_event->sync_handle);
+      !existing_node.empty()) {
+    bt_log(WARN,
+           "hci",
+           "controller reused active periodic sync handle %#x; terminating "
+           "both syncs",
+           parsed_event->sync_handle);
+    SendTerminateSyncCommand(parsed_event->sync_handle);
+    auto self = weak_self_.GetWeakPtr();
+    existing_node.mapped().delegate->OnSyncLost(existing_node.mapped().id,
+                                                Error(HostError::kFailed));
+    if (self.is_alive()) {
+      pending_req.delegate->OnSyncLost(pending_req.id,
+                                       Error(HostError::kFailed));
+    }
     return;
   }
 
