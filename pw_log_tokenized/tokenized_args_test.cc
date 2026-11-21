@@ -252,17 +252,17 @@ TEST(TokenizedArgs, LogStatusIsCodeAndMessageInOneWord_TokenizingBackend) {
   EXPECT_EQ(PW_LOG_STATUS(pw::StatusWithSize::ResourceExhausted(8)), 8u);
 
   // pw_tokenizer's Python detokenizer tests decode this word as
-  // "NOT_FOUND: No such key".
+  // "NOT_FOUND (No such key)".
   const pw::Status not_found =
       pw::Status::NotFound(PW_STATUS_MSG("No such key"));
-  EXPECT_EQ(PW_LOG_STATUS(not_found), 0xfe8fd645u);
-  EXPECT_EQ(PW_LOG_STATUS(pw::Result<int>(not_found)), 0xfe8fd645u);
+  EXPECT_EQ(PW_LOG_STATUS(not_found), 0xf260ec85u);
+  EXPECT_EQ(PW_LOG_STATUS(pw::Result<int>(not_found)), 0xf260ec85u);
 
   // The message's token is that of its string, as logged, with the code's bits
   // masked off.
   const LinkStatus link_down(Link::kDown, PW_STATUS_MSG("Cable unplugged"));
   EXPECT_EQ(PW_LOG_STATUS(link_down),
-            pw::tokenizer::Hash(": Cable unplugged") & 0xFFFFFFFEu);
+            pw::tokenizer::Hash(" (Cable unplugged)") & 0xFFFFFFFEu);
   EXPECT_EQ(PW_LOG_STATUS(LinkStatus()), 1u);
 
   // Statuses that do not support messages are only their code.
@@ -379,7 +379,7 @@ TEST(TokenizedArgs, LogStatusDetokenizes_TokenizingBackend) {
   EXPECT_DETOKENIZED("pw=${::pw::Status/5,::pw::Status::Message}#00000005",
                      "pw=" PW_STATUS_FMT,
                      PW_LOG_STATUS(not_found));
-  EXPECT_DETOKENIZED("pw=${::pw::Status/5,::pw::Status::Message}#fe8fd645",
+  EXPECT_DETOKENIZED("pw=${::pw::Status/5,::pw::Status::Message}#f260ec85",
                      "pw=" PW_STATUS_FMT,
                      PW_LOG_STATUS(with_message));
 #else

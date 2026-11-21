@@ -790,17 +790,17 @@ TEST(StatusMessageTest, StoredFormDependsOnStorageType) {
   static_assert(std::is_same_v<decltype(enabled.Evaluate<NoStorage>()),
                                pw::internal::EmptyStatusMessage>);
 
-  // Messages are stored with the ": " separator that is logged between the
-  // status code and message.
-  EXPECT_STREQ(enabled.Evaluate<StringStorage>(), ": Sector CRC error");
-  EXPECT_STREQ(enabled_empty.Evaluate<StringStorage>(), ": ");
+  // Messages are stored as the text that is logged after the status code: the
+  // message in parentheses, after a space.
+  EXPECT_STREQ(enabled.Evaluate<StringStorage>(), " (Sector CRC error)");
+  EXPECT_STREQ(enabled_empty.Evaluate<StringStorage>(), " ()");
 
   // The token is the one PW_TOKENIZE_STRING_MASK gives the stored string with
   // the storage's token mask. pw_Status codes use the low 5 bits.
   EXPECT_EQ(enabled.Evaluate<TokenStorage>(),
-            pw::tokenizer::Hash(": Sector CRC error") & 0xFFFFFFE0u);
+            pw::tokenizer::Hash(" (Sector CRC error)") & 0xFFFFFFE0u);
   EXPECT_EQ(enabled_empty.Evaluate<TokenStorage>(),
-            pw::tokenizer::Hash(": ") & 0xFFFFFFE0u);
+            pw::tokenizer::Hash(" ()") & 0xFFFFFFE0u);
 
   const auto disabled = _PW_STATUS_MSG_DISABLED("Sector CRC error");
   static_assert(std::is_same_v<decltype(disabled.Evaluate<NoStorage>()),
@@ -871,18 +871,18 @@ PW_CONSTEXPR_TEST(StatusStorageTest, StringLiteral, {
   Storage no_message(PW_STATUS_INTERNAL, nullptr);
   PW_TEST_EXPECT_FALSE(no_message.has_message());
 
-  Storage err(PW_STATUS_INTERNAL, ": Detail");
+  Storage err(PW_STATUS_INTERNAL, " (Detail)");
   PW_TEST_EXPECT_FALSE(err.ok());
   PW_TEST_EXPECT_EQ(err.code(), PW_STATUS_INTERNAL);
   PW_TEST_EXPECT_TRUE(err.has_message());
-  PW_TEST_EXPECT_STREQ(err.message(), ": Detail");
+  PW_TEST_EXPECT_STREQ(err.message(), " (Detail)");
 
   // An empty string is a message, unlike a null pointer.
   Storage empty_message(PW_STATUS_INTERNAL, "");
   PW_TEST_EXPECT_TRUE(empty_message.has_message());
   PW_TEST_EXPECT_STREQ(empty_message.message(), "");
 
-  Storage ok_with_message(PW_STATUS_OK, ": Detail");
+  Storage ok_with_message(PW_STATUS_OK, " (Detail)");
   PW_TEST_EXPECT_TRUE(ok_with_message.ok());
   PW_TEST_EXPECT_FALSE(ok_with_message.has_message());
   PW_TEST_EXPECT_TRUE(ok_with_message.message() == nullptr);

@@ -698,7 +698,7 @@ TEST(PwEnumStatusTest, StatusFmtLogsMessageWithLogStatus) {
       logged, PW_TESTING_PLAIN_TEST_STATUS_FMT, PW_LOG_STATUS(failed)));
 #if PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_TOKENIZED
   constexpr uint32_t kExpectedWord =
-      (pw::tokenizer::Hash(": Bad baud rate") & 0xFFFFFFFEu) | 1u;
+      (pw::tokenizer::Hash(" (Bad baud rate)") & 0xFFFFFFFEu) | 1u;
   pw::InlineString<256> expected;
   PW_TEST_ASSERT_OK(pw::string::Format(
       expected,
@@ -707,7 +707,7 @@ TEST(PwEnumStatusTest, StatusFmtLogsMessageWithLogStatus) {
       kExpectedWord));
   EXPECT_STREQ(logged.c_str(), expected.c_str());
 #elif PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_STRING
-  EXPECT_STREQ(logged.c_str(), "FAILED: Bad baud rate");
+  EXPECT_STREQ(logged.c_str(), "FAILED (Bad baud rate)");
 #else
   EXPECT_STREQ(logged.c_str(), kLoggedFailedStatus);
 #endif  // PW_STATUS_CFG_MESSAGES

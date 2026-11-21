@@ -182,7 +182,8 @@ For each status class, ``pw_enum`` generates:
 
 * ``<STATUS>_FMT`` (e.g. ``MY_DRIVER_I2C_STATUS_FMT``): Pair with
   :cc:`PW_LOG_STATUS` to log the status code together with its message, if it
-  has one (``"CODE: message"`` or ``"CODE"``).
+  has one (``CODE (message)`` or ``CODE``). See the :ref:`pw_status logging
+  guide <module-pw_status-logging>`.
 * ``<STATUS>_CODE_FMT`` (e.g. ``MY_DRIVER_I2C_STATUS_CODE_FMT``): Pair with
   :cc:`PW_LOG_ENUM` to log only the status code.
 * ``<STATUS>_DOMAIN`` (e.g. ``MY_DRIVER_I2C_STATUS_DOMAIN``): Alias for the

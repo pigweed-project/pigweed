@@ -60,8 +60,8 @@ I2cStatus ReadSensor(bool ack) {
 // DOCSTAG: [pw_enum-examples-status-enum-logging]
 void LogI2cStatus(const I2cStatus& status) {
   // Log the status and its message: pair <STATUS>_FMT with PW_LOG_STATUS. Logs
-  // "OK" or "NACK: No ACK from sensor" (just "NACK" unless
-  // PW_STATUS_CFG_MESSAGES enables messages).
+  // "I2C result: OK" or "I2C result: NACK (No ACK from sensor)" (just
+  // "I2C result: NACK" unless PW_STATUS_CFG_MESSAGES enables messages).
   PW_LOG_INFO("I2C result: " MY_DRIVER_I2C_STATUS_FMT, PW_LOG_STATUS(status));
 
   // Log only the status code: pair <STATUS>_CODE_FMT with PW_LOG_ENUM.

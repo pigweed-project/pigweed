@@ -70,6 +70,36 @@ The ``pw_log`` facade also exposes a handful of macros that only apply
 specifically to tokenized logging. See :ref:`module-pw_log-tokenized-args` for
 details.
 
+.. _module-pw_log-status:
+
+Logging statuses
+================
+To log a :cc:`pw::Status`, describe what failed, then log the status with
+:cc:`PW_STATUS_FMT` and :cc:`PW_LOG_STATUS` from ``pw_log/status.h``
+(``//pw_log:status``):
+
+.. literalinclude:: log_status_test.cc
+   :language: cpp
+   :start-after: [pw_log-status-example]
+   :end-before: [pw_log-status-example]
+
+The status is logged by name. If it has a :ref:`message
+<module-pw_status-messages>`, the message follows in parentheses:
+
+.. code-block:: output
+
+   Read failed: OUT_OF_RANGE
+   Read failed: INVALID_ARGUMENT (Sector cannot be negative)
+
+This works with every ``pw_log`` backend. Prefer it to logging ``status.str()``
+with ``%s``, which leaves out the message and is logged as a string rather than
+a token by tokenizing backends.
+
+See the :ref:`pw_status logging guide <module-pw_status-logging>` for logging a
+:cc:`pw::Result`, custom status types, or only the status code. See
+:ref:`PW_LOG_STATUS details <module-pw_log-tokenized-args-status>` for what is
+logged in each configuration.
+
 Layer diagram example: ``stm32f429i-disc1``
 ===========================================
 Below is an example diagram showing how the modules connect together for the

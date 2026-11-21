@@ -94,7 +94,7 @@
 /// @code{.cpp}
 ///   // A 5-bit code tokenized in "codes" and a 27-bit message token.
 ///   const uint32_t message =
-///       PW_TOKENIZE_STRING_MASK("messages", 0xFFFFFFE0, ": No such key");
+///       PW_TOKENIZE_STRING_MASK("messages", 0xFFFFFFE0, " (No such key)");
 ///   PW_LOG_WARN("Failed: " PW_TOKEN_BIT_FIELD_FMT("codes", 5, "messages"),
 ///               message | (code & 0x1F));
 /// @endcode

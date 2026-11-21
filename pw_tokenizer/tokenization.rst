@@ -289,10 +289,10 @@ than ``0``), giving the number of low bits of ``TOKEN`` that are looked up in
 ``LOW_DOMAIN``. The remaining ``32 - BITS`` high bits are looked up in
 ``HIGH_DOMAIN``. The detokenizer replaces the nested token with the low field's
 string followed immediately by the high field's string. For example, if ``0x5``
-is ``NOT_FOUND`` in the ``::pw::Status`` domain and ``0xfe8fd640`` is
-``: No such key`` in the ``pw_status_message`` domain,
-``${::pw::Status/5,pw_status_message}#fe8fd645`` is detokenized as
-``NOT_FOUND: No such key``.
+is ``NOT_FOUND`` in the ``::pw::Status`` domain and ``0xf260ec80`` is
+``" (No such key)"`` in the ``pw_status_message`` domain,
+``${::pw::Status/5,pw_status_message}#f260ec85`` is detokenized as
+``NOT_FOUND (No such key)``.
 
 * **Domains**: ``LOW_DOMAIN`` and ``HIGH_DOMAIN`` each specify a
   :ref:`domain <module-pw_tokenizer-domains>`: a domain name, empty (``""``) for
@@ -305,7 +305,7 @@ is ``NOT_FOUND`` in the ``::pw::Status`` domain and ``0xfe8fd640`` is
   ``$`` and ``{``, inside ``BITS``, after ``}``, or inside ``[BASE]#TOKEN``.
 * **Masking**: Fields are masked in place, not shifted. In the example above,
   the low field's token is ``0x00000005`` and the high field's token is
-  ``0xfe8fd640``.
+  ``0xf260ec80``.
 * **Zero-width fields**: A field with no bits (``BITS`` is ``0`` or ``32``) is
   inactive; it is not looked up and produces no output.
 * **Zero values**: An active field with a value of ``0`` is looked up like any
@@ -318,7 +318,7 @@ is ``NOT_FOUND`` in the ``::pw::Status`` domain and ``0xfe8fd640`` is
   (``${DOMAIN}#xxxxxxxx`` using the configured prefix, whitespace-stripped
   domain with ``{}`` retained even if empty, and 8 lowercase zero-padded hex
   digits), regardless of the input base or whitespace:
-  ``NOT_FOUND${pw_status_message}#fe8fd640``. If no active field can be
+  ``NOT_FOUND${pw_status_message}#f260ec80``. If no active field can be
   detokenized (including when ``BITS`` is ``0`` or ``32`` and the single active
   field is unresolved), the text is left unchanged.
 * **Base**: ``#`` is required. ``BASE`` may be ``16`` (or omitted, so ``#`` and

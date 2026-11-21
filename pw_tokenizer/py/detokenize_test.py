@@ -1367,14 +1367,14 @@ class DetokenizeBitFieldTokens(unittest.TestCase):
     # The token and domain names match the BitFieldToken test in
     # tokenize_test.cc, which encodes MESSAGE.
     FORMAT = 'Read failed: ${::pw::Status/5,pw_status_message}#%08x'
-    MESSAGE = b'\x3b\x8b\xaa\x1c\xf5\xa6\x81\x17'
+    MESSAGE = b'\x3b\x8b\xaa\x1c\xf5\xcd\xf8\xd9\x01'
 
     # The low domain is itself a nested token: the token of '::pw::Status' in
     # 'enum_domain', followed by the same bit field token as MESSAGE.
     NESTED_FORMAT = (
         'Read failed: ${${enum_domain}#%08x/5,pw_status_message}#%08x'
     )
-    NESTED_MESSAGE = b'\x31\x3c\x14\x57\xf5\xd5\x82\xd5\x0a\xf5\xa6\x81\x17'
+    NESTED_MESSAGE = b'\x31\x3c\x14\x57\xf5\xd5\x82\xd5\x0a\xf5\xcd\xf8\xd9\x01'
     NESTED_HIGH_FORMAT = (
         'Read failed: ${::pw::Status/5,${enum_domain}#%08x}#%08x'
     )
@@ -1390,7 +1390,7 @@ class DetokenizeBitFieldTokens(unittest.TestCase):
                 tokens.TokenizedStringEntry(0, 'OK', '::pw::Status'),
                 tokens.TokenizedStringEntry(5, 'NOT_FOUND', '::pw::Status'),
                 tokens.TokenizedStringEntry(
-                    0xFE8FD640, ': No such key', 'pw_status_message'
+                    0xF260EC80, ' (No such key)', 'pw_status_message'
                 ),
                 # Not a valid 27-bit token; only matches if the low field is
                 # looked up in the wrong domain.
@@ -1404,7 +1404,7 @@ class DetokenizeBitFieldTokens(unittest.TestCase):
                 ),
                 tokens.TokenizedStringEntry(0x65, 'pw_status_message', ''),
                 tokens.TokenizedStringEntry(5, 'five', ''),
-                tokens.TokenizedStringEntry(0xFE8FD640, ' and the rest', ''),
+                tokens.TokenizedStringEntry(0xF260EC80, ' and the rest', ''),
                 tokens.TokenizedStringEntry(1, 'one', ''),
                 tokens.TokenizedStringEntry(3, 'three', 'D'),
             ]
@@ -1422,27 +1422,27 @@ class DetokenizeBitFieldTokens(unittest.TestCase):
         self.detok = detokenize.Detokenizer(self.db)
 
     def test_both_fields(self) -> None:
-        for token in ('#fe8fd645', '#FE8FD645', '16#fe8fd645', '10#4270839365'):
+        for token in ('#f260ec85', '#F260EC85', '16#f260ec85', '10#4066438277'):
             text = '${::pw::Status/5,pw_status_message}' + token
             self.assertEqual(
                 self.detok.detokenize_text(text),
-                'NOT_FOUND: No such key',
+                'NOT_FOUND (No such key)',
                 text,
             )
 
         self.assertEqual(
             self.detok.detokenize_text(
-                b'${::pw::Status/5,pw_status_message}#fe8fd645'
+                b'${::pw::Status/5,pw_status_message}#f260ec85'
             ),
-            b'NOT_FOUND: No such key',
+            b'NOT_FOUND (No such key)',
         )
 
     def test_low_field_of_zero_is_looked_up(self) -> None:
         self.assertEqual(
             self.detok.detokenize_text(
-                '${::pw::Status/5,pw_status_message}#fe8fd640'
+                '${::pw::Status/5,pw_status_message}#f260ec80'
             ),
-            'OK: No such key',
+            'OK (No such key)',
         )
 
     def test_zero_width_field_is_skipped(self) -> None:
@@ -1455,9 +1455,9 @@ class DetokenizeBitFieldTokens(unittest.TestCase):
         )
         self.assertEqual(
             self.detok.detokenize_text(
-                '${::pw::Status/0,pw_status_message}#fe8fd640'
+                '${::pw::Status/0,pw_status_message}#f260ec80'
             ),
-            ': No such key',
+            ' (No such key)',
             'A 0-bit low field should not be looked up as token 0',
         )
 
@@ -1477,9 +1477,9 @@ class DetokenizeBitFieldTokens(unittest.TestCase):
         )
         self.assertEqual(
             self.detok.detokenize_text(
-                '${::pw::Status/5,pw_status_message}#fe8fd647'
+                '${::pw::Status/5,pw_status_message}#f260ec87'
             ),
-            '${::pw::Status}#00000007: No such key',
+            '${::pw::Status}#00000007 (No such key)',
         )
         self.assertEqual(
             self.detok.detokenize_text(
@@ -1493,7 +1493,7 @@ class DetokenizeBitFieldTokens(unittest.TestCase):
         for text in (
             '${::pw::Status/5,pw_status_message}#000000a7',
             '${unknown/5,pw_status_message}#000000a5',
-            '${unknown/5,another}#fe8fd645',
+            '${unknown/5,another}#f260ec85',
         ):
             self.assertEqual(self.detok.detokenize_text(text), text)
 
@@ -1502,8 +1502,8 @@ class DetokenizeBitFieldTokens(unittest.TestCase):
             [
                 tokens.TokenizedStringEntry(5, 'COLLISION', '::pw::Status'),
                 tokens.TokenizedStringEntry(
-                    0xFE8FD640,
-                    ': Removed',
+                    0xF260EC80,
+                    ' (Removed)',
                     'pw_status_message',
                     dt.datetime(2020, 1, 1),
                 ),
@@ -1513,44 +1513,44 @@ class DetokenizeBitFieldTokens(unittest.TestCase):
 
         self.assertEqual(
             detok.detokenize_text(
-                '${::pw::Status/5,pw_status_message}#fe8fd645'
+                '${::pw::Status/5,pw_status_message}#f260ec85'
             ),
-            '${::pw::Status}#00000005: No such key',
+            '${::pw::Status}#00000005 (No such key)',
             'Two active matches do not decode; one active match does',
         )
 
     def test_empty_domains(self) -> None:
         self.assertEqual(
-            self.detok.detokenize_text('${/5,}#fe8fd645'),
+            self.detok.detokenize_text('${/5,}#f260ec85'),
             'five and the rest',
         )
         self.assertEqual(
-            self.detok.detokenize_text('${::pw::Status/5,}#fe8fd645'),
+            self.detok.detokenize_text('${::pw::Status/5,}#f260ec85'),
             'NOT_FOUND and the rest',
         )
         self.assertEqual(
-            self.detok.detokenize_text('${/5,pw_status_message}#fe8fd645'),
-            'five: No such key',
+            self.detok.detokenize_text('${/5,pw_status_message}#f260ec85'),
+            'five (No such key)',
         )
         self.assertEqual(
-            self.detok.detokenize_text('${/5,}#fe8fd647'),
+            self.detok.detokenize_text('${/5,}#f260ec87'),
             '${}#00000007 and the rest',
         )
 
     def test_whitespace(self) -> None:
         for text in (
-            '${ ::pw::Status / 5 , pw_status_message }#fe8fd645',
-            '${::pw:: Status/5,pw_status_ message}#fe8fd645',
-            '${\t::pw::Status\n/\r5 ,\n pw_status_message\t}#fe8fd645',
+            '${ ::pw::Status / 5 , pw_status_message }#f260ec85',
+            '${::pw:: Status/5,pw_status_ message}#f260ec85',
+            '${\t::pw::Status\n/\r5 ,\n pw_status_message\t}#f260ec85',
         ):
             self.assertEqual(
                 self.detok.detokenize_text(text),
-                'NOT_FOUND: No such key',
+                'NOT_FOUND (No such key)',
                 text,
             )
 
         self.assertEqual(
-            self.detok.detokenize_text('${ / 5 , }#fe8fd645'),
+            self.detok.detokenize_text('${ / 5 , }#f260ec85'),
             'five and the rest',
         )
         self.assertEqual(
@@ -1565,9 +1565,9 @@ class DetokenizeBitFieldTokens(unittest.TestCase):
 
         self.assertEqual(
             detok.detokenize_text(
-                '@{::pw::Status/5,pw_status_message}#fe8fd645'
+                '@{::pw::Status/5,pw_status_message}#f260ec85'
             ),
-            'NOT_FOUND: No such key',
+            'NOT_FOUND (No such key)',
         )
         self.assertEqual(
             detok.detokenize_text(
@@ -1577,44 +1577,44 @@ class DetokenizeBitFieldTokens(unittest.TestCase):
         )
         self.assertEqual(
             detok.detokenize_text(
-                '${::pw::Status/5,pw_status_message}#fe8fd645'
+                '${::pw::Status/5,pw_status_message}#f260ec85'
             ),
-            '${::pw::Status/5,pw_status_message}#fe8fd645',
+            '${::pw::Status/5,pw_status_message}#f260ec85',
         )
 
     def test_nested_domains(self) -> None:
         for text in (
-            '${${enum_domain}#aaafaa85/5,pw_status_message}#fe8fd645',
-            '${::pw::Status/5,${enum_domain}#bee7f71f}#fe8fd645',
-            '${::pw::Status/5,$#00000065}#fe8fd645',
-            '${${enum_domain}#aaafaa85/5,${enum_domain}#bee7f71f}#fe8fd645',
-            '${ ${enum_domain}#aaafaa85 / 5 , $#00000065 }#fe8fd645',
+            '${${enum_domain}#aaafaa85/5,pw_status_message}#f260ec85',
+            '${::pw::Status/5,${enum_domain}#bee7f71f}#f260ec85',
+            '${::pw::Status/5,$#00000065}#f260ec85',
+            '${${enum_domain}#aaafaa85/5,${enum_domain}#bee7f71f}#f260ec85',
+            '${ ${enum_domain}#aaafaa85 / 5 , $#00000065 }#f260ec85',
         ):
             self.assertEqual(
                 self.detok.detokenize_text(text),
-                'NOT_FOUND: No such key',
+                'NOT_FOUND (No such key)',
                 text,
             )
 
     def test_nested_domains_unresolved(self) -> None:
         for text in (
-            '${${enum_domain}#00000bad/5,pw_status_message}#fe8fd645',
-            '${::pw::Status/5,${enum_domain}#00000bad}#fe8fd645',
-            '${${enum_domain}#00000bad/5,${enum_domain}#00000bad}#fe8fd645',
+            '${${enum_domain}#00000bad/5,pw_status_message}#f260ec85',
+            '${::pw::Status/5,${enum_domain}#00000bad}#f260ec85',
+            '${${enum_domain}#00000bad/5,${enum_domain}#00000bad}#f260ec85',
         ):
             self.assertEqual(self.detok.detokenize_text(text), text)
 
         self.assertEqual(
             self.detok.detokenize_text(
-                '${${enum_domain}#aaafaa85/5,${enum_domain}#00000bad}#fe8fd645'
+                '${${enum_domain}#aaafaa85/5,${enum_domain}#00000bad}#f260ec85'
             ),
-            '${::pw::Status/5,${enum_domain}#00000bad}#fe8fd645',
+            '${::pw::Status/5,${enum_domain}#00000bad}#f260ec85',
         )
         self.assertEqual(
             self.detok.detokenize_text(
-                '${${enum_domain}#00000bad/5,${enum_domain}#bee7f71f}#fe8fd645'
+                '${${enum_domain}#00000bad/5,${enum_domain}#bee7f71f}#f260ec85'
             ),
-            '${${enum_domain}#00000bad/5,pw_status_message}#fe8fd645',
+            '${${enum_domain}#00000bad/5,pw_status_message}#f260ec85',
         )
 
     def test_field_resolves_to_nested_token(self) -> None:
@@ -1629,9 +1629,9 @@ class DetokenizeBitFieldTokens(unittest.TestCase):
 
         self.assertEqual(
             detok.detokenize_text(
-                '${::pw::Status/5,pw_status_message}#fe8fd649'
+                '${::pw::Status/5,pw_status_message}#f260ec89'
             ),
-            '<three>: No such key',
+            '<three> (No such key)',
         )
 
     def test_field_resolves_to_empty_string(self) -> None:
@@ -1646,13 +1646,13 @@ class DetokenizeBitFieldTokens(unittest.TestCase):
     def test_multiple_tokens(self) -> None:
         self.assertEqual(
             self.detok.detokenize_text(
-                'A ${::pw::Status/5,pw_status_message}#fe8fd645, B $#00000001 '
-                'C ${::pw::Status/5,pw_status_message}#fe8fd640${D}#00000003 '
-                'D ${D}#00000003${/5,}#fe8fd645 E $AQAAAA=='
+                'A ${::pw::Status/5,pw_status_message}#f260ec85, B $#00000001 '
+                'C ${::pw::Status/5,pw_status_message}#f260ec80${D}#00000003 '
+                'D ${D}#00000003${/5,}#f260ec85 E $AQAAAA=='
                 '${::pw::Status/32,}#00000000'
             ),
-            'A NOT_FOUND: No such key, B one '
-            'C OK: No such keythree '
+            'A NOT_FOUND (No such key), B one '
+            'C OK (No such key)three '
             'D threefive and the rest E oneOK',
         )
 
@@ -1686,34 +1686,34 @@ class DetokenizeBitFieldTokens(unittest.TestCase):
             '::pw::Status/5,pw_status_message,::pw::Status',
             '/5,pw_status_message/5,',
         ):
-            text = '${' + spec + '}#fe8fd645'
+            text = '${' + spec + '}#f260ec85'
             self.assertEqual(self.detok.detokenize_text(text), text)
 
     def test_malformed_token_is_unchanged(self) -> None:
         for token in (
             '',
             '#',
-            ' #fe8fd645',
-            '# fe8fd645',
-            '#fe8fd64',
-            '#fe8fd64g',
-            '10 #4270839365',
-            '10# 4270839365',
-            '10#fe8fd645',
-            '10#427083936',
+            ' #f260ec85',
+            '# f260ec85',
+            '#f260ec8',
+            '#f260ec8g',
+            '10 #4066438277',
+            '10# 4066438277',
+            '10#f260ec85',
+            '10#406643827',
             # Fields that would match if the token were truncated to 32 bits.
-            '10#8565806661',
+            '10#8361405573',
         ):
             text = '${::pw::Status/5,pw_status_message}' + token
             self.assertEqual(self.detok.detokenize_text(text), text)
 
-        text = '$ {::pw::Status/5,pw_status_message}#fe8fd645'
+        text = '$ {::pw::Status/5,pw_status_message}#f260ec85'
         self.assertEqual(self.detok.detokenize_text(text), text)
 
     def test_base64_is_unchanged(self) -> None:
         self.assertEqual(self.detok.detokenize_text('$BQAAAA=='), 'five')
 
-        for token in ('BQAAAA==', '64#BQAAAA==', 'RdaP/g==', '64#RdaP/g=='):
+        for token in ('BQAAAA==', '64#BQAAAA==', 'hexg8g==', '64#hexg8g=='):
             for spec in ('/5,', '/32,', '::pw::Status/5,pw_status_message'):
                 text = '${' + spec + '}' + token
                 self.assertEqual(self.detok.detokenize_text(text), text)
@@ -1742,17 +1742,17 @@ class DetokenizeBitFieldTokens(unittest.TestCase):
         nested_high_message = encode.encode_token_and_args(
             tokens.c_hash(self.NESTED_HIGH_FORMAT),
             0xBEE7F71F,
-            0xFE8FD645,
+            0xF260EC85,
         )
         nested_both_message = encode.encode_token_and_args(
             tokens.c_hash(self.NESTED_BOTH_FORMAT),
             0xAAAFAA85,
             0xBEE7F71F,
-            0xFE8FD645,
+            0xF260EC85,
         )
         base10_message = encode.encode_token_and_args(
             tokens.c_hash(self.BASE10_FORMAT),
-            0xFE8FD645,
+            0xF260EC85,
         )
         for message in (
             self.MESSAGE,
@@ -1763,7 +1763,7 @@ class DetokenizeBitFieldTokens(unittest.TestCase):
         ):
             self.assertEqual(
                 str(self.detok.detokenize(message)),
-                'Read failed: NOT_FOUND: No such key',
+                'Read failed: NOT_FOUND (No such key)',
             )
 
     def test_base64_message_nested_low_domain(self) -> None:
@@ -1773,7 +1773,7 @@ class DetokenizeBitFieldTokens(unittest.TestCase):
             self.detok.detokenize_text(
                 '$' + base64.b64encode(self.NESTED_MESSAGE).decode()
             ),
-            'Read failed: NOT_FOUND: No such key',
+            'Read failed: NOT_FOUND (No such key)',
         )
 
     def test_detokenize_text_live(self) -> None:
@@ -1783,7 +1783,7 @@ class DetokenizeBitFieldTokens(unittest.TestCase):
             self.detok.detokenize_text_live(io.BytesIO(data), output)
 
             self.assertEqual(
-                output.getvalue(), b'[Read failed: NOT_FOUND: No such key]\n'
+                output.getvalue(), b'[Read failed: NOT_FOUND (No such key)]\n'
             )
 
 

@@ -630,8 +630,8 @@ TEST(TokenBitFieldFormat, BitFieldToken) {
   // DOCSTAG: [pw_tokenizer-bit-field-token]
   // The low 5 bits hold a status code. Masking the message's token leaves
   // those bits clear, so the two can be combined into one 32-bit word.
-  constexpr uint32_t kNoSuchKey =
-      PW_TOKENIZE_STRING_MASK("pw_status_message", 0xFFFFFFE0, ": No such key");
+  constexpr uint32_t kNoSuchKey = PW_TOKENIZE_STRING_MASK(
+      "pw_status_message", 0xFFFFFFE0, " (No such key)");
   constexpr uint32_t kNotFound = 5;
   const uint32_t status = kNoSuchKey | kNotFound;
 
@@ -644,10 +644,10 @@ TEST(TokenBitFieldFormat, BitFieldToken) {
                         status);
   // DOCSTAG: [pw_tokenizer-bit-field-token]
 
-  EXPECT_EQ(status, 0xfe8fd645u);
+  EXPECT_EQ(status, 0xf260ec85u);
 
-  constexpr std::array<uint8_t, 8> expected =
-      ExpectedData<0xF5, 0xA6, 0x81, 0x17>(
+  constexpr std::array<uint8_t, 9> expected =
+      ExpectedData<0xF5, 0xCD, 0xF8, 0xD9, 0x01>(
           "Read failed: " PW_TOKENIZER_NESTED_PREFIX_STR
           "{::pw::Status/5,pw_status_message}#%08" PRIx32);
   ASSERT_EQ(expected.size(), size_bytes);

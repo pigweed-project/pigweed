@@ -116,8 +116,17 @@ constexpr uint32_t NonZeroStatusMessageToken(uint32_t masked_hash,
 /// - `PW_STATUS_CFG_MESSAGES_STRING`: a pointer to the string literal is
 ///   stored.
 ///
-/// Messages are stored with a `": "` prefix, so that a status logs as
-/// `CODE: message`.
+/// A status with a message logs as `CODE (message)`, so that it reads well
+/// after a description of what failed:
+///
+/// @code{.cpp}
+///   // Logs "Read failed: NOT_FOUND (No such key)". If messages are disabled,
+///   // logs "Read failed: NOT_FOUND".
+///   PW_LOG_WARN("Read failed: " PW_STATUS_FMT, PW_LOG_STATUS(status));
+/// @endcode
+///
+/// Messages are stored in the form they are logged in, `" (message)"`, so
+/// logging a status does not have to format its message.
 ///
 /// Status equality comparisons (`==` and `!=`) consider only the status code
 /// and ignore messages.
@@ -131,28 +140,32 @@ constexpr uint32_t NonZeroStatusMessageToken(uint32_t masked_hash,
 
 // The token entry is defined in a branch that depends on the status type, so
 // it is only instantiated for statuses that store tokens.
-#define _PW_STATUS_MSG_ENABLED(string_literal)                          \
-  ::pw::internal::DeferredStatusMessage([](auto _pw_status_tag) {       \
-    using _PwStorage = typename decltype(_pw_status_tag)::storage_type; \
-    using _PwType = ::pw::internal::StatusMessageType;                  \
-    if constexpr (_PwStorage::kMessageType == _PwType::kToken) {        \
-      using _PwCode = typename _PwStorage::code_type;                   \
-      constexpr uint32_t _pw_status_token =                             \
-          ::pw::internal::NonZeroStatusMessageToken(                    \
-              _PW_TOKENIZER_MASK_TOKEN(_PwStorage::kTokenMask,          \
-                                       ": " string_literal),            \
-              _PwStorage::kTokenMask);                                  \
-      _PW_STATUS_MSG_DEFINE_TOKEN(                                      \
-          _pw_status_token,                                             \
-          ::pw::internal::kStatusMessageDomain<_PwCode>.chars,          \
-          ": " string_literal);                                         \
-      return _pw_status_token;                                          \
-    } else if constexpr (_PwStorage::kMessageType ==                    \
-                         _PwType::kStringLiteral) {                     \
-      return static_cast<const char*>(": " string_literal);             \
-    } else {                                                            \
-      return ::pw::internal::EmptyStatusMessage{};                      \
-    }                                                                   \
+// The text logged after the code of a status that has a message. It is what
+// PW_STATUS_MSG stores, as a string or as its token.
+#define _PW_STATUS_MSG_LOGGED(string_literal) " (" string_literal ")"
+
+#define _PW_STATUS_MSG_ENABLED(string_literal)                                 \
+  ::pw::internal::DeferredStatusMessage([](auto _pw_status_tag) {              \
+    using _PwStorage = typename decltype(_pw_status_tag)::storage_type;        \
+    using _PwType = ::pw::internal::StatusMessageType;                         \
+    if constexpr (_PwStorage::kMessageType == _PwType::kToken) {               \
+      using _PwCode = typename _PwStorage::code_type;                          \
+      constexpr uint32_t _pw_status_token =                                    \
+          ::pw::internal::NonZeroStatusMessageToken(                           \
+              _PW_TOKENIZER_MASK_TOKEN(_PwStorage::kTokenMask,                 \
+                                       _PW_STATUS_MSG_LOGGED(string_literal)), \
+              _PwStorage::kTokenMask);                                         \
+      _PW_STATUS_MSG_DEFINE_TOKEN(                                             \
+          _pw_status_token,                                                    \
+          ::pw::internal::kStatusMessageDomain<_PwCode>.chars,                 \
+          _PW_STATUS_MSG_LOGGED(string_literal));                              \
+      return _pw_status_token;                                                 \
+    } else if constexpr (_PwStorage::kMessageType ==                           \
+                         _PwType::kStringLiteral) {                            \
+      return static_cast<const char*>(_PW_STATUS_MSG_LOGGED(string_literal));  \
+    } else {                                                                   \
+      return ::pw::internal::EmptyStatusMessage{};                             \
+    }                                                                          \
   })
 
 #define _PW_STATUS_MSG_DISABLED(string_literal)                            \

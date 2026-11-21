@@ -52,19 +52,19 @@ std::string DetokenizeMessage(uint32_t token) {
 TEST(StatusMessageToken, EvaluatedAtRunTime) {
   const auto message = _PW_STATUS_MSG_ENABLED("Evaluated at run time");
   EXPECT_EQ(DetokenizeMessage(message.Evaluate<TokenStorage>()),
-            ": Evaluated at run time");
+            " (Evaluated at run time)");
 }
 
 TEST(StatusMessageToken, EmptyMessage) {
   const auto message = _PW_STATUS_MSG_ENABLED("");
-  EXPECT_EQ(DetokenizeMessage(message.Evaluate<TokenStorage>()), ": ");
+  EXPECT_EQ(DetokenizeMessage(message.Evaluate<TokenStorage>()), " ()");
 }
 
 TEST(StatusMessageToken, SameMessageUsedTwice) {
   const auto first = _PW_STATUS_MSG_ENABLED("Used twice");
   const auto second = _PW_STATUS_MSG_ENABLED("Used twice");
   EXPECT_EQ(first.Evaluate<TokenStorage>(), second.Evaluate<TokenStorage>());
-  EXPECT_EQ(DetokenizeMessage(first.Evaluate<TokenStorage>()), ": Used twice");
+  EXPECT_EQ(DetokenizeMessage(first.Evaluate<TokenStorage>()), " (Used twice)");
 }
 
 // A message in an inline function may be defined in several translation units.
@@ -75,7 +75,7 @@ inline uint32_t InlineFunctionToken() {
 
 TEST(StatusMessageToken, InInlineFunction) {
   EXPECT_EQ(DetokenizeMessage(InlineFunctionToken()),
-            ": In an inline function");
+            " (In an inline function)");
 }
 
 template <typename T>
@@ -87,7 +87,7 @@ uint32_t FunctionTemplateToken() {
 
 TEST(StatusMessageToken, InFunctionTemplate) {
   EXPECT_EQ(DetokenizeMessage(FunctionTemplateToken<int>()),
-            ": In a function template");
+            " (In a function template)");
   EXPECT_EQ(FunctionTemplateToken<int>(), FunctionTemplateToken<char>());
 }
 
@@ -103,7 +103,7 @@ constexpr uint32_t kConstantToken =
 
 TEST(StatusMessageToken, EvaluatedInConstantExpression) {
   EXPECT_EQ(DetokenizeMessage(kConstantToken),
-            ": Evaluated in a constant expression");
+            " (Evaluated in a constant expression)");
 }
 
 inline constexpr uint32_t kInlineConstantToken =
@@ -112,7 +112,7 @@ inline constexpr uint32_t kInlineConstantToken =
 
 TEST(StatusMessageToken, EvaluatedForInlineVariable) {
   EXPECT_EQ(DetokenizeMessage(kInlineConstantToken),
-            ": Evaluated for an inline variable");
+            " (Evaluated for an inline variable)");
 }
 
 template <typename T>
@@ -124,7 +124,7 @@ struct ClassTemplate {
 
 TEST(StatusMessageToken, EvaluatedInClassTemplate) {
   EXPECT_EQ(DetokenizeMessage(ClassTemplate<int>::kToken),
-            ": Evaluated in a class template");
+            " (Evaluated in a class template)");
 }
 
 constexpr uint32_t ConstexprFunctionToken() {
@@ -134,7 +134,7 @@ constexpr uint32_t ConstexprFunctionToken() {
 
 TEST(StatusMessageToken, EvaluatedInConstexprFunction) {
   constexpr uint32_t kToken = ConstexprFunctionToken();
-  EXPECT_EQ(DetokenizeMessage(kToken), ": Evaluated in a constexpr function");
+  EXPECT_EQ(DetokenizeMessage(kToken), " (Evaluated in a constexpr function)");
 }
 
 #if PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_TOKENIZED
@@ -145,7 +145,7 @@ constexpr pw::Status kConstantStatus =
 TEST(StatusMessageToken, ConstantStatus) {
   EXPECT_EQ(DetokenizeMessage(pw::internal::StatusMessageAccess::Get(
                 kConstantStatus.message())),
-            ": Constant status");
+            " (Constant status)");
 }
 
 #endif  // PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_TOKENIZED
@@ -158,7 +158,7 @@ TEST(StatusMessageToken, Status) {
   const pw::Status status = pw::Status::NotFound(PW_STATUS_MSG("No such key"));
   EXPECT_EQ(DetokenizeMessage(
                 pw::internal::StatusMessageAccess::Get(status.message())),
-            ": No such key");
+            " (No such key)");
 }
 
 #endif  // PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_TOKENIZED

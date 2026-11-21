@@ -335,6 +335,7 @@ sphinx_docs_library(
         "backends.rst",
         "docs.rst",
         "log.proto",
+        "log_status_test.cc",
         "module.toml",
         "protobuf.rst",
         "tokenized_args.rst",

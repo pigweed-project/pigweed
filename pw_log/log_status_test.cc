@@ -320,20 +320,83 @@ TEST(LogStatus, AcceptsAnyExpression) {
   EXPECT_EQ(2, index);
 }
 
+constexpr int kSectorCount = 64;
+
+// DOCSTAG: [pw_log-status-example]
+pw::Status ReadSector(int sector) {
+  if (sector < 0) {
+    return pw::Status::InvalidArgument(
+        PW_STATUS_MSG("Sector cannot be negative"));
+  }
+  if (sector >= kSectorCount) {
+    return pw::Status::OutOfRange();
+  }
+  return pw::OkStatus();
+}
+
+void LoadSector(int sector) {
+  if (pw::Status status = ReadSector(sector); !status.ok()) {
+    // Describe what failed, then log the status with PW_STATUS_FMT and
+    // PW_LOG_STATUS.
+    PW_LOG_ERROR("Read failed: " PW_STATUS_FMT, PW_LOG_STATUS(status));
+  }
+}
+// DOCSTAG: [pw_log-status-example]
+
+TEST(LogStatus, ExampleCompilesAndRuns) {
+  LoadSector(0);
+  LoadSector(kSectorCount);
+  LoadSector(-1);
+}
+
 // The tests of statuses with messages check the text that non-tokenizing
 // backends log. pw_log_tokenized's tokenized_args_test checks the tokens that
 // tokenizing backends log.
 #if !__has_include("pw_log_backend/log_backend_uses_pw_tokenizer.h")
 
-// The expected text for a status logged with a message: "CODE: message" if
+// The expected text for a status logged with a message: "CODE (message)" if
 // messages are enabled and "CODE" otherwise.
 LogString WithMessage(const char* code, const char* message) {
   LogString text(code);
   if (PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_STRING) {
-    text += ": ";
+    text += " (";
     text += message;
+    text += ")";
   }
   return text;
+}
+
+// These are the log lines that the docs show for the example above.
+TEST(LogStatus, ExampleLogsStatusAfterDescription) {
+  EXPECT_EQ(LogString("Read failed: OUT_OF_RANGE"),
+            FormatLog("Read failed: " PW_STATUS_FMT,
+                      PW_LOG_STATUS(ReadSector(kSectorCount))));
+
+  const LogString with_message =
+      FormatLog("Read failed: " PW_STATUS_FMT, PW_LOG_STATUS(ReadSector(-1)));
+  if (PW_STATUS_CFG_MESSAGES == PW_STATUS_CFG_MESSAGES_STRING) {
+    EXPECT_EQ(
+        LogString("Read failed: INVALID_ARGUMENT (Sector cannot be negative)"),
+        with_message);
+  } else {
+    EXPECT_EQ(LogString("Read failed: INVALID_ARGUMENT"), with_message);
+  }
+}
+
+// The parentheses mark where a message ends, so a status can be followed by
+// more text or by another status.
+TEST(LogStatus, StatusWithMessageInTheMiddleOfALog) {
+  const Status rx = Status::DataLoss(PW_STATUS_MSG("Bad CRC"));
+
+  LogString expected("tx: OK, rx: ");
+  expected += WithMessage("DATA_LOSS", "Bad CRC");
+  expected += " after 3 tries";
+  EXPECT_EQ(
+      expected,
+      FormatLog("tx: " PW_STATUS_FMT ", rx: " PW_STATUS_FMT " after %d tries",
+                PW_LOG_STATUS(OkStatus()),
+                PW_LOG_STATUS(rx),
+                3));
 }
 
 TEST(LogStatus, LogStatusEvaluatesStatusWithMessageOnce) {
@@ -374,7 +437,7 @@ TEST(LogStatus, CustomStatusWithMessage) {
 
   EXPECT_EQ(LogString("DOWN"),
             FormatLog(LINK_STATUS_FMT, PW_LOG_STATUS(no_message)));
-  // A message with no text is still a message, so the separator is logged.
+  // A message with no text is still a message, so it logs as "DOWN ()".
   EXPECT_EQ(WithMessage("DOWN", ""),
             FormatLog(LINK_STATUS_FMT, PW_LOG_STATUS(empty_message)));
   EXPECT_EQ(WithMessage("DOWN", "Cable unplugged"),
@@ -396,7 +459,8 @@ TEST(LogStatus, StringLongerThanBufferIsTruncated) {
       Status::Internal(PW_STATUS_MSG(PW_LOG_STATUS_TEST_LONG_MESSAGE));
 #undef PW_LOG_STATUS_TEST_LONG_MESSAGE
 
-  InlineString<256> expected("INTERNAL: ");
+  // The closing parenthesis is truncated with the rest of the message.
+  InlineString<256> expected("INTERNAL (");
   expected += kLongMessage;
   expected.resize(PW_LOG_STATUS_STRING_SIZE - 1);
   EXPECT_EQ(expected, FormatLog(PW_STATUS_FMT, PW_LOG_STATUS(status)));
