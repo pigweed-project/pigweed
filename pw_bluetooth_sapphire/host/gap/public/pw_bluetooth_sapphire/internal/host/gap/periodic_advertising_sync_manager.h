@@ -114,6 +114,14 @@ class PeriodicAdvertisingSyncManager final
       PeerCache& peer_cache,
       LowEnergyDiscoveryManager::WeakPtr discovery_manager,
       pw::async::Dispatcher& dispatcher);
+  ~PeriodicAdvertisingSyncManager() override;
+  PeriodicAdvertisingSyncManager(const PeriodicAdvertisingSyncManager&) =
+      delete;
+  PeriodicAdvertisingSyncManager& operator=(
+      const PeriodicAdvertisingSyncManager&) = delete;
+  PeriodicAdvertisingSyncManager(PeriodicAdvertisingSyncManager&&) = delete;
+  PeriodicAdvertisingSyncManager& operator=(PeriodicAdvertisingSyncManager&&) =
+      delete;
 
   // Establish synchronization to a periodic advertising train transmitted by
   // `peer` with the SID `advertising_sid`. Synchronous errors will be returned
@@ -145,11 +153,13 @@ class PeriodicAdvertisingSyncManager final
     SyncState state;
     PeerId peer_id;
     uint8_t advertising_sid;
-    hci::PeriodicAdvertisingSync hci_sync;
     SyncOptions options;
     std::optional<SyncParameters> parameters;
     // The mapped value is the number of clients using the delegate (usually 1).
+    // Declared before `hci_sync` so `delegates` outlives `~hci_sync` if
+    // destruction of `hci_sync` triggers synchronous callbacks.
     std::unordered_map<Delegate*, uint16_t> delegates;
+    hci::PeriodicAdvertisingSync hci_sync;
   };
 
   // Empty variant state meaning discovery has been requested but has not yet

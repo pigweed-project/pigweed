@@ -45,6 +45,14 @@ PeriodicAdvertisingSyncManager::PeriodicAdvertisingSyncManager(
       synchronizer_(std::move(transport)),
       heap_dispatcher_(dispatcher) {}
 
+PeriodicAdvertisingSyncManager::~PeriodicAdvertisingSyncManager() {
+  // Unlink each node from `syncs_` before destroying `Sync` (`~hci_sync` may
+  // synchronously invoke `OnSyncLost`, which calls `syncs_.extract`).
+  while (!syncs_.empty()) {
+    auto node = syncs_.extract(syncs_.begin());
+  }
+}
+
 hci::Result<PeriodicAdvertisingSyncHandle>
 PeriodicAdvertisingSyncManager::CreateSync(PeerId peer_id,
                                            uint8_t advertising_sid,
@@ -85,10 +93,10 @@ PeriodicAdvertisingSyncManager::CreateSync(PeerId peer_id,
   Sync sync{.state = SyncState::kPending,
             .peer_id = peer_id,
             .advertising_sid = advertising_sid,
-            .hci_sync = std::move(sync_result.value()),
             .options = options,
             .parameters = std::nullopt,
-            .delegates = {{&delegate, 1}}};
+            .delegates = {{&delegate, 1}},
+            .hci_sync = std::move(sync_result.value())};
   auto [_, inserted] = syncs_.try_emplace(sync_id, std::move(sync));
   PW_CHECK(inserted);
 
@@ -257,7 +265,9 @@ void PeriodicAdvertisingSyncManager::OnHandleRelease(hci::SyncId sync_id,
   if (--delegate_iter->second == 0) {
     delegates.erase(delegate_iter);
     if (delegates.empty()) {
-      syncs_.erase(sync_iter);
+      // Unlink from `syncs_` before updating discovery state and before `~Sync`
+      // destroys `hci_sync` (which may synchronously re-enter `OnSyncLost`).
+      auto node = syncs_.extract(sync_iter);
       MaybeUpdateDiscoveryState();
     }
   }

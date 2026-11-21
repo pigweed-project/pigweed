@@ -135,6 +135,8 @@ class PeriodicAdvertisingSyncManagerTest : public TestingBase {
     return sync_manager_.value();
   }
 
+  void ResetSyncManager() { sync_manager_.reset(); }
+
   PeerCache& peer_cache() { return peer_cache_; }
 
   const std::vector<bool>& scan_states() const { return scan_states_; }
@@ -599,6 +601,62 @@ TEST_F(PeriodicAdvertisingSyncManagerTest, TransferSync) {
   EXPECT_EQ(transfer->service_data, kServiceData);
 
   sync_result->Cancel();
+  RunUntilIdle();
+}
+
+TEST_F(PeriodicAdvertisingSyncManagerTest,
+       DestroySyncManagerWithPendingAndEstablishedSyncs) {
+  SyncDelegate pending_delegate;
+  SyncDelegate established_delegate;
+  SyncOptions options{.filter_duplicates = true};
+
+  // Peer 1 has a periodic advertisement so its sync establishes; Peer 2 has no
+  // controller peer so its sync stays pending in `syncs_`.
+  DeviceAddress addr_established(DeviceAddress::Type::kLEPublic, {1});
+  auto fake_peer =
+      std::make_unique<testing::FakePeer>(addr_established, dispatcher());
+  const StaticByteBuffer kAdvData(0x03, 0x03, 0x0d, 0x18);
+  fake_peer->AddPeriodicAdvertisement(
+      kAdvSid1, DynamicByteBuffer(kAdvData), kBigInfo);
+  test_device()->AddPeer(std::move(fake_peer));
+  Peer* peer_established =
+      peer_cache().NewPeer(addr_established, /*connectable=*/false);
+
+  DeviceAddress addr_pending(DeviceAddress::Type::kLEPublic, {2});
+  Peer* peer_pending =
+      peer_cache().NewPeer(addr_pending, /*connectable=*/false);
+  peer_pending->MutLe();
+
+  hci::Result<PeriodicAdvertisingSyncHandle> established_handle =
+      sync_manager().CreateSync(peer_established->identifier(),
+                                kAdvSid1,
+                                options,
+                                established_delegate);
+  ASSERT_TRUE(established_handle.is_ok());
+  RunUntilIdle();
+  ASSERT_EQ(1u, established_delegate.on_sync_established_events().size());
+
+  hci::Result<PeriodicAdvertisingSyncHandle> pending_handle =
+      sync_manager().CreateSync(
+          peer_pending->identifier(), kAdvSid2, options, pending_delegate);
+  ASSERT_TRUE(pending_handle.is_ok());
+  RunUntilIdle();
+  EXPECT_TRUE(pending_delegate.on_sync_established_events().empty());
+
+  // Destroying `sync_manager_` while client handles are still alive must
+  // cleanly drain `syncs_` without re-entrant use-after-free or double-free,
+  // and without firing spurious OnSyncLost notifications during teardown.
+  ResetSyncManager();
+  RunUntilIdle();
+  EXPECT_TRUE(pending_delegate.sync_lost_events().empty());
+  EXPECT_TRUE(established_delegate.sync_lost_events().empty());
+  EXPECT_TRUE(test_device()->periodic_advertising_syncs().empty());
+  std::vector<bool> expected_scan_states = {true, false, true, false};
+  EXPECT_EQ(scan_states(), expected_scan_states);
+
+  // Releasing handles after manager destruction must be a safe no-op.
+  pending_handle->Cancel();
+  established_handle->Cancel();
   RunUntilIdle();
 }
 
