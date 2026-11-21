@@ -28,13 +28,19 @@ from unittest import mock
 
 from pw_cli import plugins
 from pw_config_loader.yaml_config_loader_mixin import Stage
+from pw_daq import (
+    backend_registry as backend_registry_mod,
+    config as config_mod,
+)
 from pw_daq.backend import DaqBackend
 from pw_daq.backend_registry import (
     BUILTIN_BACKENDS,
     ENTRY_POINT_GROUP,
     BackendRegistry,
+    _builtin_backends,
     _validate_backend_plugin,
 )
+from pw_daq.backends.mock_daq import mock_backend as mock_backend_mod
 from pw_daq.backends.mock_daq.mock_backend import MockBackend
 from pw_daq.common import DaqError
 from pw_daq.config import (
@@ -106,6 +112,34 @@ class BackendRegistryTest(unittest.TestCase):
             source=Path("<test_override>"),
         )
         self.assertIs(override_reg["mock"].target, FakeBackend)
+
+    def test_builtin_backends_module_follows_enclosing_package(self) -> None:
+        self.assertTrue(backend_registry_mod.__package__)
+        self.assertTrue(
+            BUILTIN_BACKENDS["mock"]["module"].startswith(
+                f"{backend_registry_mod.__package__}."
+            )
+        )
+        self.assertEqual(
+            BUILTIN_BACKENDS["mock"]["module"],
+            mock_backend_mod.__name__,
+        )
+        registry = BackendRegistry(discover_entry_points=False)
+        self.assertIs(registry["mock"].target, MockBackend)
+
+        prefixed = _builtin_backends("parent_pkg.pw_daq")
+        self.assertEqual(
+            prefixed["mock"]["module"],
+            "parent_pkg.pw_daq.backends.mock_daq.mock_backend",
+        )
+        self.assertEqual(
+            _builtin_backends(None)["mock"]["module"],
+            "pw_daq.backends.mock_daq.mock_backend",
+        )
+        self.assertEqual(
+            _builtin_backends("")["mock"]["module"],
+            "pw_daq.backends.mock_daq.mock_backend",
+        )
 
     def test_independent_registry_instances_and_case_normalization(
         self,
@@ -781,7 +815,9 @@ class DaqConfigTest(unittest.TestCase):
                         "Could not determine home directory."
                     ),
                 ),
-                self.assertLogs("pw_daq.config", level="WARNING") as warn_logs,
+                self.assertLogs(
+                    config_mod.__name__, level="WARNING"
+                ) as warn_logs,
             ):
                 cfg = DaqConfig()
                 self.assertEqual(cfg.devices, {})
@@ -893,7 +929,7 @@ class DaqConfigTest(unittest.TestCase):
                     },
                     clear=True,
                 ),
-                self.assertLogs("pw_daq.config", level="INFO") as info_logs,
+                self.assertLogs(config_mod.__name__, level="INFO") as info_logs,
             ):
                 cfg = DaqConfig()
             cfg.validate()
@@ -944,7 +980,7 @@ class DaqConfigTest(unittest.TestCase):
                             clear=True,
                         ),
                         self.assertLogs(
-                            "pw_daq.config", level="WARNING"
+                            config_mod.__name__, level="WARNING"
                         ) as warn_logs,
                     ):
                         loaded = DaqConfig()

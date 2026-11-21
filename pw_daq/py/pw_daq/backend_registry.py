@@ -31,13 +31,23 @@ ENTRY_POINT_GROUP = "pw_daq.backends"
 
 BackendTarget = type[DaqBackend] | Callable[..., DaqBackend]
 
-BUILTIN_BACKENDS: Mapping[str, Mapping[str, str]] = {
-    # Temporarily pre-register 'mock' until the 'dhalsim' backend is available.
-    "mock": {
-        "module": "pw_daq.backends.mock_daq.mock_backend",
-        "class": "MockBackend",
-    },
-}
+
+def _builtin_backends(
+    package: str | None = __package__,
+) -> Mapping[str, Mapping[str, str]]:
+    """Builds built-in backend definitions relative to the enclosing package."""
+    pkg = package or "pw_daq"
+    return {
+        # Temporarily pre-register 'mock' until the 'dhalsim' backend is
+        # available.
+        "mock": {
+            "module": f"{pkg}.backends.mock_daq.mock_backend",
+            "class": "MockBackend",
+        },
+    }
+
+
+BUILTIN_BACKENDS: Mapping[str, Mapping[str, str]] = _builtin_backends()
 
 
 def _discover_entry_points(

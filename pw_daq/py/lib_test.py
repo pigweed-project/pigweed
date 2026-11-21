@@ -27,6 +27,7 @@ import unittest
 from unittest import mock
 
 import pw_daq
+from pw_daq import lib as lib_mod
 from pw_daq.backend import DaqBackend
 from pw_daq.backends.mock_daq import mock_backend as mock_backend_mod
 from pw_daq.backends.mock_daq.mock_backend import (
@@ -2559,8 +2560,9 @@ class LoggingReprAndImmutabilityTest(unittest.TestCase):
 
         backend = MockBackend()
         daq = Daq(backend)
+        logger_name = lib_mod.__name__
 
-        with self.assertLogs("pw_daq.lib", level="DEBUG") as debug_logs:
+        with self.assertLogs(logger_name, level="DEBUG") as debug_logs:
             with daq:
                 d0 = daq.digital(
                     0,
@@ -2576,25 +2578,25 @@ class LoggingReprAndImmutabilityTest(unittest.TestCase):
                 daq.reset()
 
         joined = "\n".join(debug_logs.output)
-        self.assertIn("INFO:pw_daq.lib:Opening DAQ backend 'mock'", joined)
-        self.assertIn("INFO:pw_daq.lib:Creating block 'digital0'", joined)
+        self.assertIn(f"INFO:{logger_name}:Opening DAQ backend 'mock'", joined)
+        self.assertIn(f"INFO:{logger_name}:Creating block 'digital0'", joined)
         self.assertIn(
-            "INFO:pw_daq.lib:Setting attribute 'digital1.pull'", joined
+            f"INFO:{logger_name}:Setting attribute 'digital1.pull'", joined
         )
-        self.assertIn("INFO:pw_daq.lib:Registering trigger", joined)
+        self.assertIn(f"INFO:{logger_name}:Registering trigger", joined)
         self.assertIn(
-            "INFO:pw_daq.lib:Invoking action 'digital0.write'", joined
+            f"INFO:{logger_name}:Invoking action 'digital0.write'", joined
         )
-        self.assertIn("INFO:pw_daq.lib:Clearing event logs", joined)
-        self.assertIn("INFO:pw_daq.lib:Resetting DAQ device", joined)
-        self.assertIn("INFO:pw_daq.lib:Closing DAQ backend 'mock'", joined)
-        self.assertIn("DEBUG:pw_daq.lib:", joined)
-        self.assertNotIn("ERROR:pw_daq.lib:", joined)
+        self.assertIn(f"INFO:{logger_name}:Clearing event logs", joined)
+        self.assertIn(f"INFO:{logger_name}:Resetting DAQ device", joined)
+        self.assertIn(f"INFO:{logger_name}:Closing DAQ backend 'mock'", joined)
+        self.assertIn(f"DEBUG:{logger_name}:", joined)
+        self.assertNotIn(f"ERROR:{logger_name}:", joined)
 
         # Action failure logs WARNING without raising DaqError.
         backend.setup_block("digital0", {"direction": DigitalDirection.OUT})
         backend.set_action_result("digital0.write", ActionResult(success=False))
-        with self.assertLogs("pw_daq.lib", level="WARNING") as warn_logs:
+        with self.assertLogs(logger_name, level="WARNING") as warn_logs:
             res = daq.digital(0).write(DigitalState.ACTIVE)
         self.assertFalse(res.success)
         self.assertTrue(
