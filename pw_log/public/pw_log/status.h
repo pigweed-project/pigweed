@@ -138,7 +138,7 @@ static_assert(PW_LOG_STATUS_STRING_SIZE > 0,
 
 #define PW_LOG_STATUS_DOMAIN_FMT(domain, code_bits) "%s"
 #define PW_LOG_STATUS(...) \
-  ::pw::log::internal::StatusString(__VA_ARGS__).c_str()
+  ::pw::log::internal::StatusLogString().Format(__VA_ARGS__)
 
 #endif  // PW_STATUS_CFG_MESSAGES
 
@@ -222,46 +222,48 @@ constexpr uint32_t StatusWord(const T& value) {
 }
 
 // A status without a message has a null string.
-constexpr const char* MessageString(const char* string) {
-  return string == nullptr ? "" : string;
-}
+constexpr const char* MessageString(const char* string) { return string; }
 constexpr const char* MessageString(::pw::internal::EmptyStatusMessage) {
-  return "";
+  return nullptr;
 }
 
-// Non-tokenizing backends log a status as one string, "CODE: message". It is
-// formatted into this buffer, which is a temporary in the log statement, so
-// the backend must use the string before the statement ends.
+// Non-tokenizing backends log a status as one string, "CODE: message". When
+// there is a message, it is formatted into this buffer, which is a temporary in
+// the log statement, so the backend must use the string before the statement
+// ends. When there is no message, the code string is used directly.
 class StatusLogString {
  public:
-  StatusLogString(std::string_view code, std::string_view message) noexcept {
+  // User-provided so value-initializing a temporary does not zero text_.
+  StatusLogString() noexcept {}
+
+  template <typename T>
+  const char* Format(const T& value) PW_ATTRIBUTE_LIFETIME_BOUND {
+    static_cast<void>(LoggedStatus(value));
+    if constexpr (!std::is_enum_v<T> && kHasEnumStatusCode<T>) {
+      const auto& status = ToStatus(value);
+      const char* code = ::pw::EnumToString(status.code());
+      // The message's string starts with ": ".
+      const char* message = MessageString(
+          ::pw::internal::StatusMessageAccess::Get(status.message()));
+      return message == nullptr ? code : FormatWithMessage(code, message);
+    } else {
+      return ::pw::EnumToString(LoggedEnum<T>::Get(value));
+    }
+  }
+
+ private:
+  PW_NO_INLINE const char* FormatWithMessage(const char* code,
+                                             const char* message) noexcept {
     const std::string_view parts[] = {code, message};
     size_t size = 0;
     for (std::string_view part : parts) {
       size += part.copy(text_ + size, sizeof(text_) - 1 - size);
     }
     text_[size] = '\0';
+    return text_;
   }
 
-  const char* c_str() const PW_ATTRIBUTE_LIFETIME_BOUND { return text_; }
-
- private:
   char text_[PW_LOG_STATUS_STRING_SIZE];
 };
-
-template <typename T>
-StatusLogString StatusString(const T& value) {
-  static_cast<void>(LoggedStatus(value));
-  if constexpr (!std::is_enum_v<T> && kHasEnumStatusCode<T>) {
-    const auto& status = ToStatus(value);
-    // The message's string starts with ": ".
-    return StatusLogString(
-        ::pw::EnumToString(status.code()),
-        MessageString(
-            ::pw::internal::StatusMessageAccess::Get(status.message())));
-  } else {
-    return StatusLogString(::pw::EnumToString(LoggedEnum<T>::Get(value)), "");
-  }
-}
 
 }  // namespace pw::log::internal
