@@ -65,6 +65,9 @@ constexpr uint8_t kFrameTypeSettings = 0x04;
 constexpr uint8_t kFrameTypePing = 0x06;
 constexpr uint8_t kFrameTypeGoAway = 0x07;
 constexpr uint8_t kFrameTypeWindowUpdate = 0x08;
+constexpr uint8_t kFrameTypeAltSvc = 0x0a;
+constexpr uint8_t kFrameTypePriorityUpdate = 0x10;
+constexpr uint8_t kFrameTypeUnknown = 0xff;
 
 constexpr uint8_t kFlagAck = 0x01;
 constexpr uint8_t kFlagEndStream = 0x01;
@@ -319,6 +322,18 @@ class BlockingInMemoryReader : public stream::NonSeekableReader {
     bytes.PutUint32(error_code, endian::big);
     ASSERT_EQ(bytes.status(), OkStatus());
     Push(bytes);
+  }
+
+  void PushRawFrame(uint8_t type,
+                    uint8_t flags,
+                    StreamId stream_id,
+                    ConstByteSpan payload) PW_LOCKS_EXCLUDED(mutex_) {
+    ByteBuffer<kFrameHeaderSize> header;
+    AppendFrameHeader(
+        header, static_cast<uint32_t>(payload.size()), type, flags, stream_id);
+    ASSERT_EQ(header.status(), OkStatus());
+    Push(header);
+    Push(payload);
   }
 
   // Blocks until the reader thread has consumed all pushed bytes, completed the
@@ -2354,6 +2369,85 @@ TEST_F(ConnectionTest,
 
   EXPECT_FALSE(harness().callbacks.WasCanceled(kStreamId));
   ExpectUnaryResponseFrames(harness().send_queue, kStreamId, kResponsePayload);
+}
+
+TEST_F(ConnectionTest, UnknownFrameTypesDrainPayloadWithoutDesync) {
+  StartConnection();
+  harness().send_queue.ClearStreamFrames(/*stream_id=*/0);
+
+  constexpr StreamId kStreamId = 1;
+  constexpr StreamId kIdleStreamId = kStreamId + 2;
+  OpenStream(kStreamId);
+
+  // Build an ALTSVC (0x0a) extension payload whose bytes encode a valid
+  // RST_STREAM(CANCEL) frame targeting kStreamId. If ProcessFrame() fails to
+  // drain unknown frame payloads, the next iteration parses these payload bytes
+  // as a real RST_STREAM frame and cancels kStreamId.
+  ByteBuffer<kFrameHeaderSize + sizeof(uint32_t)> smuggled_rst_payload;
+  AppendFrameHeader(smuggled_rst_payload,
+                    /*payload_length=*/sizeof(uint32_t),
+                    kFrameTypeRstStream,
+                    /*flags=*/0,
+                    kStreamId);
+  smuggled_rst_payload.PutUint32(kHttp2ErrorCancel, endian::big);
+  ASSERT_EQ(smuggled_rst_payload.status(), OkStatus());
+
+  harness().reader.PushRawFrame(kFrameTypeAltSvc,
+                                /*flags=*/0xff,
+                                /*stream_id=*/0,
+                                smuggled_rst_payload);
+  // RFC 9113 §5.1 and §5.5: unknown frame types on idle and open streams must
+  // also be ignored and discarded without triggering stream-state errors.
+  constexpr auto kExtensionPayload =
+      bytes::Array<0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe>();
+  harness().reader.PushRawFrame(kFrameTypeUnknown,
+                                /*flags=*/0xff,
+                                kIdleStreamId,
+                                kExtensionPayload);
+  harness().reader.PushRawFrame(kFrameTypePriorityUpdate,
+                                /*flags=*/0,
+                                kStreamId,
+                                ConstByteSpan());
+
+  constexpr auto kRequestPayload = bytes::Array<0x11, 0x22, 0x33, 0x44>();
+  harness().reader.PushRequestData(
+      kStreamId, kRequestPayload, /*end_stream=*/true);
+  harness().reader.WaitUntilIdle();
+
+  EXPECT_FALSE(harness().callbacks.WasCanceled(kStreamId));
+  EXPECT_EQ(harness().close_connection_calls.load(), 0U);
+  EXPECT_EQ(harness().callbacks.message_count(), 1U);
+  EXPECT_EQ(harness().callbacks.last_message_stream_id(), kStreamId);
+  ByteBuffer<kMaxRecordedMessageSize> received;
+  harness().callbacks.CopyLastMessage(received);
+  ASSERT_EQ(received.size(), kRequestPayload.size());
+  EXPECT_TRUE(std::equal(
+      kRequestPayload.begin(), kRequestPayload.end(), received.begin()));
+  EXPECT_TRUE(harness().callbacks.WasHalfClosed(kStreamId));
+
+  Vector<RecordedFrame, kMaxStreamFrames> control_frames;
+  harness().send_queue.TakeStreamFrames(/*stream_id=*/0, control_frames);
+  EXPECT_TRUE(control_frames.empty());
+
+  Vector<RecordedFrame, kMaxStreamFrames> stream_frames;
+  harness().send_queue.TakeStreamFrames(kStreamId, stream_frames);
+  EXPECT_TRUE(stream_frames.empty());
+
+  // RFC 9113 §4.2 and §5.5: an oversized unknown frame (> kMaxFramePayloadSize)
+  // sends GOAWAY with FRAME_SIZE_ERROR without reading payload bytes.
+  constexpr auto kTrailingBytes = bytes::Array<0x01, 0x02>();
+  harness().reader.PushFrameHeaderWithPartialPayload(
+      internal::kMaxFramePayloadSize + 1U,
+      kFrameTypeUnknown,
+      /*flags=*/0,
+      /*stream_id=*/0,
+      kTrailingBytes);
+  harness().reader.WaitUntilIdle();
+
+  EXPECT_EQ(harness().reader_runner->frame_status(), Status::Internal());
+  EXPECT_EQ(harness().close_connection_calls.load(), 1U);
+  harness().send_queue.TakeStreamFrames(/*stream_id=*/0, control_frames);
+  ExpectSingleGoAwayFrame(control_frames, kStreamId, kHttp2ErrorFrameSizeError);
 }
 
 }  // namespace

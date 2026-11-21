@@ -456,6 +456,12 @@ Status Connection::Reader::ProcessFrame() {
       PW_LOG_ERROR("Client sent CONTINUATION: unsupported");
       SendGoAway(Http2Error::INTERNAL_ERROR);
       return Status::Internal();
+
+    // RFC 9113 §5.5: Implementations MUST ignore and discard frames of
+    // unknown types.
+    default:
+      PW_TRY(ProcessIgnoredFrame(frame));
+      break;
   }
 
   return OkStatus();
