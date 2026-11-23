@@ -2189,5 +2189,144 @@ TEST_F(LowEnergyDiscoveryManagerTest,
   EXPECT_TRUE(session);
 }
 
+TEST_F(LowEnergyDiscoveryManagerTest,
+       DirectedAdvertisementCallbackStopsOtherPassiveSession) {
+  Peer* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  ASSERT_NE(nullptr, peer);
+  peer->MutLe();
+
+  auto session1 = StartDiscoverySession(/*active=*/false);
+  auto session2 = StartDiscoverySession(/*active=*/false);
+  ASSERT_TRUE(session1);
+  ASSERT_TRUE(session2);
+
+  size_t callbacks_invoked = 0;
+  session1->SetResultCallback([&](const Peer&) {
+    ++callbacks_invoked;
+    if (session2) {
+      session2.reset();
+    }
+  });
+  session2->SetResultCallback([&](const Peer&) {
+    ++callbacks_invoked;
+    if (session1) {
+      session1.reset();
+    }
+  });
+
+  auto fake_peer = std::make_unique<FakePeer>(kAddress0,
+                                              dispatcher(),
+                                              /*connectable=*/true,
+                                              /*scannable=*/false);
+  fake_peer->set_directed_advertising_enabled(true);
+  test_device()->AddPeer(std::move(fake_peer));
+
+  RunUntilIdle();
+  EXPECT_EQ(1u, callbacks_invoked);
+  EXPECT_TRUE(session1 == nullptr || session2 == nullptr);
+}
+
+TEST_F(LowEnergyDiscoveryManagerTest,
+       DirectedAdvertisementConnectableCallbackDeletesDiscoveryManager) {
+  Peer* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  ASSERT_NE(nullptr, peer);
+  peer->MutLe();
+
+  auto passive_session = StartDiscoverySession(/*active=*/false);
+  ASSERT_TRUE(passive_session);
+  size_t passive_results = 0;
+  passive_session->SetResultCallback([&](const Peer&) { ++passive_results; });
+
+  bool connectable_called = false;
+  discovery_manager()->set_peer_connectable_callback([&](Peer*) {
+    connectable_called = true;
+    DeleteDiscoveryManager();
+  });
+
+  auto fake_peer = std::make_unique<FakePeer>(kAddress0,
+                                              dispatcher(),
+                                              /*connectable=*/true,
+                                              /*scannable=*/false);
+  fake_peer->set_directed_advertising_enabled(true);
+  test_device()->AddPeer(std::move(fake_peer));
+
+  RunUntilIdle();
+  EXPECT_TRUE(connectable_called);
+  EXPECT_EQ(0u, passive_results);
+}
+
+TEST_F(LowEnergyDiscoveryManagerTest,
+       DirectedAdvertisementSessionCallbackDeletesDiscoveryManager) {
+  Peer* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  ASSERT_NE(nullptr, peer);
+  peer->MutLe();
+
+  auto session1 = StartDiscoverySession(/*active=*/false);
+  auto session2 = StartDiscoverySession(/*active=*/false);
+  ASSERT_TRUE(session1);
+  ASSERT_TRUE(session2);
+
+  size_t callbacks_invoked = 0;
+  auto delete_manager = [&](const Peer&) {
+    ++callbacks_invoked;
+    DeleteDiscoveryManager();
+  };
+  session1->SetResultCallback(delete_manager);
+  session2->SetResultCallback(delete_manager);
+
+  auto fake_peer = std::make_unique<FakePeer>(kAddress0,
+                                              dispatcher(),
+                                              /*connectable=*/true,
+                                              /*scannable=*/false);
+  fake_peer->set_directed_advertising_enabled(true);
+  test_device()->AddPeer(std::move(fake_peer));
+
+  RunUntilIdle();
+  EXPECT_EQ(1u, callbacks_invoked);
+}
+
+TEST_F(LowEnergyDiscoveryManagerTest,
+       DirectedAdvertisementCallbackStartsNewSessionsTriggeringRehash) {
+  Peer* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  ASSERT_NE(nullptr, peer);
+  peer->MutLe();
+
+  auto session1 = StartDiscoverySession(/*active=*/false);
+  auto session2 = StartDiscoverySession(/*active=*/false);
+  ASSERT_TRUE(session1);
+  ASSERT_TRUE(session2);
+
+  std::vector<std::unique_ptr<LowEnergyDiscoverySession>> spawned_sessions;
+  size_t callbacks_invoked = 0;
+  bool spawned = false;
+  auto spawn_many = [&](const Peer&) {
+    ++callbacks_invoked;
+    if (spawned) {
+      return;
+    }
+    spawned = true;
+    for (size_t i = 0; i < 32; ++i) {
+      discovery_manager()->StartDiscovery(
+          /*active=*/false, {}, [&](auto s) {
+            spawned_sessions.push_back(std::move(s));
+          });
+    }
+  };
+  session1->SetResultCallback(spawn_many);
+  session2->SetResultCallback(spawn_many);
+
+  auto fake_peer = std::make_unique<FakePeer>(kAddress0,
+                                              dispatcher(),
+                                              /*connectable=*/true,
+                                              /*scannable=*/false);
+  fake_peer->set_directed_advertising_enabled(true);
+  test_device()->AddPeer(std::move(fake_peer));
+
+  RunUntilIdle();
+  EXPECT_TRUE(spawned);
+  EXPECT_EQ(2u, callbacks_invoked);
+  EXPECT_EQ(32u, spawned_sessions.size());
+}
+
 }  // namespace
 }  // namespace bt::gap

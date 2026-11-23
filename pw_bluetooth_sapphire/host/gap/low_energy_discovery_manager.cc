@@ -454,22 +454,31 @@ void LowEnergyDiscoveryManager::OnDirectedAdvertisement(
     return;
   }
 
+  auto self = GetWeakPtr();
   if (peer->connectable() && connectable_cb_) {
     connectable_cb_(peer);
+    if (!self.is_alive()) {
+      return;
+    }
   }
 
-  // Only notify passive sessions.
-  for (auto iter = sessions_.begin(); iter != sessions_.end();) {
-    // The session may be erased by the result handler, so we need to get
-    // the next iterator before iter is invalidated.
-    auto next = std::next(iter);
-
-    LowEnergyDiscoverySession* session = iter->second;
+  // Snapshot passive scan IDs before invoking callbacks because a callback may
+  // stop another session or start a new session (triggering a rehash).
+  std::vector<uint16_t> passive_scan_ids;
+  passive_scan_ids.reserve(sessions_.size());
+  for (const auto& [scan_id, session] : sessions_) {
     if (!session->active()) {
-      session->NotifyDiscoveryResult(*peer);
+      passive_scan_ids.push_back(scan_id);
     }
+  }
 
-    iter = next;
+  for (uint16_t scan_id : passive_scan_ids) {
+    if (!self.is_alive()) {
+      return;
+    }
+    if (auto iter = sessions_.find(scan_id); iter != sessions_.end()) {
+      iter->second->NotifyDiscoveryResult(*peer);
+    }
   }
 }
 
