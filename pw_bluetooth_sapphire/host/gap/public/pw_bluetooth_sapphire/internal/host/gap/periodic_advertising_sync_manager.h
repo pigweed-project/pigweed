@@ -147,7 +147,7 @@ class PeriodicAdvertisingSyncManager final
                     pw::Callback<void(hci::Result<>)> callback);
 
  private:
-  enum class SyncState : uint8_t { kPending, kEstablished };
+  enum class SyncState : uint8_t { kPending, kEstablished, kFailed };
 
   struct Sync {
     SyncState state;
@@ -162,9 +162,11 @@ class PeriodicAdvertisingSyncManager final
     hci::PeriodicAdvertisingSync hci_sync;
   };
 
-  // Empty variant state meaning discovery has been requested but has not yet
-  // started.
-  struct StartingDiscovery {};
+  // Variant state meaning discovery has been requested with `request_id` but
+  // has not yet started.
+  struct StartingDiscovery {
+    uint64_t request_id;
+  };
 
   // PeriodicAdvertisingSynchronizer overrides:
   void OnSyncEstablished(
@@ -191,6 +193,9 @@ class PeriodicAdvertisingSyncManager final
   // scanning.
   void MaybeUpdateDiscoveryState();
 
+  // Resets discovery state and fails all pending syncs when LE scanning fails.
+  void OnDiscoveryFailure();
+
   PeerCache& peer_cache_;
 
   LowEnergyDiscoveryManager::WeakPtr discovery_manager_;
@@ -199,6 +204,7 @@ class PeriodicAdvertisingSyncManager final
                StartingDiscovery,
                std::unique_ptr<LowEnergyDiscoverySession>>
       discovery_session_;
+  uint64_t next_discovery_request_id_ = 1;
 
   hci::PeriodicAdvertisingSynchronizer synchronizer_;
   std::unordered_map<hci::SyncId, Sync> syncs_;

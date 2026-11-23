@@ -52,6 +52,38 @@ bool CheckBit(NUM_TYPE num_type, ENUM_TYPE bit) {
   return (num_type & static_cast<NUM_TYPE>(bit));
 }
 
+hci::EventPacket BuildPeriodicAdvertisingSyncEstablishedEventV2(
+    pw::bluetooth::emboss::StatusCode status,
+    uint16_t sync_handle = 0,
+    uint8_t advertising_sid = 0,
+    DeviceAddress address = DeviceAddress(DeviceAddress::Type::kLEPublic,
+                                          {0})) {
+  auto packet = hci::EventPacket::New<
+      pw::bluetooth::emboss::
+          LEPeriodicAdvertisingSyncEstablishedSubeventV2Writer>(
+      hci_spec::kLEMetaEventCode);
+  auto params = packet.view_t();
+  params.le_meta_event().subevent_code_enum().Write(
+      pw::bluetooth::emboss::LeSubEventCode::
+          PERIODIC_ADVERTISING_SYNC_ESTABLISHED_V2);
+  params.status().Write(status);
+  params.sync_handle().Write(sync_handle);
+  params.advertising_sid().Write(advertising_sid);
+  params.advertiser_address_type().Write(
+      DeviceAddress::DeviceAddrToLeAddr(address.type()).value());
+  params.advertiser_address().CopyFrom(address.value().view());
+  params.advertiser_phy().Write(pw::bluetooth::emboss::LEPhy::LE_1M);
+  params.periodic_advertising_interval().Write(
+      hci_spec::kLEPeriodicAdvertisingIntervalMin);
+  params.advertiser_clock_accuracy().Write(
+      pw::bluetooth::emboss::LEClockAccuracy::PPM_500);
+  params.num_subevents().Write(0);
+  params.subevent_interval().Write(0);
+  params.response_slot_delay().Write(0);
+  params.response_slot_spacing().Write(0);
+  return packet;
+}
+
 }  // namespace
 
 namespace android_hci = hci_spec::vendor::android;
@@ -760,26 +792,11 @@ void FakeController::MaybeSendPeriodicAdvertisingSyncEstablishedEvent() {
             .advertising_sid = entry.advertising_sid,
             .duplicate_filtering = pending_periodic_advertising_create_sync_
                                        ->duplicate_filtering});
-    auto packet = hci::EventPacket::New<
-        pwemb::LEPeriodicAdvertisingSyncEstablishedSubeventV2Writer>(
-        hci_spec::kLEMetaEventCode);
-    auto params = packet.view_t();
-    params.le_meta_event().subevent_code_enum().Write(
-        pw::bluetooth::emboss::LeSubEventCode::
-            PERIODIC_ADVERTISING_SYNC_ESTABLISHED_V2);
-    params.status().Write(pwemb::StatusCode::SUCCESS);
-    params.sync_handle().Write(sync_handle);
-    params.advertising_sid().Write(entry.advertising_sid);
-    params.advertiser_address_type().Write(
-        DeviceAddress::DeviceAddrToLeAddr(entry.address.type()).value());
-    params.advertiser_address().CopyFrom(entry.address.value().view());
-    params.advertiser_phy().Write(pw::bluetooth::emboss::LEPhy::LE_1M);
-    params.periodic_advertising_interval().Write(0x0006);  // 7.5ms, the minimum
-    params.advertiser_clock_accuracy().Write(pwemb::LEClockAccuracy::PPM_500);
-    params.num_subevents().Write(0);
-    params.subevent_interval().Write(0);      // No subevents
-    params.response_slot_delay().Write(0);    // No response slots
-    params.response_slot_spacing().Write(0);  // No response slots
+    hci::EventPacket packet = BuildPeriodicAdvertisingSyncEstablishedEventV2(
+        pwemb::StatusCode::SUCCESS,
+        sync_handle,
+        entry.advertising_sid,
+        entry.address);
     SendCommandChannelPacket(packet.data());
     pending_periodic_advertising_create_sync_.reset();
 
@@ -1619,6 +1636,24 @@ void FakeController::OnLEPeriodicAdvertisingCreateSyncCommandReceived(
   pending_periodic_advertising_create_sync_.emplace(create_sync);
 
   MaybeSendPeriodicAdvertisingSyncEstablishedEvent();
+}
+
+void FakeController::OnLEPeriodicAdvertisingCreateSyncCancelCommandReceived() {
+  if (!pending_periodic_advertising_create_sync_) {
+    RespondWithCommandComplete(
+        pwemb::OpCode::LE_PERIODIC_ADVERTISING_CREATE_SYNC_CANCEL,
+        pwemb::StatusCode::COMMAND_DISALLOWED);
+    return;
+  }
+
+  pending_periodic_advertising_create_sync_.reset();
+  RespondWithCommandComplete(
+      pwemb::OpCode::LE_PERIODIC_ADVERTISING_CREATE_SYNC_CANCEL,
+      pwemb::StatusCode::SUCCESS);
+
+  hci::EventPacket packet = BuildPeriodicAdvertisingSyncEstablishedEventV2(
+      pwemb::StatusCode::OPERATION_CANCELLED_BY_HOST);
+  SendCommandChannelPacket(packet.data());
 }
 
 void FakeController::OnLEPeriodicAdvertisingSyncTransferCommandReceived(
@@ -6793,6 +6828,8 @@ void FakeController::HandleReceivedCommandPacket(
     case static_cast<uint16_t>(
         pwemb::OpCode::LE_PERIODIC_ADVERTISING_CREATE_SYNC):
     case static_cast<uint16_t>(
+        pwemb::OpCode::LE_PERIODIC_ADVERTISING_CREATE_SYNC_CANCEL):
+    case static_cast<uint16_t>(
         pwemb::OpCode::LE_PERIODIC_ADVERTISING_SYNC_TRANSFER):
     case static_cast<uint16_t>(
         pwemb::OpCode::LE_PERIODIC_ADVERTISING_TERMINATE_SYNC):
@@ -7159,6 +7196,11 @@ void FakeController::HandleReceivedCommandPacket(
           command_packet
               .view<pwemb::LEPeriodicAdvertisingCreateSyncCommandView>();
       OnLEPeriodicAdvertisingCreateSyncCommandReceived(params);
+      break;
+    }
+    case static_cast<uint16_t>(
+        pwemb::OpCode::LE_PERIODIC_ADVERTISING_CREATE_SYNC_CANCEL): {
+      OnLEPeriodicAdvertisingCreateSyncCancelCommandReceived();
       break;
     }
     case static_cast<uint16_t>(

@@ -64,7 +64,8 @@ PeriodicAdvertisingSyncManager::CreateSync(PeerId peer_id,
   }
 
   for (auto& [sync_id, sync] : syncs_) {
-    if (sync.peer_id == peer_id && sync.advertising_sid == advertising_sid) {
+    if (sync.state != SyncState::kFailed && sync.peer_id == peer_id &&
+        sync.advertising_sid == advertising_sid) {
       return AddSyncRef(sync_id, sync, options, delegate);
     }
   }
@@ -125,7 +126,8 @@ void PeriodicAdvertisingSyncManager::OnSyncEstablished(
     hci::SyncId sync_id,
     hci::PeriodicAdvertisingSynchronizer::SyncParameters parameters) {
   auto sync_iter = syncs_.find(sync_id);
-  if (sync_iter == syncs_.end()) {
+  if (sync_iter == syncs_.end() ||
+      sync_iter->second.state == SyncState::kFailed) {
     return;
   }
 
@@ -147,10 +149,14 @@ void PeriodicAdvertisingSyncManager::OnSyncEstablished(
 
 void PeriodicAdvertisingSyncManager::OnSyncLost(hci::SyncId sync_id,
                                                 hci::Error error) {
-  auto sync_node = syncs_.extract(sync_id);
-  if (sync_node.empty()) {
+  auto sync_iter = syncs_.find(sync_id);
+  if (sync_iter == syncs_.end() ||
+      sync_iter->second.state == SyncState::kFailed) {
+    // `kFailed` entries are already being drained asynchronously by
+    // `OnDiscoveryFailure()`.
     return;
   }
+  auto sync_node = syncs_.extract(sync_iter);
 
   for (auto [delegate, _] : sync_node.mapped().delegates) {
     delegate->OnSyncLost(sync_id, error);
@@ -294,18 +300,91 @@ void PeriodicAdvertisingSyncManager::MaybeUpdateDiscoveryState() {
   hci::DiscoveryFilter filter;
   filter.set_name_substring("periodic_adv_filter");
 
-  discovery_session_ = StartingDiscovery();
+  const uint64_t request_id = next_discovery_request_id_++;
+  discovery_session_ = StartingDiscovery{.request_id = request_id};
   discovery_manager_->StartDiscovery(
       /*active=*/false,
       /*filters=*/{std::move(filter)},
-      [self = weak_self_.GetWeakPtr()](
-          std::unique_ptr<LowEnergyDiscoverySession> session) {
+      [self = weak_self_.GetWeakPtr(),
+       request_id](std::unique_ptr<LowEnergyDiscoverySession> session) {
         if (!self.is_alive()) {
           return;
         }
+        const auto* starting =
+            std::get_if<StartingDiscovery>(&self->discovery_session_);
+        if (!starting || starting->request_id != request_id) {
+          return;
+        }
+        if (!session || !session->alive()) {
+          self->OnDiscoveryFailure();
+          return;
+        }
+        session->set_error_callback([self]() {
+          if (self.is_alive()) {
+            self->OnDiscoveryFailure();
+          }
+        });
         self->discovery_session_ = std::move(session);
         self->MaybeUpdateDiscoveryState();
       });
+}
+
+void PeriodicAdvertisingSyncManager::OnDiscoveryFailure() {
+  bt_log(WARN,
+         "gap",
+         "LE discovery failed while establishing periodic advertising sync");
+  discovery_session_ = std::monostate();
+
+  std::vector<hci::SyncId> failed_sync_ids;
+  for (auto& [sync_id, sync] : syncs_) {
+    if (sync.state == SyncState::kPending) {
+      sync.state = SyncState::kFailed;
+      failed_sync_ids.push_back(sync_id);
+    }
+  }
+
+  for (hci::SyncId sync_id : failed_sync_ids) {
+    auto sync_iter = syncs_.find(sync_id);
+    if (sync_iter != syncs_.end()) {
+      sync_iter->second.hci_sync.Cancel();
+    }
+  }
+
+  if (failed_sync_ids.empty()) {
+    return;
+  }
+
+  pw::Status post_status = heap_dispatcher_.Post(
+      [self = weak_self_.GetWeakPtr(), sync_ids = std::move(failed_sync_ids)](
+          pw::async::Context, pw::Status status) {
+        if (!status.ok() || !self.is_alive()) {
+          return;
+        }
+        for (hci::SyncId sync_id : sync_ids) {
+          while (self.is_alive()) {
+            auto sync_iter = self->syncs_.find(sync_id);
+            if (sync_iter == self->syncs_.end()) {
+              break;
+            }
+            auto& delegates = sync_iter->second.delegates;
+            if (delegates.empty()) {
+              auto node = self->syncs_.extract(sync_iter);
+              break;
+            }
+            auto delegate_iter = delegates.begin();
+            Delegate* delegate = delegate_iter->first;
+            delegates.erase(delegate_iter);
+            if (delegates.empty()) {
+              auto node = self->syncs_.extract(sync_iter);
+            }
+            delegate->OnSyncLost(sync_id, Error(HostError::kFailed));
+          }
+          if (!self.is_alive()) {
+            return;
+          }
+        }
+      });
+  PW_CHECK(post_status.ok());
 }
 
 }  // namespace bt::gap

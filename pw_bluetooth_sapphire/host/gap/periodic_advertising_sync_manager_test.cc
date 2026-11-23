@@ -71,12 +71,19 @@ class SyncDelegate : public PeriodicAdvertisingSyncManager::Delegate {
     return sync_lost_events_;
   }
 
+  void set_on_sync_lost_callback(fit::closure cb) {
+    on_sync_lost_cb_ = std::move(cb);
+  }
+
  private:
   void OnSyncEstablished(hci::SyncId sync_id, SyncParameters params) override {
     on_sync_established_.emplace_back(sync_id, params);
   }
   void OnSyncLost(hci::SyncId sync_id, hci::Error error) override {
     sync_lost_events_.emplace_back(sync_id, error);
+    if (on_sync_lost_cb_) {
+      on_sync_lost_cb_();
+    }
   }
   void OnAdvertisingReport(hci::SyncId sync_id,
                            const PeriodicAdvertisingReport& report) override {
@@ -97,6 +104,7 @@ class SyncDelegate : public PeriodicAdvertisingSyncManager::Delegate {
   std::vector<std::pair<hci::SyncId, BroadcastIsochronousGroupInfo>>
       big_info_reports_;
   std::vector<std::pair<hci::SyncId, hci::Error>> sync_lost_events_;
+  fit::closure on_sync_lost_cb_;
 };
 
 using TestingBase =
@@ -133,6 +141,10 @@ class PeriodicAdvertisingSyncManagerTest : public TestingBase {
 
   PeriodicAdvertisingSyncManager& sync_manager() {
     return sync_manager_.value();
+  }
+
+  LowEnergyDiscoveryManager& discovery_manager() {
+    return discovery_manager_.value();
   }
 
   void ResetSyncManager() { sync_manager_.reset(); }
@@ -657,6 +669,324 @@ TEST_F(PeriodicAdvertisingSyncManagerTest,
   // Releasing handles after manager destruction must be a safe no-op.
   pending_handle->Cancel();
   established_handle->Cancel();
+  RunUntilIdle();
+}
+
+TEST_F(PeriodicAdvertisingSyncManagerTest,
+       ScanStartFailureNotifiesPendingSyncAndRecoversOnRetry) {
+  SyncDelegate delegate1;
+  SyncOptions options{.filter_duplicates = true};
+  DeviceAddress address(DeviceAddress::Type::kLEPublic, {1});
+
+  auto fake_peer = std::make_unique<testing::FakePeer>(address, dispatcher());
+  const StaticByteBuffer kAdvData(0x03, 0x03, 0x0d, 0x18);
+  fake_peer->AddPeriodicAdvertisement(
+      kAdvSid1, DynamicByteBuffer(kAdvData), kBigInfo);
+  test_device()->AddPeer(std::move(fake_peer));
+  Peer* peer = peer_cache().NewPeer(address, /*connectable=*/false);
+
+  // Cause LE scan start to fail on the controller.
+  test_device()->SetDefaultResponseStatus(
+      hci_spec::kLESetExtendedScanEnable,
+      pw::bluetooth::emboss::StatusCode::COMMAND_DISALLOWED);
+
+  hci::Result<PeriodicAdvertisingSyncHandle> handle1 =
+      sync_manager().CreateSync(
+          peer->identifier(), kAdvSid1, options, delegate1);
+  ASSERT_TRUE(handle1.is_ok());
+  RunUntilIdle();
+
+  ASSERT_EQ(1u, delegate1.sync_lost_events().size());
+  EXPECT_EQ(handle1->id(), delegate1.sync_lost_events()[0].first);
+  EXPECT_EQ(Error(HostError::kFailed), delegate1.sync_lost_events()[0].second);
+  EXPECT_TRUE(test_device()->periodic_advertising_syncs().empty());
+
+  // Clear the transient controller scan error and verify a subsequent
+  // CreateSync for a distinct peer/SID starts LE discovery and establishes
+  // periodic sync cleanly (proving the failed HCI sync was canceled).
+  test_device()->ClearDefaultResponseStatus(hci_spec::kLESetExtendedScanEnable);
+
+  DeviceAddress address2(DeviceAddress::Type::kLEPublic, {2});
+  auto fake_peer2 = std::make_unique<testing::FakePeer>(address2, dispatcher());
+  fake_peer2->AddPeriodicAdvertisement(
+      kAdvSid2, DynamicByteBuffer(kAdvData), kBigInfo);
+  test_device()->AddPeer(std::move(fake_peer2));
+  Peer* peer2 = peer_cache().NewPeer(address2, /*connectable=*/false);
+
+  SyncDelegate delegate2;
+  hci::Result<PeriodicAdvertisingSyncHandle> handle2 =
+      sync_manager().CreateSync(
+          peer2->identifier(), kAdvSid2, options, delegate2);
+  ASSERT_TRUE(handle2.is_ok());
+  RunUntilIdle();
+
+  ASSERT_EQ(1u, delegate2.on_sync_established_events().size());
+  EXPECT_EQ(handle2->id(), delegate2.on_sync_established_events()[0].first);
+  handle2->Cancel();
+  RunUntilIdle();
+}
+
+TEST_F(PeriodicAdvertisingSyncManagerTest,
+       ScanStartFailurePreservesAlreadyEstablishedSync) {
+  SyncDelegate established_delegate;
+  SyncDelegate pending_delegate;
+  SyncOptions options{.filter_duplicates = true};
+
+  DeviceAddress addr1(DeviceAddress::Type::kLEPublic, {1});
+  auto fake_peer = std::make_unique<testing::FakePeer>(addr1, dispatcher());
+  const StaticByteBuffer kAdvData(0x03, 0x03, 0x0d, 0x18);
+  fake_peer->AddPeriodicAdvertisement(
+      kAdvSid1, DynamicByteBuffer(kAdvData), kBigInfo);
+  test_device()->AddPeer(std::move(fake_peer));
+  Peer* peer1 = peer_cache().NewPeer(addr1, /*connectable=*/false);
+
+  hci::Result<PeriodicAdvertisingSyncHandle> established_handle =
+      sync_manager().CreateSync(
+          peer1->identifier(), kAdvSid1, options, established_delegate);
+  ASSERT_TRUE(established_handle.is_ok());
+  RunUntilIdle();
+  ASSERT_EQ(1u, established_delegate.on_sync_established_events().size());
+
+  // Now fail scan start for a new pending sync and ensure the established sync
+  // is unaffected.
+  DeviceAddress addr2(DeviceAddress::Type::kLEPublic, {2});
+  Peer* peer2 = peer_cache().NewPeer(addr2, /*connectable=*/false);
+  peer2->MutLe();
+
+  test_device()->SetDefaultResponseStatus(
+      hci_spec::kLESetExtendedScanEnable,
+      pw::bluetooth::emboss::StatusCode::COMMAND_DISALLOWED);
+
+  hci::Result<PeriodicAdvertisingSyncHandle> pending_handle =
+      sync_manager().CreateSync(
+          peer2->identifier(), kAdvSid2, options, pending_delegate);
+  ASSERT_TRUE(pending_handle.is_ok());
+  RunUntilIdle();
+
+  EXPECT_EQ(1u, pending_delegate.sync_lost_events().size());
+  EXPECT_TRUE(established_delegate.sync_lost_events().empty());
+  EXPECT_EQ(1u, test_device()->periodic_advertising_syncs().size());
+
+  established_handle->Cancel();
+  RunUntilIdle();
+}
+
+TEST_F(PeriodicAdvertisingSyncManagerTest,
+       ActiveScanSessionErrorNotifiesPendingSyncAndRecoversOnRetry) {
+  SyncDelegate delegate1;
+  SyncOptions options{.filter_duplicates = true};
+  DeviceAddress address(DeviceAddress::Type::kLEPublic, {1});
+
+  Peer* peer = peer_cache().NewPeer(address, /*connectable=*/false);
+  peer->MutLe();
+
+  // Start a pending sync while controller scanning succeeds so
+  // `discovery_session_` holds an active `LowEnergyDiscoverySession`.
+  hci::Result<PeriodicAdvertisingSyncHandle> handle1 =
+      sync_manager().CreateSync(
+          peer->identifier(), kAdvSid1, options, delegate1);
+  ASSERT_TRUE(handle1.is_ok());
+  RunUntilIdle();
+  EXPECT_TRUE(delegate1.sync_lost_events().empty());
+
+  // Inject an HCI scan parameter failure for the next scan period restart so
+  // stopping the current period succeeds and restarting fails, firing
+  // `LowEnergyDiscoverySession::set_error_callback` -> `OnDiscoveryFailure`.
+  test_device()->SetDefaultResponseStatus(
+      hci_spec::kLESetExtendedScanParameters,
+      pw::bluetooth::emboss::StatusCode::COMMAND_DISALLOWED);
+  RunFor(kLEGeneralDiscoveryScanMin);
+
+  ASSERT_EQ(1u, delegate1.sync_lost_events().size());
+  EXPECT_EQ(handle1->id(), delegate1.sync_lost_events()[0].first);
+  EXPECT_EQ(Error(HostError::kFailed), delegate1.sync_lost_events()[0].second);
+
+  // Clear the error, add the periodic advertiser, and verify a subsequent
+  // CreateSync starts a new discovery session and establishes sync cleanly.
+  test_device()->ClearDefaultResponseStatus(
+      hci_spec::kLESetExtendedScanParameters);
+  auto fake_peer = std::make_unique<testing::FakePeer>(address, dispatcher());
+  const StaticByteBuffer kAdvData(0x03, 0x03, 0x0d, 0x18);
+  fake_peer->AddPeriodicAdvertisement(
+      kAdvSid1, DynamicByteBuffer(kAdvData), kBigInfo);
+  test_device()->AddPeer(std::move(fake_peer));
+
+  SyncDelegate delegate2;
+  hci::Result<PeriodicAdvertisingSyncHandle> handle2 =
+      sync_manager().CreateSync(
+          peer->identifier(), kAdvSid1, options, delegate2);
+  ASSERT_TRUE(handle2.is_ok());
+  RunUntilIdle();
+
+  ASSERT_EQ(1u, delegate2.on_sync_established_events().size());
+  EXPECT_EQ(handle2->id(), delegate2.on_sync_established_events()[0].first);
+  handle2->Cancel();
+  RunUntilIdle();
+}
+
+TEST_F(PeriodicAdvertisingSyncManagerTest,
+       RetryCreateSyncInsideOnSyncLostAfterScanFailureSucceeds) {
+  SyncDelegate delegate1;
+  SyncDelegate delegate2;
+  SyncOptions options{.filter_duplicates = true};
+  DeviceAddress address(DeviceAddress::Type::kLEPublic, {1});
+
+  auto fake_peer = std::make_unique<testing::FakePeer>(address, dispatcher());
+  const StaticByteBuffer kAdvData(0x03, 0x03, 0x0d, 0x18);
+  fake_peer->AddPeriodicAdvertisement(
+      kAdvSid1, DynamicByteBuffer(kAdvData), kBigInfo);
+  test_device()->AddPeer(std::move(fake_peer));
+  Peer* peer = peer_cache().NewPeer(address, /*connectable=*/false);
+
+  test_device()->SetDefaultResponseStatus(
+      hci_spec::kLESetExtendedScanEnable,
+      pw::bluetooth::emboss::StatusCode::COMMAND_DISALLOWED);
+
+  std::optional<PeriodicAdvertisingSyncHandle> retry_handle;
+  delegate1.set_on_sync_lost_callback([&]() {
+    test_device()->ClearDefaultResponseStatus(
+        hci_spec::kLESetExtendedScanEnable);
+    hci::Result<PeriodicAdvertisingSyncHandle> res = sync_manager().CreateSync(
+        peer->identifier(), kAdvSid1, options, delegate2);
+    ASSERT_TRUE(res.is_ok());
+    retry_handle.emplace(std::move(res.value()));
+  });
+
+  hci::Result<PeriodicAdvertisingSyncHandle> handle1 =
+      sync_manager().CreateSync(
+          peer->identifier(), kAdvSid1, options, delegate1);
+  ASSERT_TRUE(handle1.is_ok());
+  RunUntilIdle();
+
+  EXPECT_EQ(1u, delegate1.sync_lost_events().size());
+  ASSERT_TRUE(retry_handle.has_value());
+  ASSERT_EQ(1u, delegate2.on_sync_established_events().size());
+  EXPECT_EQ(retry_handle->id(),
+            delegate2.on_sync_established_events()[0].first);
+  retry_handle->Cancel();
+  RunUntilIdle();
+}
+
+TEST_F(PeriodicAdvertisingSyncManagerTest,
+       CancelAndDestroySiblingDelegateInsideOnSyncLostSkipsCanceledDelegate) {
+  SyncOptions options{.filter_duplicates = true};
+  DeviceAddress addr1(DeviceAddress::Type::kLEPublic, {1});
+  DeviceAddress addr2(DeviceAddress::Type::kLEPublic, {2});
+  Peer* peer1 = peer_cache().NewPeer(addr1, /*connectable=*/false);
+  peer1->MutLe();
+  Peer* peer2 = peer_cache().NewPeer(addr2, /*connectable=*/false);
+  peer2->MutLe();
+
+  test_device()->SetDefaultResponseStatus(
+      hci_spec::kLESetExtendedScanEnable,
+      pw::bluetooth::emboss::StatusCode::COMMAND_DISALLOWED);
+
+  auto delegate1 = std::make_unique<SyncDelegate>();
+  auto delegate2 = std::make_unique<SyncDelegate>();
+  std::optional<PeriodicAdvertisingSyncHandle> handle1;
+  std::optional<PeriodicAdvertisingSyncHandle> handle2;
+  size_t notifications = 0;
+
+  delegate1->set_on_sync_lost_callback([&]() {
+    ++notifications;
+    if (handle2.has_value()) {
+      handle2->Cancel();
+      handle2.reset();
+      delegate2.reset();
+    }
+  });
+  delegate2->set_on_sync_lost_callback([&]() {
+    ++notifications;
+    if (handle1.has_value()) {
+      handle1->Cancel();
+      handle1.reset();
+      delegate1.reset();
+    }
+  });
+
+  hci::Result<PeriodicAdvertisingSyncHandle> res1 = sync_manager().CreateSync(
+      peer1->identifier(), kAdvSid1, options, *delegate1);
+  ASSERT_TRUE(res1.is_ok());
+  handle1.emplace(std::move(res1.value()));
+
+  hci::Result<PeriodicAdvertisingSyncHandle> res2 = sync_manager().CreateSync(
+      peer2->identifier(), kAdvSid2, options, *delegate2);
+  ASSERT_TRUE(res2.is_ok());
+  handle2.emplace(std::move(res2.value()));
+
+  RunUntilIdle();
+
+  EXPECT_EQ(1u, notifications);
+  EXPECT_TRUE((delegate1 == nullptr) != (delegate2 == nullptr));
+}
+
+TEST_F(
+    PeriodicAdvertisingSyncManagerTest,
+    JoinActiveScanThatFailsBeforeSessionCallbackDeliversDeadSessionAndRecovers) {
+  std::unique_ptr<LowEnergyDiscoverySession> active_session;
+  discovery_manager().StartDiscovery(
+      /*active=*/true, {}, [&](auto session) {
+        active_session = std::move(session);
+      });
+  RunUntilIdle();
+  ASSERT_NE(nullptr, active_session);
+  ASSERT_TRUE(active_session->alive());
+
+  test_device()->SetDefaultResponseStatus(
+      hci_spec::kLESetExtendedScanParameters,
+      pw::bluetooth::emboss::StatusCode::COMMAND_DISALLOWED);
+  fit::closure resume_scan_params;
+  test_device()->pause_responses_for_opcode(
+      hci_spec::kLESetExtendedScanParameters,
+      [&](fit::closure resume) { resume_scan_params = std::move(resume); });
+
+  RunFor(kLEGeneralDiscoveryScanMin);
+  ASSERT_TRUE(resume_scan_params);
+  ASSERT_TRUE(active_session->alive());
+
+  DeviceAddress address(DeviceAddress::Type::kLEPublic, {1});
+  Peer* peer = peer_cache().NewPeer(address, /*connectable=*/false);
+  peer->MutLe();
+  SyncDelegate delegate1;
+  SyncOptions options{.filter_duplicates = true};
+
+  // Resume the failing scan-parameter command first so its CommandComplete
+  // failure is queued ahead of StartDiscovery's posted session callback.
+  resume_scan_params();
+  hci::Result<PeriodicAdvertisingSyncHandle> handle1 =
+      sync_manager().CreateSync(
+          peer->identifier(), kAdvSid1, options, delegate1);
+  ASSERT_TRUE(handle1.is_ok());
+
+  RunUntilIdle();
+  EXPECT_FALSE(active_session->alive());
+  ASSERT_EQ(1u, delegate1.sync_lost_events().size());
+  EXPECT_EQ(handle1->id(), delegate1.sync_lost_events()[0].first);
+  EXPECT_EQ(Error(HostError::kFailed), delegate1.sync_lost_events()[0].second);
+
+  // Clear the controller failure and verify a subsequent CreateSync recovers.
+  test_device()->pause_responses_for_opcode(
+      hci_spec::kLESetExtendedScanParameters,
+      [](fit::closure resume) { resume(); });
+  test_device()->ClearDefaultResponseStatus(
+      hci_spec::kLESetExtendedScanParameters);
+
+  auto fake_peer = std::make_unique<testing::FakePeer>(address, dispatcher());
+  const StaticByteBuffer kAdvData(0x03, 0x03, 0x0d, 0x18);
+  fake_peer->AddPeriodicAdvertisement(
+      kAdvSid1, DynamicByteBuffer(kAdvData), kBigInfo);
+  test_device()->AddPeer(std::move(fake_peer));
+
+  SyncDelegate delegate2;
+  hci::Result<PeriodicAdvertisingSyncHandle> handle2 =
+      sync_manager().CreateSync(
+          peer->identifier(), kAdvSid1, options, delegate2);
+  ASSERT_TRUE(handle2.is_ok());
+  RunUntilIdle();
+
+  ASSERT_EQ(1u, delegate2.on_sync_established_events().size());
+  EXPECT_EQ(handle2->id(), delegate2.on_sync_established_events()[0].first);
+  handle2->Cancel();
   RunUntilIdle();
 }
 

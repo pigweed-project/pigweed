@@ -849,6 +849,8 @@ class FakeController final : public ControllerTestDoubleBase,
       const pw::bluetooth::emboss::LEPeriodicAdvertisingCreateSyncCommandView&
           params);
 
+  void OnLEPeriodicAdvertisingCreateSyncCancelCommandReceived();
+
   void OnLEPeriodicAdvertisingSyncTransferCommandReceived(
       const pw::bluetooth::emboss::LEPeriodicAdvertisingSyncTransferCommandView&
           params);
