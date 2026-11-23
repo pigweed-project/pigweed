@@ -120,12 +120,12 @@ void Phase1::InitiateFeatureExchange() {
       .auth_req = preq_values->auth_req,
       .max_encryption_key_size = preq_values->max_encryption_key_size,
       .initiator_key_dist_gen = preq_values->local_keys,
-      .responder_key_dist_gen = preq_values->remote_keys};
+      .responder_key_dist_gen = preq_values->peer_keys};
   sm_chan().SendMessage(kPairingRequest, *preq_);
 }
 
 void Phase1::RespondToPairingRequest(const PairingRequestParams& req_params) {
-  // We should only be in this state when pairing is initiated by the remote
+  // We should only be in this state when pairing is initiated by the peer
   // i.e. we are the responder.
   PW_CHECK(role() == Role::kResponder);
 
@@ -144,7 +144,7 @@ void Phase1::RespondToPairingRequest(const PairingRequestParams& req_params) {
   // The keys that will be exchanged correspond to the intersection of what the
   // initiator requests and we support.
   pres_->initiator_key_dist_gen =
-      pres_values->remote_keys & preq.initiator_key_dist_gen;
+      pres_values->peer_keys & preq.initiator_key_dist_gen;
   pres_->responder_key_dist_gen =
       pres_values->local_keys & preq.responder_key_dist_gen;
 
@@ -200,9 +200,9 @@ std::optional<LocalPairingParams> Phase1::BuildPairingParameters() {
       local_params.auth_req |= AuthReq::kBondingFlag;
     }
 
-    // We always request identity information from the remote.
+    // We always request identity information from the peer.
     // This applies to both LE and BR/EDR.
-    local_params.remote_keys = KeyDistGen::kIdKey;
+    local_params.peer_keys = KeyDistGen::kIdKey;
 
     PW_CHECK(listener().is_alive());
     WeakSelf<Phase1>::WeakPtr self = weak_self_.GetWeakPtr();
@@ -218,10 +218,10 @@ std::optional<LocalPairingParams> Phase1::BuildPairingParameters() {
     // LE: For the current connection, the responder-generated encryption keys
     // (LTK) is always used. As device roles may change in future connections,
     // Fuchsia supports distribution and generation of LTKs by both the local
-    // and remote device (V5.0 Vol. 3 Part H 2.4.2.3).
+    // and peer device (V5.0 Vol. 3 Part H 2.4.2.3).
     // BR/EDR: EncKey indicates the intent to derive the LE LTK, which is always
     // the case for us.
-    local_params.remote_keys |= KeyDistGen::kEncKey;
+    local_params.peer_keys |= KeyDistGen::kEncKey;
     local_params.local_keys |= KeyDistGen::kEncKey;
 
     // If we support SC over LE, we always try to generate the cross-transport
@@ -229,7 +229,7 @@ std::optional<LocalPairingParams> Phase1::BuildPairingParameters() {
     // On BR/EDR, LinkKey is RFU.
     if (local_params.auth_req & AuthReq::kSC) {
       local_params.local_keys |= KeyDistGen::kLinkKey;
-      local_params.remote_keys |= KeyDistGen::kLinkKey;
+      local_params.peer_keys |= KeyDistGen::kLinkKey;
     }
   }
 
@@ -314,25 +314,25 @@ fit::result<ErrorCode, PairingFeatures> Phase1::ResolveFeatures(
   // be distributed. The keys that will be distributed by us and the peer
   // depends on whichever one initiated the feature exchange by sending a
   // "Pairing Request" command.
-  KeyDistGenField local_keys, remote_keys;
+  KeyDistGenField local_keys, peer_keys;
   if (local_initiator) {
     local_keys = pres.initiator_key_dist_gen;
-    remote_keys = pres.responder_key_dist_gen;
+    peer_keys = pres.responder_key_dist_gen;
 
     // v5.1, Vol 3, Part H Section 3.6.1 requires that the responder shall not
     // set to one any flag in the key dist gen fields that the initiator has set
     // to zero. Hence we reject the pairing if the responder requests keys that
     // we don't support.
     if ((preq.initiator_key_dist_gen & local_keys) != local_keys ||
-        (preq.responder_key_dist_gen & remote_keys) != remote_keys) {
+        (preq.responder_key_dist_gen & peer_keys) != peer_keys) {
       return fit::error(ErrorCode::kInvalidParameters);
     }
   } else {
     local_keys = pres.responder_key_dist_gen;
-    remote_keys = pres.initiator_key_dist_gen;
+    peer_keys = pres.initiator_key_dist_gen;
 
     // When we are the responder we always respect the initiator's wishes.
-    PW_CHECK((preq.initiator_key_dist_gen & remote_keys) == remote_keys);
+    PW_CHECK((preq.initiator_key_dist_gen & peer_keys) == peer_keys);
     PW_CHECK((preq.responder_key_dist_gen & local_keys) == local_keys);
   }
   // v5.1 Vol 3 Part C Section 9.4.2.2 says that bonding information shall not
@@ -340,7 +340,7 @@ fit::result<ErrorCode, PairingFeatures> Phase1::ResolveFeatures(
   // avoid a situation where, if we were in bondable mode and a peer requested
   // non-bondable mode with a non-zero keydistgen field, we pair in non-bondable
   // mode but also attempt to distribute keys.
-  if (!will_bond && (local_keys || remote_keys)) {
+  if (!will_bond && (local_keys || peer_keys)) {
     return fit::error(ErrorCode::kInvalidParameters);
   }
 
@@ -359,7 +359,7 @@ fit::result<ErrorCode, PairingFeatures> Phase1::ResolveFeatures(
     // initiator and responder Key Distribution / Generation fields, the
     // procedures for calculating the LTK from the BR/EDR Link Key shall be
     // used." (v6.0 Vol. 3, Part H, 3.6.1).
-    if (local_keys & remote_keys & KeyDistGen::kEncKey) {
+    if (local_keys & peer_keys & KeyDistGen::kEncKey) {
       generate_ct_key = ct_algo;
     }
   } else if (sc) {
@@ -368,13 +368,13 @@ fit::result<ErrorCode, PairingFeatures> Phase1::ResolveFeatures(
     // H 3.6.1). We ignore the Encryption Key bit here to allow for uniform
     // handling of it later.
     local_keys &= ~KeyDistGen::kEncKey;
-    remote_keys &= ~KeyDistGen::kEncKey;
+    peer_keys &= ~KeyDistGen::kEncKey;
 
     // "When hci_spec::LinkKey is set to 1 by both devices in the initiator and
     // responder [KeyDistGen] fields, the procedures for calculating the BR/EDR
     // link key from the LTK shall be used". The chosen procedure depends on the
     // CT2 bit of the AuthReq (v5.2 Vol. 3 Part H 3.5.1 and 3.6.1).
-    if (local_keys & remote_keys & KeyDistGen::kLinkKey) {
+    if (local_keys & peer_keys & KeyDistGen::kLinkKey) {
       generate_ct_key = ct_algo;
     }
   } else if (requested_level_ == SecurityLevel::kSecureAuthenticated) {
@@ -391,7 +391,7 @@ fit::result<ErrorCode, PairingFeatures> Phase1::ResolveFeatures(
                                  .method = method,
                                  .encryption_key_size = enc_key_size,
                                  .local_key_distribution = local_keys,
-                                 .remote_key_distribution = remote_keys});
+                                 .peer_key_distribution = peer_keys});
 }
 
 void Phase1::OnPairingResponse(const PairingResponseParams& response_params) {

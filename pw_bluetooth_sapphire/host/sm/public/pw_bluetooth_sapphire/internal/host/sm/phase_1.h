@@ -52,7 +52,7 @@ class Phase1 final : public PairingPhase, public PairingChannelHandler {
       CompleteCallback on_complete);
 
   // Returns a Phase 1 in the responder role. Note the `preq` parameter: Phase 1
-  // is supplied the Pairing Request from the remote as responder. See private
+  // is supplied the Pairing Request from the peer as responder. See private
   // ctor for parameter descriptions.
   static std::unique_ptr<Phase1> CreatePhase1Responder(
       PairingChannel::WeakPtr chan,

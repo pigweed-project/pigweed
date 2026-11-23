@@ -49,7 +49,7 @@ const PairingFeatures kDefaultFeatures = {
     .encryption_key_size = kMaxEncryptionKeySize,
     .local_key_distribution =
         KeyDistGen::kEncKey,  // kEncKey because it lets Phase 3 "just work"
-    .remote_key_distribution = 0u};
+    .peer_key_distribution = 0u};
 
 const SecurityProperties kDefaultProperties(SecurityLevel::kEncrypted,
                                             kMaxEncryptionKeySize,
@@ -214,10 +214,10 @@ TEST_F(Phase3DeathTest, NoLocalLtkDistributionDuringSecureConnections) {
   ASSERT_DEATH_IF_SUPPORTED(NewPhase3(args), ".*Secure Connections.*");
 }
 
-TEST_F(Phase3DeathTest, NoRemoteLtkDistributionDuringSecureConnections) {
+TEST_F(Phase3DeathTest, NoPeerLtkDistributionDuringSecureConnections) {
   Phase3Args args;
   args.features.secure_connections = true;
-  args.features.remote_key_distribution = KeyDistGen::kEncKey;
+  args.features.peer_key_distribution = KeyDistGen::kEncKey;
   ASSERT_DEATH_IF_SUPPORTED(NewPhase3(args), ".*Secure Connections.*");
 }
 
@@ -231,7 +231,7 @@ TEST_F(Phase3DeathTest, CannotDistributeKeysOnUnencryptedChannel) {
 
 TEST_F(Phase3DeathTest, Phase3MustDistributeKeys) {
   Phase3Args args;
-  args.features.remote_key_distribution = args.features.local_key_distribution =
+  args.features.peer_key_distribution = args.features.local_key_distribution =
       0;
   // Phase 3 should only be instantiated if there are keys to distribute
   ASSERT_DEATH_IF_SUPPORTED(NewPhase3(args), ".*HasKeysToDistribute.*");
@@ -241,7 +241,7 @@ TEST_F(Phase3DeathTest, Phase3MustDistributeKeys) {
 TEST_F(Phase3Test, EncryptionInformationReceivedTwice) {
   Phase3Args args;
   args.features.initiator = true;
-  args.features.remote_key_distribution = KeyDistGen::kEncKey;
+  args.features.peer_key_distribution = KeyDistGen::kEncKey;
   NewPhase3(args);
   ByteBufferPtr sent = nullptr;
   fake_chan()->SetSendCallback(
@@ -266,7 +266,7 @@ TEST_F(Phase3Test, EncryptionInformationReceivedTwice) {
 TEST_F(Phase3Test, CentralIdentificationReceivedInWrongOrder) {
   Phase3Args args;
   args.features.initiator = true;
-  args.features.remote_key_distribution = KeyDistGen::kEncKey;
+  args.features.peer_key_distribution = KeyDistGen::kEncKey;
   NewPhase3(args);
   phase_3()->Start();
 
@@ -288,7 +288,7 @@ TEST_F(Phase3Test, CentralIdentificationReceivedInWrongOrder) {
 TEST_F(Phase3Test, ReceiveExampleLtkAborts) {
   Phase3Args args;
   args.features.initiator = true;
-  args.features.remote_key_distribution = KeyDistGen::kEncKey;
+  args.features.peer_key_distribution = KeyDistGen::kEncKey;
   NewPhase3(args);
   // Sample data from spec V5.0 Vol. 6 Part C Section 1
   const UInt128 kLtkSample = {0xBF,
@@ -325,7 +325,7 @@ TEST_F(Phase3Test, ReceiveExampleLtkAborts) {
 TEST_F(Phase3Test, ReceiveExampleRandAborts) {
   Phase3Args args;
   args.features.initiator = true;
-  args.features.remote_key_distribution = KeyDistGen::kEncKey;
+  args.features.peer_key_distribution = KeyDistGen::kEncKey;
   NewPhase3(args);
   // Sample data from spec V5.0 Vol. 6 Part C Section 1
   const uint64_t kRandSample = 0xABCDEF1234567890;
@@ -354,7 +354,7 @@ TEST_F(Phase3Test, ReceiveExampleRandAborts) {
 TEST_F(Phase3Test, ReceiveTooLongLTK) {
   Phase3Args args;
   args.features.initiator = true;
-  args.features.remote_key_distribution = KeyDistGen::kEncKey;
+  args.features.peer_key_distribution = KeyDistGen::kEncKey;
   args.features.encryption_key_size = 8;
   NewPhase3(args);
   // Ltk with 9 bytes set is longer than the negotiated max of 8 bytes.
@@ -374,7 +374,7 @@ TEST_F(Phase3Test, CentralIdentificationReceivedTwice) {
   // The local device must expect both an Encryption and ID key from the peer,
   // or it would start sending messages after the first Central ID, which is not
   // the behavior checked in this test.
-  args.features.remote_key_distribution =
+  args.features.peer_key_distribution =
       KeyDistGen::kEncKey | KeyDistGen::kIdKey;
   NewPhase3(args);
   constexpr uint16_t kEdiv = 1;
@@ -401,7 +401,7 @@ TEST_F(Phase3Test, InitiatorReceivesEncKey) {
   args.features.initiator = true;
   args.features.secure_connections = false;
   args.features.local_key_distribution = 0u;
-  args.features.remote_key_distribution = KeyDistGen::kEncKey;
+  args.features.peer_key_distribution = KeyDistGen::kEncKey;
   args.le_props = kExpectedLtk.security();
   NewPhase3(args);
   size_t sent_msg_count = 0;
@@ -428,7 +428,7 @@ TEST_F(Phase3Test, InitiatorSendsLocalIdKey) {
   Phase3Args args;
   args.features.initiator = true;
   args.features.local_key_distribution = KeyDistGen::kIdKey;
-  args.features.remote_key_distribution = 0u;
+  args.features.peer_key_distribution = 0u;
   args.le_props = kDefaultProperties;
   NewPhase3(args);
   std::optional<IRK> irk = std::nullopt;
@@ -461,7 +461,7 @@ TEST_F(Phase3Test, InitiatorSendsEncKey) {
   Phase3Args args;
   args.features.initiator = true;
   args.features.local_key_distribution = KeyDistGen::kEncKey;
-  args.features.remote_key_distribution = 0u;
+  args.features.peer_key_distribution = 0u;
   args.le_props = kDefaultProperties;
   NewPhase3(args);
   std::optional<EncryptionInformationParams> ltk_bytes = std::nullopt;
@@ -488,7 +488,7 @@ TEST_F(Phase3Test, InitiatorReceivesThenSendsEncKey) {
   Phase3Args args;
   args.features.initiator = true;
   args.features.local_key_distribution = KeyDistGen::kEncKey;
-  args.features.remote_key_distribution = KeyDistGen::kEncKey;
+  args.features.peer_key_distribution = KeyDistGen::kEncKey;
   args.le_props = kExpectedLtk.security();
   NewPhase3(args);
   std::optional<EncryptionInformationParams> ltk_bytes = std::nullopt;
@@ -542,7 +542,7 @@ TEST_F(Phase3Test, AbortsIfLocalIdKeyIsRemoved) {
 
 TEST_F(Phase3Test, IRKReceivedTwice) {
   Phase3Args args;
-  args.features.remote_key_distribution = KeyDistGen::kIdKey;
+  args.features.peer_key_distribution = KeyDistGen::kIdKey;
   NewPhase3(args);
 
   Receive128BitCmd(kIdentityInformation, UInt128());
@@ -564,7 +564,7 @@ TEST_F(Phase3Test, IRKReceivedTwice) {
 // The responder sends its identity address before sending its IRK.
 TEST_F(Phase3Test, IdentityAddressReceivedInWrongOrder) {
   Phase3Args args;
-  args.features.remote_key_distribution = KeyDistGen::kIdKey;
+  args.features.peer_key_distribution = KeyDistGen::kIdKey;
   NewPhase3(args);
 
   const auto kIdentityAddressCmd = MakeIdentityAddress(kSampleDeviceAddress);
@@ -578,7 +578,7 @@ TEST_F(Phase3Test, IdentityAddressReceivedTwice) {
   Phase3Args args;
   // We tell Phase 3 to expect the sign key even though we don't yet support it
   // so that pairing does not complete after receiving the first IdentityAddress
-  args.features.remote_key_distribution =
+  args.features.peer_key_distribution =
       KeyDistGen::kIdKey | KeyDistGen::kSignKey;
   NewPhase3(args);
   phase_3()->Start();
@@ -601,7 +601,7 @@ TEST_F(Phase3Test, IdentityAddressReceivedTwice) {
 
 TEST_F(Phase3Test, BadIdentityAddressType) {
   Phase3Args args;
-  args.features.remote_key_distribution = KeyDistGen::kIdKey;
+  args.features.peer_key_distribution = KeyDistGen::kIdKey;
   NewPhase3(args);
   phase_3()->Start();
   // Receive a generic IdentityInfo packet so we are prepared for the Identity
@@ -642,7 +642,7 @@ TEST_F(Phase3Test, NonStaticRandomIdentityAddressRejected) {
 
       Phase3Args args;
       args.features.local_key_distribution = 0u;
-      args.features.remote_key_distribution = KeyDistGen::kIdKey;
+      args.features.peer_key_distribution = KeyDistGen::kIdKey;
       args.peer_address = link_type == bt::LinkType::kLE
                               ? invalid_addr
                               : DeviceAddress(DeviceAddress::Type::kBREDR, {1});
@@ -671,7 +671,7 @@ TEST_F(Phase3Test, StaticRandomIdentityAddressAccepted) {
 
   Phase3Args args;
   args.features.local_key_distribution = 0u;
-  args.features.remote_key_distribution = KeyDistGen::kIdKey;
+  args.features.peer_key_distribution = KeyDistGen::kIdKey;
   args.le_props = kIrk.security();
   args.peer_address = kStaticRandomAddr;
   NewPhase3(args);
@@ -704,7 +704,7 @@ TEST_F(Phase3Test, UnverifiedLeIdentityAddressRejectedAndMatchingRpaAccepted) {
   {
     Phase3Args args;
     args.features.local_key_distribution = 0u;
-    args.features.remote_key_distribution = KeyDistGen::kIdKey;
+    args.features.peer_key_distribution = KeyDistGen::kIdKey;
     args.peer_address = kSampleDeviceAddress;
     NewPhase3(args);
     phase_3()->Start();
@@ -720,7 +720,7 @@ TEST_F(Phase3Test, UnverifiedLeIdentityAddressRejectedAndMatchingRpaAccepted) {
   {
     Phase3Args args;
     args.features.local_key_distribution = 0u;
-    args.features.remote_key_distribution = KeyDistGen::kIdKey;
+    args.features.peer_key_distribution = KeyDistGen::kIdKey;
     args.peer_address = kPeerStaticRandom;
     NewPhase3(args);
     phase_3()->Start();
@@ -736,7 +736,7 @@ TEST_F(Phase3Test, UnverifiedLeIdentityAddressRejectedAndMatchingRpaAccepted) {
   {
     Phase3Args args;
     args.features.local_key_distribution = 0u;
-    args.features.remote_key_distribution = KeyDistGen::kIdKey;
+    args.features.peer_key_distribution = KeyDistGen::kIdKey;
     args.peer_address = kPeerNrpa;
     NewPhase3(args);
     phase_3()->Start();
@@ -752,7 +752,7 @@ TEST_F(Phase3Test, UnverifiedLeIdentityAddressRejectedAndMatchingRpaAccepted) {
   {
     Phase3Args args;
     args.features.local_key_distribution = 0u;
-    args.features.remote_key_distribution = KeyDistGen::kIdKey;
+    args.features.peer_key_distribution = KeyDistGen::kIdKey;
     args.peer_address = kPeerRpa;
     NewPhase3(args);
     phase_3()->Start();
@@ -768,7 +768,7 @@ TEST_F(Phase3Test, UnverifiedLeIdentityAddressRejectedAndMatchingRpaAccepted) {
   {
     Phase3Args args;
     args.features.local_key_distribution = 0u;
-    args.features.remote_key_distribution = KeyDistGen::kIdKey;
+    args.features.peer_key_distribution = KeyDistGen::kIdKey;
     args.peer_address = kPeerRpa;
     NewPhase3(args);
     phase_3()->Start();
@@ -787,7 +787,7 @@ TEST_F(Phase3Test, InitiatorCompleteWithIdKey) {
       Key(kDefaultProperties, {1, 2, 3, 4, 5, 6, 7, 8, 7, 6, 5, 4, 3, 2, 1, 0});
   Phase3Args args;
   args.features.local_key_distribution = 0u;
-  args.features.remote_key_distribution = KeyDistGen::kIdKey;
+  args.features.peer_key_distribution = KeyDistGen::kIdKey;
   args.le_props = kIrk.security();
   NewPhase3(args);
   size_t sent_msg_count = 0;
@@ -818,7 +818,7 @@ TEST_F(Phase3Test, InitiatorCompleteWithEncAndIdKey) {
   args.features.initiator = true;
   args.features.secure_connections = false;
   args.features.local_key_distribution = 0u;
-  args.features.remote_key_distribution =
+  args.features.peer_key_distribution =
       KeyDistGen::kEncKey | KeyDistGen::kIdKey;
   args.le_props = kExpectedLtk.security();
   NewPhase3(args);
@@ -846,12 +846,12 @@ TEST_F(Phase3Test, InitiatorCompleteWithEncAndIdKey) {
   EXPECT_EQ(kIrk, *pairing_data().irk);
 }
 
-TEST_F(Phase3Test, ResponderLTKDistributionNoRemoteKeys) {
+TEST_F(Phase3Test, ResponderLTKDistributionNoPeerKeys) {
   Phase3Args args;
   args.features.initiator = false;
   args.features.secure_connections = false;
   args.features.local_key_distribution = KeyDistGen::kEncKey;
-  args.features.remote_key_distribution = 0u;
+  args.features.peer_key_distribution = 0u;
   args.le_props = kDefaultProperties;
   NewPhase3(args);
   std::optional<EncryptionInformationParams> ltk_bytes = std::nullopt;
@@ -880,7 +880,7 @@ TEST_F(Phase3Test, ResponderAcceptsInitiatorEncKey) {
   args.features.initiator = false;
   args.features.secure_connections = false;
   args.features.local_key_distribution = 0u;
-  args.features.remote_key_distribution = KeyDistGen::kEncKey;
+  args.features.peer_key_distribution = KeyDistGen::kEncKey;
   args.le_props = kExpectedLtk.security();
   NewPhase3(args);
 
@@ -904,14 +904,14 @@ TEST_F(Phase3Test, ResponderAcceptsInitiatorEncKey) {
   EXPECT_EQ(kExpectedLtk, *pairing_data().peer_ltk);
 }
 
-TEST_F(Phase3Test, ResponderLTKDistributionWithRemoteKeys) {
+TEST_F(Phase3Test, ResponderLTKDistributionWithPeerKeys) {
   const Key kIrk =
       Key(kDefaultProperties, {1, 2, 3, 4, 5, 6, 7, 8, 7, 6, 5, 4, 3, 2, 1, 0});
   Phase3Args args;
   args.features.initiator = false;
   args.features.secure_connections = false;
   args.features.local_key_distribution = KeyDistGen::kEncKey;
-  args.features.remote_key_distribution = KeyDistGen::kIdKey;
+  args.features.peer_key_distribution = KeyDistGen::kIdKey;
   args.le_props = kDefaultProperties;
   NewPhase3(args);
   std::optional<EncryptionInformationParams> ltk_bytes = std::nullopt;
@@ -958,7 +958,7 @@ TEST_F(Phase3Test, ResponderLocalLTKMaxLength) {
   args.features.initiator = false;
   args.features.encryption_key_size = kNegotiatedMaxKeySize;
   args.features.local_key_distribution = KeyDistGen::kEncKey;
-  args.features.remote_key_distribution = 0u;
+  args.features.peer_key_distribution = 0u;
   NewPhase3(args);
   std::optional<EncryptionInformationParams> ltk_bytes = std::nullopt;
   std::optional<CentralIdentificationParams> central_id = std::nullopt;
@@ -985,13 +985,13 @@ TEST_F(Phase3Test, ResponderLocalLTKMaxLength) {
   }
 }
 
-TEST_F(Phase3Test, ResponderLocalIdKeyDistributionWithRemoteKeys) {
+TEST_F(Phase3Test, ResponderLocalIdKeyDistributionWithPeerKeys) {
   const DeviceAddress kPeerAddr(DeviceAddress::Type::kLEPublic, {2});
   Phase3Args args;
   args.peer_address = kPeerAddr;
   args.features.initiator = false;
   args.features.local_key_distribution = KeyDistGen::kIdKey;
-  args.features.remote_key_distribution = KeyDistGen::kIdKey;
+  args.features.peer_key_distribution = KeyDistGen::kIdKey;
   args.le_props = kDefaultProperties;
   NewPhase3(args);
   std::optional<IRK> irk = std::nullopt;
@@ -1031,7 +1031,7 @@ TEST_F(Phase3Test, ResponderLocalIdKeyDistributionWithRemoteKeys) {
 
 TEST_F(Phase3Test, ReceivePairingFailed) {
   Phase3Args args;
-  args.features.remote_key_distribution = KeyDistGen::kEncKey;
+  args.features.peer_key_distribution = KeyDistGen::kEncKey;
   NewPhase3(args);
   phase_3()->Start();
   fake_chan()->Receive(
@@ -1044,7 +1044,7 @@ TEST_F(Phase3Test, ReceivePairingFailed) {
 
 TEST_F(Phase3Test, MalformedCommand) {
   Phase3Args args;
-  args.features.remote_key_distribution = KeyDistGen::kEncKey;
+  args.features.peer_key_distribution = KeyDistGen::kEncKey;
   NewPhase3(args);
   phase_3()->Start();
   // The kEncryptionInformation packet is expected to have a 16 byte payload,
@@ -1076,7 +1076,7 @@ TEST_F(Phase3Test, BrEdrInitiatorIdKeysExchangedSuccessfully) {
   args.features.initiator = true;
   args.features.local_key_distribution =
       KeyDistGen::kIdKey | KeyDistGen::kEncKey;
-  args.features.remote_key_distribution =
+  args.features.peer_key_distribution =
       KeyDistGen::kIdKey | KeyDistGen::kEncKey;
   args.le_props = kDefaultProperties;
   NewPhase3(args, LinkType::kACL);
@@ -1111,7 +1111,7 @@ TEST_F(Phase3Test, BrEdrResponderIdKeysExchangedSuccessfully) {
   args.features.initiator = false;
   args.features.local_key_distribution =
       KeyDistGen::kIdKey | KeyDistGen::kEncKey;
-  args.features.remote_key_distribution =
+  args.features.peer_key_distribution =
       KeyDistGen::kIdKey | KeyDistGen::kEncKey;
   args.le_props = kDefaultProperties;
   NewPhase3(args, LinkType::kACL);
@@ -1154,7 +1154,7 @@ TEST_F(Phase3Test, BrEdrResponderAbortsWhenCtkdDisallowedBeforeInitiatorKeys) {
   Phase3Args args;
   args.features.initiator = false;
   args.features.local_key_distribution = 0u;
-  args.features.remote_key_distribution = KeyDistGen::kIdKey;
+  args.features.peer_key_distribution = KeyDistGen::kIdKey;
   NewPhase3(args, LinkType::kACL);
   phase_3()->Start();
   RunUntilIdle();
@@ -1178,7 +1178,7 @@ TEST_F(Phase3Test, BrEdrPeerPairingFailedNotRepliedToWhenCtkdDisallowed) {
   Phase3Args args;
   args.features.initiator = false;
   args.features.local_key_distribution = 0u;
-  args.features.remote_key_distribution = KeyDistGen::kIdKey;
+  args.features.peer_key_distribution = KeyDistGen::kIdKey;
   NewPhase3(args, LinkType::kACL);
 
   size_t sent_msg_count = 0;
@@ -1206,7 +1206,7 @@ TEST_F(Phase3Test, LePairingIgnoresBrEdrCtkdDisallowed) {
   args.features.initiator = false;
   args.features.secure_connections = false;
   args.features.local_key_distribution = 0u;
-  args.features.remote_key_distribution = KeyDistGen::kEncKey;
+  args.features.peer_key_distribution = KeyDistGen::kEncKey;
   args.le_props = kExpectedLtk.security();
   NewPhase3(args);
   // The BR/EDR CTKD check only applies to ACL links.

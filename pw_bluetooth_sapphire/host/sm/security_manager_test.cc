@@ -883,7 +883,7 @@ class InitiatorPairingTest : public SecurityManagerTest {
   // FastForwardToPhase3() to also emulate successful encryption.
   void FastForwardToSTK(UInt128* out_stk,
                         SecurityLevel level = SecurityLevel::kEncrypted,
-                        KeyDistGenField remote_keys = 0,
+                        KeyDistGenField peer_keys = 0,
                         KeyDistGenField local_keys = 0,
                         uint8_t max_key_size = kMaxEncryptionKeySize,
                         BondableMode bondable_mode = BondableMode::Bondable) {
@@ -905,7 +905,7 @@ class InitiatorPairingTest : public SecurityManagerTest {
     pairing_params.auth_req = mitm_protected | bondable;
     pairing_params.max_encryption_key_size = max_key_size;
     pairing_params.initiator_key_dist_gen = local_keys;
-    pairing_params.responder_key_dist_gen = remote_keys;
+    pairing_params.responder_key_dist_gen = peer_keys;
     ReceivePairingFeatures(pairing_params);
 
     // Run the loop until the harness caches the feature exchange PDUs (preq &
@@ -935,7 +935,7 @@ class InitiatorPairingTest : public SecurityManagerTest {
       UInt128* out_encryption_key,
       bool secure_connections = false,
       SecurityLevel level = SecurityLevel::kEncrypted,
-      KeyDistGenField remote_keys = 0,
+      KeyDistGenField peer_keys = 0,
       KeyDistGenField local_keys = 0,
       uint8_t max_key_size = kMaxEncryptionKeySize,
       BondableMode bondable_mode = BondableMode::Bondable) {
@@ -944,14 +944,14 @@ class InitiatorPairingTest : public SecurityManagerTest {
     if (secure_connections) {
       FastForwardToScLtk(out_encryption_key,
                          level,
-                         remote_keys,
+                         peer_keys,
                          local_keys,
                          bondable_mode,
                          max_key_size);
     } else {
       FastForwardToSTK(out_encryption_key,
                        level,
-                       remote_keys,
+                       peer_keys,
                        local_keys,
                        max_key_size,
                        bondable_mode);
@@ -1148,7 +1148,7 @@ class ResponderPairingTest : public SecurityManagerTest {
 
   void FastForwardToSTK(UInt128* out_stk,
                         SecurityLevel level = SecurityLevel::kEncrypted,
-                        KeyDistGenField remote_keys = 0,
+                        KeyDistGenField peer_keys = 0,
                         KeyDistGenField local_keys = 0,
                         uint8_t max_key_size = kMaxEncryptionKeySize,
                         BondableMode bondable_mode = BondableMode::Bondable) {
@@ -1169,7 +1169,7 @@ class ResponderPairingTest : public SecurityManagerTest {
                                       : 0;
     pairing_params.auth_req = mitm_protected | bondable;
     pairing_params.max_encryption_key_size = max_key_size;
-    pairing_params.initiator_key_dist_gen = remote_keys;
+    pairing_params.initiator_key_dist_gen = peer_keys;
     pairing_params.responder_key_dist_gen = local_keys;
     ReceivePairingFeatures(pairing_params, /*peer_initiator=*/true);
     EXPECT_TRUE(peer().MutLe().is_pairing());
@@ -1210,7 +1210,7 @@ class ResponderPairingTest : public SecurityManagerTest {
       UInt128* out_encryption_key,
       bool secure_connections = false,
       SecurityLevel level = SecurityLevel::kEncrypted,
-      KeyDistGenField remote_keys = 0,
+      KeyDistGenField peer_keys = 0,
       KeyDistGenField local_keys = 0,
       uint8_t max_key_size = kMaxEncryptionKeySize,
       BondableMode bondable_mode = BondableMode::Bondable) {
@@ -1218,14 +1218,14 @@ class ResponderPairingTest : public SecurityManagerTest {
     if (secure_connections) {
       FastForwardToScLtk(out_encryption_key,
                          level,
-                         remote_keys,
+                         peer_keys,
                          local_keys,
                          bondable_mode,
                          max_key_size);
     } else {
       FastForwardToSTK(out_encryption_key,
                        level,
-                       remote_keys,
+                       peer_keys,
                        local_keys,
                        max_key_size,
                        bondable_mode);
@@ -2428,10 +2428,10 @@ TEST_F(InitiatorPairingTest, ScPhase3EncKeyBitSetNotDistributed) {
                                              /*secure_connections=*/true);
   // We will request the EncKey from the peer and the peer will respond that it
   // is capable of sending it, but as this is SC pairing that should not occur.
-  KeyDistGenField remote_keys{KeyDistGen::kEncKey}, local_keys{0};
+  KeyDistGenField peer_keys{KeyDistGen::kEncKey}, local_keys{0};
   FastForwardToScLtk(&ltk_bytes,
                      kExpectedSecurity.level(),
-                     remote_keys,
+                     peer_keys,
                      local_keys,
                      BondableMode::Bondable);
 
@@ -2780,11 +2780,11 @@ TEST_F(InitiatorPairingTest, Phase3CompleteWithReceivingEncKey) {
 
 TEST_F(InitiatorPairingTest, Phase3CompleteWithSendingEncKey) {
   UInt128 stk;
-  KeyDistGenField remote_keys{0u}, local_keys{KeyDistGen::kEncKey};
+  KeyDistGenField peer_keys{0u}, local_keys{KeyDistGen::kEncKey};
   FastForwardToPhase3(&stk,
                       /*secure_connections=*/false,
                       SecurityLevel::kEncrypted,
-                      remote_keys,
+                      peer_keys,
                       local_keys);
   RunUntilIdle();
 
@@ -2889,7 +2889,7 @@ TEST_F(InitiatorPairingTest, Phase3WithLocalIdKey) {
   FastForwardToPhase3(&stk,
                       /*secure_connections=*/false,
                       SecurityLevel::kEncrypted,
-                      0,                    // remote keys
+                      0,                    // peer keys
                       KeyDistGen::kIdKey);  // local keys
 
   // Local identity information should have been sent.
@@ -2917,7 +2917,7 @@ TEST_F(InitiatorPairingTest, Phase3IsAbortedIfLocalIdKeyIsRemoved) {
   UInt128 stk;
   FastForwardToSTK(&stk,
                    SecurityLevel::kEncrypted,
-                   0,                    // remote keys
+                   0,                    // peer keys
                    KeyDistGen::kIdKey);  // local keys
 
   // Local identity information should not have been sent yet.
@@ -3814,16 +3814,16 @@ TEST_F(ResponderPairingTest, LegacyPhase2ConfirmValuesExchanged) {
   EXPECT_EQ(expected_confirm, pairing_confirm());
 }
 
-TEST_F(ResponderPairingTest, LegacyPhase3LocalLTKDistributionNoRemoteKeys) {
+TEST_F(ResponderPairingTest, LegacyPhase3LocalLTKDistributionNoPeerKeys) {
   EXPECT_EQ(0, enc_info_count());
   EXPECT_EQ(0, central_ident_count());
 
   UInt128 stk;
-  KeyDistGenField remote_keys{0}, local_keys{KeyDistGen::kEncKey};
+  KeyDistGenField peer_keys{0}, local_keys{KeyDistGen::kEncKey};
   FastForwardToPhase3(&stk,
                       /*secure_connections=*/false,
                       SecurityLevel::kEncrypted,
-                      remote_keys,
+                      peer_keys,
                       local_keys);
 
   // Local LTK, EDiv, and Rand should be sent to the peer.
@@ -3858,7 +3858,7 @@ TEST_F(ResponderPairingTest, LegacyPhase3LocalLTKDistributionNoRemoteKeys) {
   EXPECT_EQ(1, new_sec_props_count());
 }
 
-TEST_F(ResponderPairingTest, LegacyPhase3LocalLTKDistributionWithRemoteKeys) {
+TEST_F(ResponderPairingTest, LegacyPhase3LocalLTKDistributionWithPeerKeys) {
   EXPECT_EQ(0, enc_info_count());
   EXPECT_EQ(0, central_ident_count());
 
@@ -3866,7 +3866,7 @@ TEST_F(ResponderPairingTest, LegacyPhase3LocalLTKDistributionWithRemoteKeys) {
   FastForwardToPhase3(&stk,
                       /*secure_connections=*/false,
                       SecurityLevel::kEncrypted,
-                      KeyDistGen::kIdKey,    // remote keys
+                      KeyDistGen::kIdKey,    // peer keys
                       KeyDistGen::kEncKey);  // local keys
 
   // Local LTK, EDiv, and Rand should be sent to the peer - we don't assign the
@@ -3918,7 +3918,7 @@ TEST_F(ResponderPairingTest, LegacyPhase3LocalLTKMaxLength) {
   FastForwardToPhase3(&stk,
                       /*secure_connections=*/false,
                       SecurityLevel::kEncrypted,
-                      0u,                   // remote keys
+                      0u,                   // peer keys
                       KeyDistGen::kEncKey,  // local keys
                       max_key_size);
 
@@ -3954,11 +3954,11 @@ TEST_F(ResponderPairingTest, LegacyPhase3LocalLTKMaxLength) {
 
 TEST_F(ResponderPairingTest, LegacyPhase3ReceiveInitiatorEncKey) {
   UInt128 stk;
-  KeyDistGenField remote_keys{KeyDistGen::kEncKey}, local_keys{0u};
+  KeyDistGenField peer_keys{KeyDistGen::kEncKey}, local_keys{0u};
   FastForwardToPhase3(&stk,
                       /*secure_connections=*/false,
                       SecurityLevel::kEncrypted,
-                      remote_keys,
+                      peer_keys,
                       local_keys);
 
   const uint64_t kRand = 5;
@@ -3997,7 +3997,7 @@ TEST_F(ResponderPairingTest, LegacyPhase3ReceiveInitiatorEncKey) {
   EXPECT_EQ(kLTK, peer_ltk()->key());
 }
 
-TEST_F(ResponderPairingTest, LegacyPhase3LocalIdKeyDistributionWithRemoteKeys) {
+TEST_F(ResponderPairingTest, LegacyPhase3LocalIdKeyDistributionWithPeerKeys) {
   IdentityInfo local_id_info;
   local_id_info.irk = UInt128{{1, 2, 3, 4, 5, 6, 7, 8, 7, 6, 5, 4, 3, 2, 1, 0}};
   local_id_info.address = kLocalAddr;
@@ -4010,7 +4010,7 @@ TEST_F(ResponderPairingTest, LegacyPhase3LocalIdKeyDistributionWithRemoteKeys) {
   FastForwardToPhase3(&stk,
                       /*secure_connections=*/false,
                       SecurityLevel::kEncrypted,
-                      KeyDistGen::kIdKey,   // remote keys
+                      KeyDistGen::kIdKey,   // peer keys
                       KeyDistGen::kIdKey);  // local keys
 
   // No local LTK, EDiv, and Rand should be sent to the peer.
@@ -4129,7 +4129,7 @@ TEST_F(ResponderPairingTest, BothSidesRequestBondingLTKCreated) {
   FastForwardToPhase3(&stk,
                       /*secure_connections=*/false,
                       SecurityLevel::kEncrypted,
-                      0u,                   // remote keys
+                      0u,                   // peer keys
                       KeyDistGen::kEncKey,  // local keys
                       kMaxEncryptionKeySize,
                       BondableMode::Bondable);
@@ -4146,7 +4146,7 @@ TEST_F(ResponderPairingTest, LocalRequestsNonBondableNoLTKCreated) {
   FastForwardToPhase3(&stk,
                       /*secure_connections=*/false,
                       SecurityLevel::kEncrypted,
-                      0u,                   // remote keys
+                      0u,                   // peer keys
                       KeyDistGen::kEncKey,  // local keys
                       kMaxEncryptionKeySize,
                       BondableMode::Bondable);
@@ -4164,7 +4164,7 @@ TEST_F(ResponderPairingTest, PeerRequestsNonBondableNoLTKCreated) {
   FastForwardToPhase3(&stk,
                       /*secure_connections=*/false,
                       SecurityLevel::kEncrypted,
-                      0u,  // remote keys
+                      0u,  // peer keys
                       0u,  // local keys
                       kMaxEncryptionKeySize,
                       BondableMode::NonBondable);
@@ -4182,7 +4182,7 @@ TEST_F(ResponderPairingTest, BothSidesRequestNonBondableNoLTKCreated) {
   FastForwardToPhase3(&stk,
                       /*secure_connections=*/false,
                       SecurityLevel::kEncrypted,
-                      0u,  // remote keys
+                      0u,  // peer keys
                       0u,  // local keys
                       kMaxEncryptionKeySize,
                       BondableMode::NonBondable);
@@ -4197,7 +4197,7 @@ TEST_F(ResponderPairingTest, PairingRequestStartsPairingTimer) {
   RunFor(kPairingTimeout);
   EXPECT_TRUE(fake_chan()->link_error());
   // Pairing should fail, but no callbacks should be notified because the
-  // pairing was initiated remotely, not through UpgradeSecurity locally
+  // pairing was initiated by the peer, not through UpgradeSecurity locally
   ASSERT_EQ(1, pairing_complete_count());
   EXPECT_EQ(ToResult(HostError::kTimedOut), pairing_complete_status());
   EXPECT_EQ(0, security_callback_count());
@@ -6130,7 +6130,7 @@ TEST_F(ResponderPairingTest, DestroyingSecurityManagerInPhaseCallbacksIsSafe) {
   UInt128 stk;
   FastForwardToSTK(&stk,
                    SecurityLevel::kEncrypted,
-                   /*remote_keys=*/0,
+                   /*peer_keys=*/0,
                    /*local_keys=*/KeyDistGen::kIdKey);
   fake_link()->TriggerEncryptionChangeCallback(fit::ok(/*enabled=*/true));
   RunUntilIdle();

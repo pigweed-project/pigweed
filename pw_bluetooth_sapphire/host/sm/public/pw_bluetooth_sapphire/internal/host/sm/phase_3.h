@@ -46,9 +46,9 @@ class Phase3 final : public PairingPhase, public PairingChannelHandler {
   //   - |features|: The features that determine pairing, negotiated during
   //   Phase 1. There must be
   //     some keys to distribute if Phase3 exists - construction will panic if
-  //     both the local & remote key_distribution fields of features are 0.
+  //     both the local & peer key_distribution fields of features are 0.
   //   - |le_sec|: The current security properties of key encrypting the link.
-  //   - |peer_address|: The connection address of the remote peer.
+  //   - |peer_address|: The connection address of the peer.
   Phase3(PairingChannel::WeakPtr chan,
          Listener::WeakPtr listener,
          Role role,
@@ -98,7 +98,7 @@ class Phase3 final : public PairingPhase, public PairingChannelHandler {
   void OnChannelClosed() final { PairingPhase::HandleChannelClosed(); }
   void OnRxBFrame(ByteBufferPtr sdu) final;
 
-  // True if all keys that are expected from the remote have been received.
+  // True if all keys that are expected from the peer have been received.
   bool RequestedKeysObtained() const;
 
   // True if all local keys that were agreed to be distributed have been sent to
@@ -122,7 +122,7 @@ class Phase3 final : public PairingPhase, public PairingChannelHandler {
         "distribution value",
         le_sec_.ToString().c_str(),
         features_.local_key_distribution,
-        features_.remote_key_distribution);
+        features_.peer_key_distribution);
   }
 
   const PairingFeatures features_;
@@ -130,11 +130,11 @@ class Phase3 final : public PairingPhase, public PairingChannelHandler {
   // Current security properties of the LE-U link.
   const SecurityProperties le_sec_;
 
-  // Remote peer address used on the active connection.
+  // Peer address used on the active connection.
   const DeviceAddress peer_address_;
 
-  // The remote keys that have been obtained so far.
-  KeyDistGenField obtained_remote_keys_;
+  // The peer keys that have been obtained so far.
+  KeyDistGenField obtained_peer_keys_;
 
   // True if all the local keys in features_ have been sent to the peer.
   bool sent_local_keys_;

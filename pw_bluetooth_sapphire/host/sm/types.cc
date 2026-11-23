@@ -54,7 +54,7 @@ bool IsSecureConnectionsKey(hci_spec::LinkKeyType lk_type) {
 
 bool HasKeysToDistribute(PairingFeatures features, bool is_bredr) {
   return DistributableKeys(features.local_key_distribution, is_bredr) ||
-         DistributableKeys(features.remote_key_distribution, is_bredr);
+         DistributableKeys(features.peer_key_distribution, is_bredr);
 }
 
 const char* LevelToString(SecurityLevel level) {

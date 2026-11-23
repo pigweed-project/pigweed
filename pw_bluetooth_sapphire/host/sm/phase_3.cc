@@ -44,7 +44,7 @@ Phase3::Phase3(PairingChannel::WeakPtr chan,
       features_(features),
       le_sec_(le_sec),
       peer_address_(peer_address),
-      obtained_remote_keys_(0),
+      obtained_peer_keys_(0),
       sent_local_keys_(false),
       on_complete_(std::move(on_complete)) {
   // LTKs may not be distributed during Secure Connections.
@@ -126,7 +126,7 @@ void Phase3::OnEncryptionInformation(const EncryptionInformationParams& ltk) {
     }
   }
 
-  PW_DCHECK(!(obtained_remote_keys_ & KeyDistGen::kEncKey));
+  PW_DCHECK(!(obtained_peer_keys_ & KeyDistGen::kEncKey));
   peer_ltk_bytes_ = ltk;
 
   // Wait to receive EDiv and Rand
@@ -159,7 +159,7 @@ void Phase3::OnCentralIdentification(
     return;
   }
 
-  if (obtained_remote_keys_ & KeyDistGen::kEncKey) {
+  if (obtained_peer_keys_ & KeyDistGen::kEncKey) {
     bt_log(WARN, "sm", "already received EDIV and Rand!");
     Abort(ErrorCode::kUnspecifiedReason);
     return;
@@ -175,7 +175,7 @@ void Phase3::OnCentralIdentification(
   // The security properties of the LTK are determined by the current link
   // properties (i.e. the properties of the STK).
   peer_ltk_ = LTK(le_sec_, hci_spec::LinkKey(*peer_ltk_bytes_, random, ediv));
-  obtained_remote_keys_ |= KeyDistGen::kEncKey;
+  obtained_peer_keys_ |= KeyDistGen::kEncKey;
 
   // "EncKey" received. Complete pairing if possible.
   OnExpectedKeyReceived();
@@ -195,7 +195,7 @@ void Phase3::OnIdentityInformation(const IRK& irk) {
     return;
   }
 
-  PW_DCHECK(!(obtained_remote_keys_ & KeyDistGen::kIdKey));
+  PW_DCHECK(!(obtained_peer_keys_ & KeyDistGen::kIdKey));
   irk_ = irk;
 
   // Wait to receive identity address
@@ -216,7 +216,7 @@ void Phase3::OnIdentityAddressInformation(
     return;
   }
 
-  if (obtained_remote_keys_ & KeyDistGen::kIdKey) {
+  if (obtained_peer_keys_ & KeyDistGen::kIdKey) {
     bt_log(WARN, "sm", "already received identity information!");
     Abort(ErrorCode::kUnspecifiedReason);
     return;
@@ -270,7 +270,7 @@ void Phase3::OnIdentityAddressInformation(
 
   // Store the identity address and mark all identity info as received.
   identity_address_ = identity_address;
-  obtained_remote_keys_ |= KeyDistGen::kIdKey;
+  obtained_peer_keys_ |= KeyDistGen::kIdKey;
 
   // "IdKey" received. Complete pairing if possible.
   OnExpectedKeyReceived();
@@ -446,13 +446,12 @@ void Phase3::OnRxBFrame(ByteBufferPtr sdu) {
 bool Phase3::RequestedKeysObtained() const {
   // DistributableKeys masks key fields that don't correspond to keys exchanged
   // in Phase 3.
-  const KeyDistGenField kMaskedRemoteKeys =
-      DistributableKeys(features_.remote_key_distribution,
-                        sm_chan().link_type() == LinkType::kACL);
-  // Return true if we expect no keys from the remote. We keep track of received
-  // keys individually in `obtained_remote_keys` as they are received
+  const KeyDistGenField masked_peer_keys = DistributableKeys(
+      features_.peer_key_distribution, sm_chan().link_type() == LinkType::kACL);
+  // Return true if we expect no keys from the peer. We keep track of received
+  // keys individually in `obtained_peer_keys_` as they are received
   // asynchronously from the peer.
-  return !kMaskedRemoteKeys || (kMaskedRemoteKeys == obtained_remote_keys_);
+  return !masked_peer_keys || (masked_peer_keys == obtained_peer_keys_);
 }
 
 bool Phase3::LocalKeysSent() const {
@@ -468,13 +467,13 @@ bool Phase3::LocalKeysSent() const {
 }
 
 bool Phase3::ShouldReceiveLtk() const {
-  return static_cast<bool>(features_.remote_key_distribution &
+  return static_cast<bool>(features_.peer_key_distribution &
                            KeyDistGen::kEncKey) &&
          sm_chan().link_type() == bt::LinkType::kLE;
 }
 
 bool Phase3::ShouldReceiveIdentity() const {
-  return (features_.remote_key_distribution & KeyDistGen::kIdKey);
+  return (features_.peer_key_distribution & KeyDistGen::kIdKey);
 }
 
 bool Phase3::ShouldSendLtk() const {

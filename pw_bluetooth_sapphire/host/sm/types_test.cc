@@ -195,15 +195,15 @@ TEST(TypesTest, HasKeysToDistribute) {
   EXPECT_TRUE(
       HasKeysToDistribute(local_link_key_and_others, /*is_bredr=*/false));
 
-  PairingFeatures remote_link_key_and_others;
-  remote_link_key_and_others.remote_key_distribution =
+  PairingFeatures peer_link_key_and_others;
+  peer_link_key_and_others.peer_key_distribution =
       KeyDistGen::kLinkKey | KeyDistGen::kIdKey;
   EXPECT_TRUE(
-      HasKeysToDistribute(remote_link_key_and_others, /*is_bredr=*/false));
+      HasKeysToDistribute(peer_link_key_and_others, /*is_bredr=*/false));
 
-  PairingFeatures remote_link_key_only;
-  remote_link_key_only.remote_key_distribution = KeyDistGen::kLinkKey;
-  EXPECT_FALSE(HasKeysToDistribute(remote_link_key_only, /*is_bredr=*/false));
+  PairingFeatures peer_link_key_only;
+  peer_link_key_only.peer_key_distribution = KeyDistGen::kLinkKey;
+  EXPECT_FALSE(HasKeysToDistribute(peer_link_key_only, /*is_bredr=*/false));
 
   // No keys set.
   EXPECT_FALSE(HasKeysToDistribute(PairingFeatures{}, /*is_bredr=*/false));

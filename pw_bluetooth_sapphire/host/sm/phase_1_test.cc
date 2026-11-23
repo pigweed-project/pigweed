@@ -397,15 +397,15 @@ TEST_F(Phase1Test, FeatureExchangeScIgnoresEncKeyBit) {
   // Even though both the pairing request and response had the EncKey bit set,
   // because we resolved the features to secure connections, we zero the bit
   // out.
-  EXPECT_FALSE(features().remote_key_distribution & KeyDistGen::kEncKey);
-  EXPECT_FALSE(features().remote_key_distribution & KeyDistGen::kEncKey);
+  EXPECT_FALSE(features().peer_key_distribution & KeyDistGen::kEncKey);
+  EXPECT_FALSE(features().peer_key_distribution & KeyDistGen::kEncKey);
   ASSERT_TRUE(last_preq());
   ASSERT_TRUE(last_pres());
   EXPECT_TRUE(ContainersEqual(kRequest, *last_preq()));
   EXPECT_TRUE(ContainersEqual(kResponse, *last_pres()));
 }
 
-TEST_F(Phase1Test, FeatureExchangeLocalSCRemoteNoSCFeaturesNoSc) {
+TEST_F(Phase1Test, FeatureExchangeLocalSCPeerNoSCFeaturesNoSc) {
   Phase1Args args;
   args.sc_supported = true;
   NewPhase1(Role::kInitiator, args);
@@ -480,7 +480,7 @@ TEST_F(Phase1Test, FeatureExchangePairingResponseLegacyJustWorks) {
   EXPECT_EQ(PairingMethod::kJustWorks, features().method);
   EXPECT_EQ(7, features().encryption_key_size);
   EXPECT_TRUE(KeyDistGen::kEncKey & features().local_key_distribution);
-  EXPECT_TRUE(KeyDistGen::kEncKey & features().remote_key_distribution);
+  EXPECT_TRUE(KeyDistGen::kEncKey & features().peer_key_distribution);
   ASSERT_TRUE(last_preq());
   ASSERT_TRUE(last_pres());
   EXPECT_TRUE(ContainersEqual(kRequest, *last_preq()));
@@ -524,7 +524,7 @@ TEST_F(Phase1Test, FeatureExchangePairingResponseLegacyMITM) {
   EXPECT_EQ(PairingMethod::kPasskeyEntryDisplay, features().method);
   EXPECT_EQ(7, features().encryption_key_size);
   EXPECT_FALSE(features().local_key_distribution);
-  EXPECT_TRUE(KeyDistGen::kEncKey & features().remote_key_distribution);
+  EXPECT_TRUE(KeyDistGen::kEncKey & features().peer_key_distribution);
   ASSERT_TRUE(last_preq() && last_pres());
   EXPECT_TRUE(ContainersEqual(kRequest, *last_preq()));
   EXPECT_TRUE(ContainersEqual(kResponse, *last_pres()));
@@ -905,7 +905,7 @@ TEST_F(Phase1Test, FeatureExchangeResponderBothSupportSCFeaturesHaveSC) {
   EXPECT_TRUE(features().secure_connections);
 }
 
-TEST_F(Phase1Test, FeatureExchangeResponderLocalSCRemoteNoSCFeaturesNoSC) {
+TEST_F(Phase1Test, FeatureExchangeResponderLocalSCPeerNoSCFeaturesNoSC) {
   const auto kResponse =
       StaticByteBuffer(0x02,  // code: Pairing Response
                        0x03,  // IO cap.: NoInputNoOutput
@@ -972,7 +972,7 @@ TEST_F(Phase1Test, FeatureExchangeLocalResponderDoesNotRequestUnsupportedKeys) {
   EXPECT_EQ(1, feature_exchange_count());
   EXPECT_FALSE(features().initiator);
   EXPECT_FALSE(features().local_key_distribution);
-  EXPECT_FALSE(features().remote_key_distribution);
+  EXPECT_FALSE(features().peer_key_distribution);
   EXPECT_TRUE(ContainersEqual(kResponse, *last_pres()));
 }
 
@@ -1005,7 +1005,7 @@ TEST_F(Phase1Test, FeatureExchangeResponderDistributesIdKey) {
   EXPECT_EQ(1, feature_exchange_count());
   EXPECT_FALSE(features().initiator);
   EXPECT_TRUE(features().local_key_distribution & KeyDistGen::kIdKey);
-  EXPECT_FALSE(features().remote_key_distribution);
+  EXPECT_FALSE(features().peer_key_distribution);
 }
 
 // Tests that local responder doesn't respond with distribute ID info if
@@ -1041,7 +1041,7 @@ TEST_F(Phase1Test, FeatureExchangeResponderRespectsInitiatorForIdKey) {
   EXPECT_EQ(1, feature_exchange_count());
   EXPECT_FALSE(features().initiator);
   EXPECT_FALSE(features().local_key_distribution);
-  EXPECT_FALSE(features().remote_key_distribution);
+  EXPECT_FALSE(features().peer_key_distribution);
 }
 
 // Pairing should fail if MITM is required but the pairing method cannot provide
@@ -1114,9 +1114,9 @@ TEST_F(Phase1Test, FeatureExchangeResponderJustWorks) {
   // We send the LTK when we are the responder.
   EXPECT_TRUE(KeyDistGen::kEncKey & features().local_key_distribution);
 
-  // The remote should send us identity information since we requested it and it
+  // The peer should send us identity information since we requested it and it
   // promised it.
-  EXPECT_TRUE(KeyDistGen::kIdKey & features().remote_key_distribution);
+  EXPECT_TRUE(KeyDistGen::kIdKey & features().peer_key_distribution);
 }
 
 TEST_F(Phase1Test, FeatureExchangeResponderRequestInitiatorEncKey) {
@@ -1155,7 +1155,7 @@ TEST_F(Phase1Test, FeatureExchangeResponderRequestInitiatorEncKey) {
   // We send the LTK as the initiator requested it. We also request the LTK from
   // the initiator, which indicated it was capable of distributing it.
   EXPECT_TRUE(KeyDistGen::kEncKey & features().local_key_distribution);
-  EXPECT_TRUE(KeyDistGen::kEncKey & features().remote_key_distribution);
+  EXPECT_TRUE(KeyDistGen::kEncKey & features().peer_key_distribution);
 }
 
 TEST_F(Phase1Test, FeatureExchangeResponderSendsOnlyRequestedKeys) {
@@ -1231,9 +1231,9 @@ TEST_F(Phase1Test, FeatureExchangeResponderMITM) {
   // We send the LTK when we are the responder.
   EXPECT_TRUE(KeyDistGen::kEncKey & features().local_key_distribution);
 
-  // The remote should send us identity information since we requested it and it
+  // The peer should send us identity information since we requested it and it
   // promised it.
-  EXPECT_TRUE(KeyDistGen::kIdKey & features().remote_key_distribution);
+  EXPECT_TRUE(KeyDistGen::kIdKey & features().peer_key_distribution);
 
   // We should have set bondable mode as both sides enabled it
   EXPECT_TRUE(features().will_bond);
@@ -1468,7 +1468,7 @@ TEST_F(Phase1Test, FeatureExchangeInitiatorReqBondResNoBond) {
   // as kResponse indicated that the peer follower does not support bonding.
   EXPECT_FALSE(features().will_bond);
   EXPECT_EQ(features().local_key_distribution, 0u);
-  EXPECT_EQ(features().remote_key_distribution, 0u);
+  EXPECT_EQ(features().peer_key_distribution, 0u);
 }
 
 TEST_F(Phase1Test, FeatureExchangeInitiatorReqNoBondResBond) {
@@ -1504,7 +1504,7 @@ TEST_F(Phase1Test, FeatureExchangeInitiatorReqNoBondResBond) {
   ASSERT_EQ(1, feature_exchange_count());
   EXPECT_FALSE(features().will_bond);
   EXPECT_EQ(features().local_key_distribution, 0u);
-  EXPECT_EQ(features().remote_key_distribution, 0u);
+  EXPECT_EQ(features().peer_key_distribution, 0u);
 }
 
 TEST_F(Phase1Test, FeatureExchangeResponderReqBondResNoBond) {
@@ -1540,7 +1540,7 @@ TEST_F(Phase1Test, FeatureExchangeResponderReqBondResNoBond) {
   // the Bearer was created in non-bondable mode.
   EXPECT_FALSE(features().will_bond);
   EXPECT_EQ(features().local_key_distribution, 0u);
-  EXPECT_EQ(features().remote_key_distribution, 0u);
+  EXPECT_EQ(features().peer_key_distribution, 0u);
 }
 
 TEST_F(Phase1Test, FeatureExchangeResponderReqNoBondResNoBond) {
@@ -1578,7 +1578,7 @@ TEST_F(Phase1Test, FeatureExchangeResponderReqNoBondResNoBond) {
   // mode as kRequest indicated that peer does not support bonding.
   EXPECT_FALSE(features().will_bond);
   EXPECT_EQ(features().local_key_distribution, 0u);
-  EXPECT_EQ(features().remote_key_distribution, 0u);
+  EXPECT_EQ(features().peer_key_distribution, 0u);
 }
 
 TEST_F(Phase1Test, FeatureExchangeResponderReqNoBondWithKeys) {
@@ -1609,7 +1609,7 @@ TEST_F(Phase1Test, FeatureExchangeResponderReqNoBondWithKeys) {
   EXPECT_EQ(Error(ErrorCode::kInvalidParameters), listener()->last_error());
 }
 
-TEST_F(Phase1Test, BrEdrInitiatorLocalAndRemoteRequestEncKeyAndCT2Success) {
+TEST_F(Phase1Test, BrEdrInitiatorLocalAndPeerRequestEncKeyAndCT2Success) {
   NewPhase1(Role::kInitiator, Phase1Args(), LinkType::kACL);
   const auto kRequest = StaticByteBuffer(
       0x01,  // code: Pairing Request
@@ -1643,8 +1643,7 @@ TEST_F(Phase1Test, BrEdrInitiatorLocalAndRemoteRequestEncKeyAndCT2Success) {
   EXPECT_EQ(features().generate_ct_key.value(), CrossTransportKeyAlgo::kUseH7);
 }
 
-TEST_F(Phase1Test,
-       BrEdrInitiatorLocalAndRemoteRequestEncKeyAndNoRemoteCT2Success) {
+TEST_F(Phase1Test, BrEdrInitiatorLocalAndPeerRequestEncKeyAndNoPeerCT2Success) {
   NewPhase1(Role::kInitiator, Phase1Args(), LinkType::kACL);
   const auto kRequest = StaticByteBuffer(
       0x01,  // code: Pairing Request
@@ -1678,7 +1677,7 @@ TEST_F(Phase1Test,
   EXPECT_EQ(features().generate_ct_key.value(), CrossTransportKeyAlgo::kUseH6);
 }
 
-TEST_F(Phase1Test, BrEdrInitiatorRemoteDoesNotSupportEncKey) {
+TEST_F(Phase1Test, BrEdrInitiatorPeerDoesNotSupportEncKey) {
   NewPhase1(Role::kInitiator, Phase1Args(), LinkType::kACL);
   const auto kRequest = StaticByteBuffer(
       0x01,  // code: Pairing Request
@@ -1775,7 +1774,7 @@ TEST_F(Phase1Test, BrEdrResponderBothSupportEncKeyAndNotCT2) {
   EXPECT_EQ(features().generate_ct_key.value(), CrossTransportKeyAlgo::kUseH6);
 }
 
-TEST_F(Phase1Test, BrEdrInitiatorLocalAndRemoteRequestIdKeyAndEncKey) {
+TEST_F(Phase1Test, BrEdrInitiatorLocalAndPeerRequestIdKeyAndEncKey) {
   NewPhase1(Role::kInitiator, Phase1Args(), LinkType::kACL);
   listener()->set_identity_info(IdentityInfo());
 
@@ -1809,10 +1808,10 @@ TEST_F(Phase1Test, BrEdrInitiatorLocalAndRemoteRequestIdKeyAndEncKey) {
   EXPECT_EQ(1, feature_exchange_count());
   EXPECT_TRUE(features().initiator);
   EXPECT_TRUE(features().local_key_distribution & KeyDistGen::kIdKey);
-  EXPECT_TRUE(features().remote_key_distribution & KeyDistGen::kIdKey);
+  EXPECT_TRUE(features().peer_key_distribution & KeyDistGen::kIdKey);
 }
 
-TEST_F(Phase1Test, BrEdrInitiatorRemoteTooSmallKeySize) {
+TEST_F(Phase1Test, BrEdrInitiatorPeerTooSmallKeySize) {
   NewPhase1(Role::kInitiator, Phase1Args(), LinkType::kACL);
   const auto kRequest = StaticByteBuffer(
       0x01,  // code: Pairing Request
@@ -1848,8 +1847,7 @@ TEST_F(Phase1Test, BrEdrInitiatorRemoteTooSmallKeySize) {
   EXPECT_EQ(0, feature_exchange_count());
 }
 
-TEST_F(Phase1Test,
-       BrEdrInitiatorRemoteSetsRfuFieldsToWeirdValuesThatAreIgnored) {
+TEST_F(Phase1Test, BrEdrInitiatorPeerSetsRfuFieldsToWeirdValuesThatAreIgnored) {
   NewPhase1(Role::kInitiator, Phase1Args(), LinkType::kACL);
   const auto kRequest = StaticByteBuffer(
       0x01,  // code: Pairing Request

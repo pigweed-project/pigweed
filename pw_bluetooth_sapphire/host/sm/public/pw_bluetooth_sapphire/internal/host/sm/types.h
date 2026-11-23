@@ -81,7 +81,7 @@ struct PairingFeatures final {
   KeyDistGenField local_key_distribution = 0;
 
   // The keys that will be distributed to us by the peer.
-  KeyDistGenField remote_key_distribution = 0;
+  KeyDistGenField peer_key_distribution = 0;
 };
 
 constexpr KeyDistGenField DistributableKeys(KeyDistGenField keys,
@@ -331,7 +331,7 @@ struct LocalPairingParams {
   // distributing no keys.
   KeyDistGenField local_keys = 0u;
   // The keys that are desired from the peer. Defaults to distributing no keys.
-  KeyDistGenField remote_keys = 0u;
+  KeyDistGenField peer_keys = 0u;
 };
 
 // These roles correspond to the device which starts pairing.

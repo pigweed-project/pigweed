@@ -47,7 +47,7 @@ const PairingFeatures kDefaultFeatures = {
     .method = PairingMethod::kJustWorks,
     .encryption_key_size = kMaxEncryptionKeySize,
     .local_key_distribution = KeyDistGen::kIdKey,
-    .remote_key_distribution = KeyDistGen::kIdKey | KeyDistGen::kEncKey};
+    .peer_key_distribution = KeyDistGen::kIdKey | KeyDistGen::kEncKey};
 
 const PairingRequestParams kDefaultPreq{
     .io_capability = IOCapability::kNoInputNoOutput,

@@ -181,8 +181,8 @@ enum class ErrorCode : uint8_t {
   // SMP command parameters were invalid.
   kInvalidParameters = 0x0A,
 
-  // Indicates to the remote device that the DHKey Check value received doesn't
-  // match the one calculated locally.
+  // Indicates to the peer that the DHKey Check value received doesn't match the
+  // one calculated locally.
   kDHKeyCheckFailed = 0x0B,
 
   // Indicates that the confirm values in the numeric comparison protocol do not

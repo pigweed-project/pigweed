@@ -457,8 +457,8 @@ bool SecurityManagerImpl::Init() {
 
 void SecurityManagerImpl::OnSecurityRequest(AuthReqField auth_req) {
   // Core Spec 6.0, Vol 3, Part H, Section 2.3.6: a waiting interval shall pass
-  // before responding to a Security Request initiated by a remote device
-  // claiming the same identity as the failed device.
+  // before responding to a Security Request initiated by a peer claiming the
+  // same identity as the failed device.
   if (pw_dispatcher_.now() < pairing_backoff_expiry_) {
     bt_log(WARN,
            "sm",
@@ -783,8 +783,8 @@ fit::result<ErrorCode> SecurityManagerImpl::RequestSecurityUpgrade(
   PW_CHECK(!bredr_link_.is_alive());
 
   // Core Spec 6.0, Vol 3, Part H, Section 2.3.6: a waiting interval shall pass
-  // before responding to a Security Request initiated by a remote device
-  // claiming the same identity as the failed device.
+  // before responding to a Security Request initiated by a peer claiming the
+  // same identity as the failed device.
   if (pw_dispatcher_.now() < pairing_backoff_expiry_) {
     bt_log(WARN,
            "sm",
