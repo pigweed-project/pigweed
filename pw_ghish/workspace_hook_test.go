@@ -210,6 +210,47 @@ func TestIssueDevelop_WithWorktreeFlag_InvokesHook(t *testing.T) {
 	}
 }
 
+func TestIssueDevelop_WithWorktreeFlag_DisabledInProjectConfig(t *testing.T) {
+	srv := NewMockIssueTrackerServer(t)
+	srv.Install(t)
+	srv.SeedIssue(&BuganizerIssue{
+		IssueID: 315378787,
+		State: BuganizerState{
+			Status: "ASSIGNED",
+			Title:  "pw_rpc: Fix channel packet framing",
+		},
+	}, "Description.")
+
+	repoDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repoDir, ".ghish.toml"), []byte("[worktree]\nenabled = false\ndisabled_hint = \"Use 'fx worktree' instead.\"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(.ghish.toml): %v", err)
+	}
+
+	gitRunner := &MockGitRunner{}
+	SetupMockConfig(t, gitRunner)
+	oldCWD := MockCWD
+	MockCWD = repoDir
+	t.Cleanup(func() { MockCWD = oldCWD })
+
+	mockWT := &mockWorkspaceIntegration{enabled: true}
+	prevWT := RegisteredWorkspaceIntegration
+	RegisteredWorkspaceIntegration = mockWT
+	defer func() { RegisteredWorkspaceIntegration = prevWT }()
+
+	_, err := executeCommand(RootCmd, "issue", "develop", "315378787", "--worktree")
+	if err == nil {
+		t.Fatal("expected error when [worktree] enabled = false")
+	}
+	if len(mockWT.developedIDs) != 0 {
+		t.Errorf("expected DevelopIssueInWorktree not to be called, got %v", mockWT.developedIDs)
+	}
+	for _, want := range []string{"disabled for this repository", "Use 'fx worktree' instead."} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error missing %q:\n%s", want, err.Error())
+		}
+	}
+}
+
 func TestIssueStatus_AnnotatesWorktreeResidency(t *testing.T) {
 	srv := NewMockIssueTrackerServer(t)
 	srv.Install(t)

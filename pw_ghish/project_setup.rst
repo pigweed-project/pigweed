@@ -714,6 +714,23 @@ Configures warm Git worktree slot naming and build cache warmup behavior for
      - Allowed Values
      - ``git config`` Equivalent
      - Behavior
+   * - ``enabled``
+     - ``bool``
+     - ``true``
+     - ``true`` / ``false``
+     - ``ghish.worktree.enabled``
+     - Enables or disables ``gh wt`` / ``gh worktree`` subcommands and
+       ``gh issue develop --worktree`` for the repository. Set to ``false`` in
+       ``.ghish.toml`` in repositories that manage worktrees via a
+       project-specific tool; individual developers can re-enable locally with
+       ``git config --local ghish.worktree.enabled true``.
+   * - ``disabled_hint``
+     - ``string``
+     - ``""``
+     - Command or guidance string
+     - ``ghish.worktree.disabledHint``
+     - Optional remediation hint printed when ``worktree.enabled = false``
+       (for example, ``"Use 'fx worktree' instead."``).
    * - ``slot_prefix``
      - ``string``
      - ``"pw-"`` *(->* ``pw-01..N`` *)*

@@ -205,7 +205,11 @@ func NewWTCommand(rootCmd *cobra.Command) *cobra.Command {
 	mgr, initErr := newDefaultManager(rootCmd)
 	cmd := NewCommand(mgr)
 	if initErr != nil {
+		basePreRun := cmd.PersistentPreRunE
 		cmd.PersistentPreRunE = func(c *cobra.Command, args []string) error {
+			if err := basePreRun(c, args); err != nil {
+				return err
+			}
 			return initErr
 		}
 	}

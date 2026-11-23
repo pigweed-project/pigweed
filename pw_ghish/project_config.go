@@ -85,6 +85,8 @@ type IssueProjectConfig struct {
 
 // WorktreeProjectConfig holds `[worktree]` configuration settings.
 type WorktreeProjectConfig struct {
+	Enabled      *bool  `json:"enabled,omitempty"`
+	DisabledHint string `json:"disabled_hint,omitempty"`
 	SlotPrefix   string `json:"slot_prefix,omitempty"`
 	WarmupDriver string `json:"warmup_driver,omitempty"`
 }
@@ -115,6 +117,9 @@ func DefaultProjectConfig() *ProjectConfig {
 			PathComponents:      make(map[string]int64),
 			Components:          make(map[string]int64),
 			Hotlists:            make(map[string]int64),
+		},
+		Worktree: WorktreeProjectConfig{
+			Enabled: cfgBoolPtr(true),
 		},
 	}
 }
@@ -159,6 +164,47 @@ func (c *ProjectConfig) UseOwnersComponents() bool {
 		return true
 	}
 	return *c.Issue.UseOwnersComponents
+}
+
+// WorktreeEnabled returns whether `gh wt` / `gh worktree` commands are enabled
+// for the repository (default true).
+func (c *ProjectConfig) WorktreeEnabled() bool {
+	if c.Worktree.Enabled == nil {
+		return true
+	}
+	return *c.Worktree.Enabled
+}
+
+// CheckWorktreeEnabled verifies that `[worktree] enabled` is not set to false
+// in `.ghish.toml` (allowing a local `git config ghish.worktree.enabled true`
+// override). It reads `.ghish.toml` from disk first so enabled repositories
+// incur zero `git config` subprocess overhead.
+func CheckWorktreeEnabled(cmd *cobra.Command) error {
+	cfg := GetConfig(cmd)
+	if cfg == nil {
+		return nil
+	}
+	diskCfg, err := LoadProjectConfigFromDisk(cfg.CWD)
+	if err != nil {
+		return err
+	}
+	if diskCfg.WorktreeEnabled() {
+		return nil
+	}
+	pcfg, err := LoadCommandProjectConfig(cmd)
+	if err != nil {
+		return err
+	}
+	if pcfg.WorktreeEnabled() {
+		return nil
+	}
+	msg := "worktree commands ('gh wt' / 'gh worktree' / 'gh issue develop --worktree') are disabled for this repository.\n\n" +
+		"Why: '[worktree] enabled = false' is configured in .ghish.toml."
+	if hint := strings.TrimSpace(pcfg.Worktree.DisabledHint); hint != "" {
+		msg += "\n\nAlternative:\n  " + hint
+	}
+	msg += "\n\nTo re-enable locally:\n  git config --local ghish.worktree.enabled true"
+	return fmt.Errorf("%s", msg)
 }
 
 // PreferredLogs returns the ordered list of preferred step log stream names.
@@ -289,19 +335,8 @@ func LoadProjectConfig(ctx context.Context, git GitRunner, startDir string) (*Pr
 			topLevel = findGitTopLevelOnDisk(startDir)
 		}
 
-		dirs := collectConfigDirs(topLevel, startDir)
-		for _, dir := range dirs {
-			tomlPath := filepath.Join(dir, ".ghish.toml")
-			data, err := os.ReadFile(tomlPath)
-			if err != nil {
-				if errors.Is(err, os.ErrNotExist) {
-					continue
-				}
-				return nil, fmt.Errorf("failed to read %s: %w", tomlPath, err)
-			}
-			if err := ParseProjectConfigTOML(tomlPath, string(data), cfg); err != nil {
-				return nil, err
-			}
+		if err := loadProjectConfigTOML(topLevel, startDir, cfg); err != nil {
+			return nil, err
 		}
 	}
 
@@ -310,6 +345,42 @@ func LoadProjectConfig(ctx context.Context, git GitRunner, startDir string) (*Pr
 	}
 
 	return cfg, nil
+}
+
+// LoadProjectConfigFromDisk loads and merges `.ghish.toml` files from the
+// nearest git root down to startDir without spawning any `git` subprocesses.
+// Callers that also need `git config ghish.*` overrides should use
+// LoadCommandProjectConfig.
+func LoadProjectConfigFromDisk(startDir string) (*ProjectConfig, error) {
+	cfg := DefaultProjectConfig()
+	if startDir == "" {
+		return cfg, nil
+	}
+	if absStart, err := filepath.Abs(startDir); err == nil {
+		startDir = absStart
+	}
+	topLevel := findGitTopLevelOnDisk(startDir)
+	if err := loadProjectConfigTOML(topLevel, startDir, cfg); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+func loadProjectConfigTOML(topLevel, startDir string, dst *ProjectConfig) error {
+	for _, dir := range collectConfigDirs(topLevel, startDir) {
+		tomlPath := filepath.Join(dir, ".ghish.toml")
+		data, err := os.ReadFile(tomlPath)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return fmt.Errorf("failed to read %s: %w", tomlPath, err)
+		}
+		if err := ParseProjectConfigTOML(tomlPath, string(data), dst); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // FindGitTopLevelOnDisk walks upward from startDir to find the nearest ancestor
@@ -426,6 +497,8 @@ type tomlIssueConfig struct {
 }
 
 type tomlWorktreeConfig struct {
+	Enabled      *bool   `toml:"enabled"`
+	DisabledHint *string `toml:"disabled_hint"`
 	SlotPrefix   *string `toml:"slot_prefix"`
 	WarmupDriver *string `toml:"warmup_driver"`
 }
@@ -670,6 +743,12 @@ func ParseProjectConfigTOML(filePath, content string, dst *ProjectConfig) error 
 		return err
 	}
 
+	if raw.Worktree.Enabled != nil {
+		dst.Worktree.Enabled = cfgBoolPtr(*raw.Worktree.Enabled)
+	}
+	if raw.Worktree.DisabledHint != nil {
+		dst.Worktree.DisabledHint = *raw.Worktree.DisabledHint
+	}
 	if raw.Worktree.SlotPrefix != nil {
 		dst.Worktree.SlotPrefix = *raw.Worktree.SlotPrefix
 	}
@@ -897,6 +976,14 @@ func applyGitConfigEntries(entries []gitConfigEntry, dst *ProjectConfig) error {
 
 		case "worktree":
 			switch normKey {
+			case "enabled":
+				b, err := strconv.ParseBool(val)
+				if err != nil {
+					return fmt.Errorf("invalid git config %s=%q: %w", key, val, err)
+				}
+				dst.Worktree.Enabled = cfgBoolPtr(b)
+			case "disabledhint":
+				dst.Worktree.DisabledHint = val
 			case "slotprefix":
 				dst.Worktree.SlotPrefix = val
 			case "warmupdriver":

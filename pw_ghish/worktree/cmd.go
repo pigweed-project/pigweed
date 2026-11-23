@@ -28,7 +28,8 @@ import (
 
 // NewCommand constructs the `wt` (worktree) Cobra command tree.
 func NewCommand(mgr *Manager) *cobra.Command {
-	wtCmd := &cobra.Command{
+	var wtCmd *cobra.Command
+	wtCmd = &cobra.Command{
 		Use:           "wt",
 		Aliases:       []string{"worktree"},
 		SilenceUsage:  true,
@@ -37,6 +38,14 @@ func NewCommand(mgr *Manager) *cobra.Command {
 		Long: `Manage a bounded pool of warm Git worktree slots (~/wrk/slots/pw-01..N) paired with
 logical project symlinks (~/wrk/projects/<name>), shared Bazel disk/repo caches,
 and automatic Jetski IDE left-sidebar project synchronization.`,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if root := cmd.Root(); root != nil && root != wtCmd && root.PersistentPreRunE != nil {
+				if err := root.PersistentPreRunE(cmd, args); err != nil {
+					return err
+				}
+			}
+			return pw_ghish.CheckWorktreeEnabled(cmd)
+		},
 	}
 
 	wtCmd.AddCommand(

@@ -397,6 +397,9 @@ shortlinks = { "acmerev" = "acme-internal-review.googlesource.com", "acmer/i/" =
 
 func TestParseProjectConfigTOML_ExtraSectionKeys(t *testing.T) {
 	cfg := DefaultProjectConfig()
+	if !cfg.WorktreeEnabled() {
+		t.Fatal("DefaultProjectConfig().WorktreeEnabled() = false, want true")
+	}
 	tomlContent := `
 [gerrit]
 host = "acme-review.googlesource.com"
@@ -413,9 +416,28 @@ prefix = "b/"
 host = "issues.acme.dev"
 default_component_id = 98765
 require_trailer = true
+
+[worktree]
+enabled = false
+disabled_hint = "Use 'project worktree' instead."
 `
 	if err := ParseProjectConfigTOML("/repo/.ghish.toml", tomlContent, cfg); err != nil {
 		t.Fatalf("ParseProjectConfigTOML failed: %v", err)
+	}
+	if cfg.WorktreeEnabled() {
+		t.Errorf("cfg.WorktreeEnabled() = true, want false")
+	}
+	if cfg.Worktree.DisabledHint != "Use 'project worktree' instead." {
+		t.Errorf("cfg.Worktree.DisabledHint = %q, want %q", cfg.Worktree.DisabledHint, "Use 'project worktree' instead.")
+	}
+	if err := applyGitConfigOverrides("ghish.worktree.enabled true\nghish.worktree.disabledhint Custom hint\n", cfg); err != nil {
+		t.Fatalf("applyGitConfigOverrides failed: %v", err)
+	}
+	if !cfg.WorktreeEnabled() || cfg.Worktree.DisabledHint != "Custom hint" {
+		t.Errorf("after git config override: enabled=%v hint=%q, want true / Custom hint", cfg.WorktreeEnabled(), cfg.Worktree.DisabledHint)
+	}
+	if err := applyGitConfigOverrides("ghish.worktree.enabled notabool\n", cfg); err == nil {
+		t.Errorf("expected error for invalid ghish.worktree.enabled value, got nil")
 	}
 	if cfg.Gerrit.Host != "acme-review.googlesource.com" || cfg.Gerrit.Project != "acme/firmware" || cfg.Gerrit.DefaultBranch != "dev" {
 		t.Errorf("unexpected Gerrit config: %+v", cfg.Gerrit)

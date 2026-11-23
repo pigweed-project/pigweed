@@ -16,10 +16,18 @@ package worktree
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/spf13/cobra"
+	"pigweed.dev/pw_ghish"
 )
 
 func execWTCommand(t *testing.T, mgr *Manager, args ...string) (string, error) {
@@ -284,4 +292,124 @@ func TestWTList_Compact4ColumnTableUnder100Cols(t *testing.T) {
 			t.Errorf("line %d exceeds 100 columns (%d cols): %q", lineNum+1, cols, line)
 		}
 	}
+}
+
+type stubConfigGitRunner struct {
+	configOutput string
+}
+
+func (s *stubConfigGitRunner) Run(_ context.Context, stdout, _ io.Writer, args ...string) error {
+	if len(args) >= 2 && args[0] == "config" && args[1] == "--get-regexp" {
+		if s.configOutput != "" && stdout != nil {
+			_, _ = io.WriteString(stdout, s.configOutput)
+		}
+		return nil
+	}
+	return nil
+}
+
+func TestWTCommands_DisabledInProjectConfig(t *testing.T) {
+	t.Run("disabled_with_hint", func(t *testing.T) {
+		mgr, _, _, _ := setupTestManager(t, 1)
+		repoDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(repoDir, ".ghish.toml"), []byte("[worktree]\nenabled = false\ndisabled_hint = \"Use 'fx worktree' instead.\"\n"), 0o644); err != nil {
+			t.Fatalf("WriteFile(.ghish.toml): %v", err)
+		}
+
+		cmd := NewCommand(mgr)
+		pw_ghish.SetConfig(cmd, &pw_ghish.Config{
+			CWD: repoDir,
+			Git: &stubConfigGitRunner{},
+		})
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs([]string{"list"})
+		err := cmd.Execute()
+		if err == nil {
+			t.Fatalf("expected error when [worktree] enabled = false, got nil (output: %s)", out.String())
+		}
+		if pw_ghish.ExitCodeFor(err) != pw_ghish.ExitCodeFailure {
+			t.Errorf("ExitCodeFor(err) = %d, want %d (%v)", pw_ghish.ExitCodeFor(err), pw_ghish.ExitCodeFailure, err)
+		}
+		for _, want := range []string{"disabled for this repository", "Use 'fx worktree' instead.", "ghish.worktree.enabled true"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error missing %q:\n%s", want, err.Error())
+			}
+		}
+	})
+
+	t.Run("disabled_without_hint", func(t *testing.T) {
+		mgr, _, _, _ := setupTestManager(t, 1)
+		repoDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(repoDir, ".ghish.toml"), []byte("[worktree]\nenabled = false\n"), 0o644); err != nil {
+			t.Fatalf("WriteFile(.ghish.toml): %v", err)
+		}
+
+		cmd := NewCommand(mgr)
+		pw_ghish.SetConfig(cmd, &pw_ghish.Config{
+			CWD: repoDir,
+			Git: &stubConfigGitRunner{},
+		})
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs([]string{"list"})
+		err := cmd.Execute()
+		if err == nil {
+			t.Fatalf("expected error when [worktree] enabled = false, got nil (output: %s)", out.String())
+		}
+		if strings.Contains(err.Error(), "Alternative:") {
+			t.Errorf("expected no Alternative section when disabled_hint is unset, got:\n%s", err.Error())
+		}
+		if !strings.Contains(err.Error(), "ghish.worktree.enabled true") {
+			t.Errorf("expected re-enable hint, got:\n%s", err.Error())
+		}
+	})
+
+	t.Run("reenabled_via_git_config", func(t *testing.T) {
+		mgr, _, _, _ := setupTestManager(t, 1)
+		repoDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(repoDir, ".ghish.toml"), []byte("[worktree]\nenabled = false\ndisabled_hint = \"Use 'fx worktree' instead.\"\n"), 0o644); err != nil {
+			t.Fatalf("WriteFile(.ghish.toml): %v", err)
+		}
+
+		cmd := NewCommand(mgr)
+		pw_ghish.SetConfig(cmd, &pw_ghish.Config{
+			CWD: repoDir,
+			Git: &stubConfigGitRunner{configOutput: "ghish.worktree.enabled true\n"},
+		})
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetArgs([]string{"list"})
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("expected wt list to succeed when re-enabled via git config, got: %v", err)
+		}
+	})
+
+	t.Run("chains_root_persistent_pre_run", func(t *testing.T) {
+		mgr, _, _, _ := setupTestManager(t, 1)
+		rootErr := errors.New("root pre-run sentinel")
+		rootCalled := false
+		root := &cobra.Command{
+			Use: "ghish",
+			PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+				rootCalled = true
+				return rootErr
+			},
+		}
+		root.AddCommand(NewCommand(mgr))
+		var out bytes.Buffer
+		root.SetOut(&out)
+		root.SetErr(&out)
+		root.SetArgs([]string{"wt", "list"})
+		err := root.Execute()
+		if !rootCalled {
+			t.Fatal("expected root PersistentPreRunE to be called")
+		}
+		if !errors.Is(err, rootErr) {
+			t.Fatalf("expected root error %v, got %v", rootErr, err)
+		}
+	})
 }

@@ -1574,6 +1574,9 @@ var issueDevelopCmd = &cobra.Command{
 
 		profile := cfg.GetProfile(ctx)
 		if issueDevelopWorktree {
+			if err := CheckWorktreeEnabled(cmd); err != nil {
+				return err
+			}
 			if RegisteredWorkspaceIntegration == nil {
 				return fmt.Errorf("worktree integration is not available in this build")
 			}
@@ -1632,7 +1635,7 @@ var issueDevelopCmd = &cobra.Command{
 			URL:  profile.IssueWebURL(int64(issue.IssueID)),
 			Next: "gh pr create",
 		})
-		if RegisteredWorkspaceIntegration != nil && RegisteredWorkspaceIntegration.IsEnabled() {
+		if RegisteredWorkspaceIntegration != nil && RegisteredWorkspaceIntegration.IsEnabled() && CheckWorktreeEnabled(cmd) == nil {
 			fmt.Fprintf(cmd.ErrOrStderr(), "%s Tip: Run './gh issue develop %d --worktree' (or './gh wt use --issue %d') to open issues in isolated warm worktree slots.\n",
 				GlyphArrow, issue.IssueID, issue.IssueID)
 		}
