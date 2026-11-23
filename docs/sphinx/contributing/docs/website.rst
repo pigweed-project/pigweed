@@ -356,6 +356,13 @@ inventories configured in ``intersphinx_mapping`` (such as Python's standard
 library and ``protobuf``, fetched as ``objects.inv`` over the network at build
 time) and links the reference to the upstream documentation.
 
+Some libraries define public classes in internal implementation submodules (for
+example, ``unittest.TestCase.__module__`` is ``'unittest.case'`` at runtime,
+while Python's ``objects.inv`` only publishes ``unittest.TestCase``). When
+``autodoc`` expands those runtime paths and ``intersphinx`` cannot find them,
+map the runtime path to the public target in ``_PYTHON_TARGET_ALIASES`` in
+:cs:`docs/sphinx/conf.py`.
+
 .. _contrib-docs-website-fonts:
 
 --------------------

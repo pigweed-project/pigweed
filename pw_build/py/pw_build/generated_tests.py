@@ -114,6 +114,7 @@ class Error(Exception):
 
 
 T = TypeVar('T')
+"""Type variable representing a single test case object."""
 
 
 @dataclass
@@ -125,7 +126,7 @@ class Context(Generic[T]):
         count: The 1-based index of this test case within the group.
         total: The total number of test cases in the group.
         test_case: The test case object from the list provided to the
-            :class:TestGenerator.
+            :py:class:`TestGenerator`.
     """
 
     group: str
@@ -325,7 +326,7 @@ class TestGenerator(Generic[T]):
         return tests
 
     def python_tests(self, name: str, define_py_test: PyTestGenerator) -> type:
-        """Returns a Python unittest.TestCase class with tests for each case."""
+        """Returns a :py:class:`unittest.TestCase` class with tests."""
         return type(
             name,
             (unittest.TestCase,),

@@ -21,9 +21,16 @@ from pathlib import Path
 import sys
 
 
+from docutils import nodes
+from docutils.nodes import TextElement
+from sphinx.addnodes import pending_xref
 from sphinx.application import Sphinx
 from sphinx.builders.html import StandaloneHTMLBuilder
 from sphinx.domains.std import StandardDomain
+from sphinx.environment import BuildEnvironment
+from sphinx.ext.intersphinx import (
+    missing_reference as intersphinx_missing_reference,
+)
 
 from pw_console.pigweed_code_style import PigweedCodeStyle
 from pw_console.pigweed_code_style import PigweedCodeLightStyle
@@ -260,6 +267,53 @@ intersphinx_mapping = {
     'protobuf': ('https://googleapis.dev/python/protobuf/latest/', None),
 }
 
+# Some Python libraries define public symbols inside private implementation
+# submodules and re-export them from a top-level package. For example, CPython
+# defines unittest.TestCase in unittest.case (so TestCase.__module__ ==
+# 'unittest.case' at runtime), while Python's Sphinx inventory (objects.inv)
+# only publishes the public path 'unittest.TestCase'. When autodoc inspects
+# runtime type annotations, it emits cross-references using <cls>.__module__,
+# which intersphinx cannot find under the internal path.
+#
+# Map those runtime implementation targets to the canonical public targets
+# published in external intersphinx inventories.
+_PYTHON_TARGET_ALIASES = {
+    'unittest.case.TestCase': 'unittest.TestCase',
+}
+
+
+def _resolve_canonical_python_target(
+    app: Sphinx,
+    env: BuildEnvironment,
+    node: pending_xref,
+    contnode: TextElement,
+) -> nodes.reference | None:
+    """Retry unresolved Python cross-references using _PYTHON_TARGET_ALIASES.
+
+    Connected to Sphinx's ``missing-reference`` event after intersphinx's
+    default handler. When an unresolved ``py`` domain reference matches an
+    internal path in ``_PYTHON_TARGET_ALIASES``, this temporarily rewrites
+    ``node['reftarget']`` to the canonical public path and delegates back to
+    intersphinx.
+
+    ``node['reftarget']`` is always restored in ``finally``: if intersphinx
+    succeeds it returns a new ``nodes.reference`` node that replaces ``node``,
+    and if it returns ``None`` Sphinx falls back to the original unmodified
+    target for subsequent ``missing-reference`` handlers and ``--nitpicky``
+    diagnostics.
+    """
+    if node.get('refdomain') != 'py':
+        return None
+    target = node.get('reftarget')
+    canonical = _PYTHON_TARGET_ALIASES.get(target)
+    if canonical is None:
+        return None
+    node['reftarget'] = canonical
+    try:
+        return intersphinx_missing_reference(app, env, node, contnode)
+    finally:
+        node['reftarget'] = target
+
 
 def do_not_skip_init(app, what, name, obj, would_skip, options):
     if name == '__init__':
@@ -318,3 +372,4 @@ def setup(app: Sphinx) -> None:
     app.connect('builder-inited', _remove_disabled_virtual_labels)
     app.connect('env-get-outdated', env_get_outdated)
     app.connect('autodoc-skip-member', do_not_skip_init)
+    app.connect('missing-reference', _resolve_canonical_python_target)
