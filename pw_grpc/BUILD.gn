@@ -61,6 +61,7 @@ pw_source_set("send_queue") {
   public_configs = [ ":public_include_path" ]
   deps = [
     "$dir_pw_allocator",
+    "$dir_pw_bytes",
     "$dir_pw_function",
     "$dir_pw_status",
   ]
@@ -87,6 +88,7 @@ pw_source_set("default_send_queue") {
     "$dir_pw_string",
     "$dir_pw_sync:lock_annotations",
     "$dir_pw_sync:mutex",
+    "$dir_pw_sync:thread_notification",
     "$dir_pw_thread:thread",
     "$dir_pw_thread:thread_core",
   ]
@@ -142,10 +144,29 @@ pw_test("hpack_test") {
   deps = [ ":hpack" ]
 }
 
+pw_test("default_send_queue_test") {
+  sources = [ "default_send_queue_test.cc" ]
+  deps = [
+    ":default_send_queue",
+    ":send_queue",
+    "$dir_pw_allocator:best_fit",
+    "$dir_pw_allocator:synchronized_allocator",
+    "$dir_pw_bytes",
+    "$dir_pw_status",
+    "$dir_pw_stream",
+    "$dir_pw_sync:lock_annotations",
+    "$dir_pw_sync:mutex",
+    "$dir_pw_sync:thread_notification",
+    "$dir_pw_thread:test_thread_context",
+    "$dir_pw_thread:thread",
+  ]
+}
+
 pw_test("connection_test") {
   sources = [ "connection_test.cc" ]
   deps = [
     ":connection",
+    ":default_send_queue",
     ":grpc_channel_output",
     ":send_queue",
     "$dir_pw_allocator:best_fit",

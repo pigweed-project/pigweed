@@ -20,6 +20,11 @@
 
 namespace pw::grpc {
 
+DefaultSendQueue::~DefaultSendQueue() {
+  send_dispatcher_.RequestStop();
+  send_dispatcher_.Cancel(send_task_);
+}
+
 UniquePtr<std::byte[]> DefaultSendQueue::PopNext() {
   std::lock_guard lock(send_mutex_);
   if (queue_.empty()) {
@@ -55,22 +60,117 @@ void DefaultSendQueue::set_on_space_available(
   on_space_available_ = std::move(on_space_available);
 }
 
+void DefaultSendQueue::SetFrameSource(FrameSource* source) {
+  std::lock_guard source_lock(frame_source_mutex_);
+  bool wait_for_pull = false;
+  {
+    std::lock_guard lock(send_mutex_);
+    if (frame_source_ == source) {
+      if (source != nullptr) {
+        data_ready_ = true;
+        send_dispatcher_.Cancel(send_task_);
+        send_dispatcher_.Post(send_task_);
+      }
+      return;
+    }
+    frame_source_ = nullptr;
+    data_ready_ = false;
+    wait_for_pull = pull_active_;
+    waiting_for_pull_ = wait_for_pull;
+    if (source == nullptr && queue_.empty()) {
+      send_dispatcher_.Cancel(send_task_);
+    }
+  }
+  if (wait_for_pull) {
+    pull_done_.acquire();
+    // Wait until the puller has released send_mutex_ after signaling
+    // pull_done_.
+    std::lock_guard lock(send_mutex_);
+  }
+  if (source != nullptr) {
+    std::lock_guard lock(send_mutex_);
+    frame_source_ = source;
+    data_ready_ = true;
+    send_dispatcher_.Cancel(send_task_);
+    send_dispatcher_.Post(send_task_);
+  }
+}
+
+void DefaultSendQueue::NotifyDataReady() {
+  std::lock_guard lock(send_mutex_);
+  if (frame_source_ == nullptr) {
+    return;
+  }
+  data_ready_ = true;
+  send_dispatcher_.Cancel(send_task_);
+  send_dispatcher_.Post(send_task_);
+}
+
 void DefaultSendQueue::ProcessSendQueue(async::Context&, Status task_status) {
   if (!task_status.ok()) {
     return;
   }
 
-  UniquePtr<std::byte[]> buffer = PopNext();
-  while (buffer != nullptr) {
-    if (Status status = socket_.Write(pw::span(buffer.get(), buffer.size()));
+  while (true) {
+    UniquePtr<std::byte[]> buffer = PopNext();
+    if (buffer != nullptr) {
+      if (Status status = socket_.Write(pw::span(buffer.get(), buffer.size()));
+          !status.ok()) {
+        PW_LOG_ERROR("Failed to write to socket in DefaultSendQueue: %s",
+                     status.str());
+        NotifyOnError(status);
+        return;
+      }
+      NotifyOnSpaceAvailable();
+      continue;
+    }
+
+    FrameSource* source = nullptr;
+    {
+      std::lock_guard lock(send_mutex_);
+      if (frame_source_ == nullptr) {
+        return;
+      }
+      source = frame_source_;
+      data_ready_ = false;
+      pull_active_ = true;
+    }
+
+    const StatusWithSize pulled = source->FillPacket(pull_buffer_);
+
+    bool retry = false;
+    {
+      std::lock_guard lock(send_mutex_);
+      pull_active_ = false;
+      if (waiting_for_pull_) {
+        waiting_for_pull_ = false;
+        pull_done_.release();
+      }
+      retry = data_ready_ && frame_source_ != nullptr;
+    }
+
+    if (!pulled.ok()) {
+      PW_LOG_ERROR("FrameSource::FillPacket failed in DefaultSendQueue: %s",
+                   pulled.status().str());
+      NotifyOnError(pulled.status());
+      return;
+    }
+
+    if (pulled.size() == 0) {
+      if (retry) {
+        continue;
+      }
+      return;
+    }
+
+    if (Status status =
+            socket_.Write(pw::span(pull_buffer_.data(), pulled.size()));
         !status.ok()) {
-      PW_LOG_ERROR("Failed to write to socket in DefaultSendQueue: %s",
+      PW_LOG_ERROR("Failed to write pulled packet in DefaultSendQueue: %s",
                    status.str());
       NotifyOnError(status);
       return;
     }
-    NotifyOnSpaceAvailable();
-    buffer = PopNext();
   }
 }
 

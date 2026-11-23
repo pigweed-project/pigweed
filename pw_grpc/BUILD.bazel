@@ -110,6 +110,7 @@ cc_library(
     strip_include_prefix = "public",
     deps = [
         "//pw_allocator",
+        "//pw_bytes",
         "//pw_function",
         "//pw_status",
     ],
@@ -140,6 +141,7 @@ cc_library(
         "//pw_string",
         "//pw_sync:lock_annotations",
         "//pw_sync:mutex",
+        "//pw_sync:thread_notification",
         "//pw_thread:thread",
         "//pw_thread:thread_core",
     ],
@@ -216,11 +218,31 @@ pw_cc_test(
 )
 
 pw_cc_test(
+    name = "default_send_queue_test",
+    srcs = ["default_send_queue_test.cc"],
+    deps = [
+        ":default_send_queue",
+        ":send_queue",
+        "//pw_allocator:best_fit",
+        "//pw_allocator:synchronized_allocator",
+        "//pw_bytes",
+        "//pw_status",
+        "//pw_stream",
+        "//pw_sync:lock_annotations",
+        "//pw_sync:mutex",
+        "//pw_sync:thread_notification",
+        "//pw_thread:test_thread_context",
+        "//pw_thread:thread",
+    ],
+)
+
+pw_cc_test(
     name = "connection_test",
     srcs = ["connection_test.cc"],
     target_compatible_with = [":enabled"],
     deps = [
         ":connection",
+        ":default_send_queue",
         ":grpc_channel_output",
         ":send_queue",
         "//pw_allocator:best_fit",
