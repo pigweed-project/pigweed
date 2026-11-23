@@ -64,7 +64,6 @@ pw_add_library(pw_rpc.server STATIC
     public/pw_rpc/server.h
     public/pw_rpc/internal/call_allocator.h
     public/pw_rpc/internal/grpc.h
-    public/pw_rpc/internal/server_call.h
   PUBLIC_INCLUDES
     public
   SOURCES
@@ -172,6 +171,7 @@ pw_add_library(pw_rpc.common STATIC
     public/pw_rpc/internal/method_lookup.h
     public/pw_rpc/internal/method_union.h
     public/pw_rpc/internal/packet.h
+    public/pw_rpc/internal/server_call.h
     public/pw_rpc/method_id.h
     public/pw_rpc/method_info.h
     public/pw_rpc/method_type.h
