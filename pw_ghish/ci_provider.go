@@ -51,21 +51,27 @@ type CIProvider interface {
 
 // BuildbucketProvider implements CIProvider for LUCI Buildbucket v2 and LogDog.
 type BuildbucketProvider struct {
-	LUCIClient *LUCIClient
-	Cfg        *Config
-	Profile    ProjectProfile
-	ErrOut     io.Writer
+	LUCIClient      *LUCIClient
+	Cfg             *Config
+	Profile         ProjectProfile
+	ErrOut          io.Writer
+	ConfiguredHost  string
+	HostFlagChanged bool
 }
 
 func (p *BuildbucketProvider) Name() string {
 	return "buildbucket"
 }
 
-func (p *BuildbucketProvider) luciClient() *LUCIClient {
+func (p *BuildbucketProvider) effectiveClient() (*LUCIClient, error) {
 	if p.LUCIClient != nil {
-		return p.LUCIClient
+		return p.LUCIClient, nil
 	}
-	return NewLUCIClient(buildbucketHost, getLUCIHTTPClient())
+	host, err := ResolveEffectiveBuildbucketHost(buildbucketHost, p.HostFlagChanged, p.ConfiguredHost)
+	if err != nil {
+		return nil, err
+	}
+	return NewLUCIClient(host, getLUCIHTTPClient()), nil
 }
 
 func (p *BuildbucketProvider) withConfig(ctx context.Context) context.Context {
@@ -88,12 +94,16 @@ func stampBuildbucketBuilds(builds []bbBuild) {
 
 func (p *BuildbucketProvider) SearchBuilds(ctx context.Context, host string, changeNum int, patchsetNum int, change *ChangeInfo) ([]bbBuild, error) {
 	ctx = p.withConfig(ctx)
+	client, err := p.effectiveClient()
+	if err != nil {
+		return nil, err
+	}
 	project := ""
 	if change != nil {
 		project = change.Project
 	}
 	cleanHost := CleanGerritHost(host)
-	builds, err := p.luciClient().SearchBuilds(ctx, cleanHost, project, changeNum, patchsetNum)
+	builds, err := client.SearchBuilds(ctx, cleanHost, project, changeNum, patchsetNum)
 	if err != nil {
 		return nil, err
 	}
@@ -104,12 +114,16 @@ func (p *BuildbucketProvider) SearchBuilds(ctx context.Context, host string, cha
 // SearchBuildsByPatchset queries Buildbucket concurrently across all patchsets in patchsets.
 func (p *BuildbucketProvider) SearchBuildsByPatchset(ctx context.Context, host string, changeNum int, patchsets []int, change *ChangeInfo) ([][]bbBuild, error) {
 	ctx = p.withConfig(ctx)
+	client, err := p.effectiveClient()
+	if err != nil {
+		return nil, err
+	}
 	project := ""
 	if change != nil {
 		project = change.Project
 	}
 	cleanHost := CleanGerritHost(host)
-	perPS, err := p.luciClient().SearchBuildsByPatchset(ctx, cleanHost, project, changeNum, patchsets)
+	perPS, err := client.SearchBuildsByPatchset(ctx, cleanHost, project, changeNum, patchsets)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +135,11 @@ func (p *BuildbucketProvider) SearchBuildsByPatchset(ctx context.Context, host s
 
 func (p *BuildbucketProvider) GetBuildDetails(ctx context.Context, buildID string, b *bbBuild) (*bbBuildDetails, error) {
 	ctx = p.withConfig(ctx)
-	details, err := p.luciClient().GetBuildDetails(ctx, buildID)
+	client, err := p.effectiveClient()
+	if err != nil {
+		return nil, err
+	}
+	details, err := client.GetBuildDetails(ctx, buildID)
 	if err != nil {
 		return nil, err
 	}
@@ -133,15 +151,22 @@ func (p *BuildbucketProvider) GetBuildDetails(ctx context.Context, buildID strin
 
 func (p *BuildbucketProvider) FetchFailureReportWithOptions(ctx context.Context, b bbBuild, opts FailureReportOptions) (*FailureReport, error) {
 	ctx = p.withConfig(ctx)
+	client, err := p.effectiveClient()
+	if err != nil {
+		return nil, err
+	}
 	maxLines := opts.MaxLogLines
 	if maxLines <= 0 {
 		maxLines = 40
 	}
-	details, err := p.GetBuildDetails(ctx, b.ID, &b)
+	details, err := client.GetBuildDetails(ctx, b.ID)
 	if err != nil {
 		return nil, err
 	}
-	report := p.luciClient().ExtractFailureReportWithOptions(ctx, details, maxLines, opts.PreferredLogs, opts.IncludeSummaryMarkdown)
+	if details != nil && details.Provider == "" {
+		details.Provider = "buildbucket"
+	}
+	report := client.ExtractFailureReportWithOptions(ctx, details, maxLines, opts.PreferredLogs, opts.IncludeSummaryMarkdown)
 	return report, nil
 }
 
@@ -425,8 +450,13 @@ func isBusytownCandidate(host string, change *ChangeInfo) bool {
 // ResolveCIProvider selects and constructs the active CIProvider based on
 // `.ghish.toml` `[ci] providers` configuration or auto-detection from the Gerrit host/change.
 func ResolveCIProvider(cfg *Config, pcfg *ProjectConfig, gerritClient *GerritClient, host string, change *ChangeInfo) CIProvider {
+	var configuredHost string
+	if pcfg != nil {
+		configuredHost = strings.TrimSpace(pcfg.CI.BuildbucketHost)
+	}
 	bbProv := &BuildbucketProvider{
-		Cfg: cfg,
+		Cfg:            cfg,
+		ConfiguredHost: configuredHost,
 	}
 	btProv := NewBusytownProvider()
 	btProv.GerritClient = gerritClient

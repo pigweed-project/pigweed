@@ -1132,3 +1132,62 @@ func TestRunListAndView_AllPassingCollapsedAndExpandedWithAll(t *testing.T) {
 		t.Errorf("run view collapsed = %q, want collapsed all-passing summary without builder rows", viewOut)
 	}
 }
+
+func TestResolveEffectiveBuildbucketHost_AndProviderValidation(t *testing.T) {
+	NewMockGit(t)
+	NewMockGerritServer(t)
+
+	if got, err := ResolveEffectiveBuildbucketHost("cr-buildbucket.appspot.com", false, "HTTPS://cr-buildbucket-dev.appspot.com"); err != nil || got != "https://cr-buildbucket-dev.appspot.com" {
+		t.Errorf("ResolveEffectiveBuildbucketHost(dev) = (%q, %v), want canonical dev host", got, err)
+	}
+	for _, badHost := range []string{
+		"http://cr-buildbucket-dev.appspot.com",
+		"https://user@cr-buildbucket.appspot.com",
+		"https://cr-buildbucket.appspot.com:8443",
+		"https://cr-buildbucket.appspot.com/evil?x=1#frag",
+		"cr-buildbucket.appspot.com:8443/evil",
+		"attacker.example.com",
+	} {
+		if _, err := ResolveEffectiveBuildbucketHost("cr-buildbucket.appspot.com", false, badHost); err == nil || !strings.Contains(err.Error(), "untrusted ci.buildbucket_host") {
+			t.Errorf("expected untrusted ci.buildbucket_host error for %q, got: %v", badHost, err)
+		}
+	}
+
+	if got, err := ResolveEffectiveBuildbucketHost("https://custom-override.example", true, "attacker.example.com"); err != nil || got != "https://custom-override.example" {
+		t.Errorf("ResolveEffectiveBuildbucketHost(flagChanged=true) = (%q, %v), want explicit override", got, err)
+	}
+
+	prov := ResolveCIProvider(nil, &ProjectConfig{CI: CIProjectConfig{BuildbucketHost: "attacker.example.com"}}, nil, "pigweed-review.googlesource.com", nil)
+	if _, err := prov.SearchBuilds(t.Context(), "pigweed-review.googlesource.com", 12345, 1, nil); err == nil || !strings.Contains(err.Error(), "untrusted ci.buildbucket_host") {
+		t.Errorf("expected BuildbucketProvider.SearchBuilds with untrusted ci.buildbucket_host to fail closed, got: %v", err)
+	}
+	if _, err := prov.GetBuildDetails(t.Context(), "87000000011", nil); err == nil || !strings.Contains(err.Error(), "untrusted ci.buildbucket_host") {
+		t.Errorf("expected BuildbucketProvider.GetBuildDetails with untrusted ci.buildbucket_host to fail closed, got: %v", err)
+	}
+	if _, err := prov.FetchFailureReportWithOptions(t.Context(), bbBuild{ID: "87000000011"}, FailureReportOptions{}); err == nil || !strings.Contains(err.Error(), "untrusted ci.buildbucket_host") {
+		t.Errorf("expected BuildbucketProvider.FetchFailureReportWithOptions with untrusted ci.buildbucket_host to fail closed, got: %v", err)
+	}
+
+	bbProv, ok := prov.(*BuildbucketProvider)
+	if !ok {
+		t.Fatalf("expected *BuildbucketProvider, got %T", prov)
+	}
+	flagCmd := &cobra.Command{}
+	flagCmd.Flags().String("buildbucket-host", "", "")
+	if err := flagCmd.Flags().Set("buildbucket-host", "https://custom-override.example"); err != nil {
+		t.Fatalf("set buildbucket-host flag: %v", err)
+	}
+	setProviderProfile(bbProv, nil, flagCmd)
+	if !bbProv.HostFlagChanged {
+		t.Errorf("expected setProviderProfile to set HostFlagChanged=true when --buildbucket-host changed")
+	}
+
+	untrustedDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(untrustedDir, ".ghish.toml"), []byte("[ci]\nbuildbucket_host = \"https://cr-buildbucket.appspot.com:8443\"\n"), 0644); err != nil {
+		t.Fatalf("write .ghish.toml: %v", err)
+	}
+	MockCWD = untrustedDir
+	if _, err := executeCommand(RootCmd, "run", "view", "87000000011"); err == nil || !strings.Contains(err.Error(), "untrusted ci.buildbucket_host") {
+		t.Errorf("expected run view with untrusted ci.buildbucket_host to fail closed, got: %v", err)
+	}
+}

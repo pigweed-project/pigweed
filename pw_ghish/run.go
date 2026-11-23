@@ -45,6 +45,18 @@ var (
 	runRerunExperimental bool
 )
 
+func isBuildbucketHostFlagChanged(cmd *cobra.Command) bool {
+	return cmd != nil && cmd.Flags().Changed("buildbucket-host")
+}
+
+func effectiveBuildbucketHost(cmd *cobra.Command, projCfg *ProjectConfig) (string, error) {
+	cfgHost := ""
+	if projCfg != nil {
+		cfgHost = projCfg.CI.BuildbucketHost
+	}
+	return ResolveEffectiveBuildbucketHost(buildbucketHost, isBuildbucketHostFlagChanged(cmd), cfgHost)
+}
+
 func isBuildbucketID(s string) bool {
 	if len(s) < 11 {
 		return false
@@ -348,8 +360,12 @@ var runViewCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		bbHost, err := effectiveBuildbucketHost(cmd, projCfg)
+		if err != nil {
+			return err
+		}
 
-		luciClient := NewLUCIClient(buildbucketHost, getLUCIHTTPClient())
+		luciClient := NewLUCIClient(bbHost, getLUCIHTTPClient())
 
 		var res *CIContext
 		if directBuildID == "" {

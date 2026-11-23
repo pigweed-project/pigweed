@@ -987,3 +987,52 @@ func formatCheckSummary(builds []bbBuild, changeNum int) string {
 
 	return fmt.Sprintf(GlyphPass+" %d passing", passed)
 }
+
+func canonicalAllowedBuildbucketHost(raw string) (string, bool) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", false
+	}
+	isAllowedHost := func(h string) bool {
+		return h == "cr-buildbucket.appspot.com" || h == "cr-buildbucket-dev.appspot.com"
+	}
+	if strings.Contains(trimmed, "://") {
+		u, err := url.Parse(trimmed)
+		if err != nil || !strings.EqualFold(u.Scheme, "https") || u.User != nil || u.Port() != "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+			return "", false
+		}
+		h := strings.ToLower(u.Hostname())
+		if !isAllowedHost(h) {
+			return "", false
+		}
+		return "https://" + h, true
+	}
+	if strings.ContainsAny(trimmed, "/?#@:") {
+		return "", false
+	}
+	h := strings.ToLower(trimmed)
+	if !isAllowedHost(h) {
+		return "", false
+	}
+	return h, true
+}
+
+// ResolveEffectiveBuildbucketHost resolves the Buildbucket host from explicit
+// CLI flags/overrides first, then validates and falls back to `configuredHost`
+// from `.ghish.toml` (`ci.buildbucket_host`), failing closed on untrusted hosts.
+func ResolveEffectiveBuildbucketHost(explicitHost string, flagChanged bool, configuredHost string) (string, error) {
+	if flagChanged {
+		return explicitHost, nil
+	}
+	if cfgHost := strings.TrimSpace(configuredHost); cfgHost != "" {
+		canonical, ok := canonicalAllowedBuildbucketHost(cfgHost)
+		if !ok {
+			return "", fmt.Errorf("untrusted ci.buildbucket_host %q in .ghish.toml: must be 'cr-buildbucket.appspot.com' or 'cr-buildbucket-dev.appspot.com' over HTTPS", cfgHost)
+		}
+		if explicitHost != "" && explicitHost != "cr-buildbucket.appspot.com" {
+			return explicitHost, nil
+		}
+		return canonical, nil
+	}
+	return explicitHost, nil
+}

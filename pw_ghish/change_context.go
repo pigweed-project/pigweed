@@ -676,6 +676,7 @@ func setProviderProfile(p CIProvider, profile ProjectProfile, cmd *cobra.Command
 		v.Profile = profile
 		if cmd != nil {
 			v.ErrOut = cmd.ErrOrStderr()
+			v.HostFlagChanged = isBuildbucketHostFlagChanged(cmd)
 		}
 	case *CompositeCIProvider:
 		if cmd != nil {
