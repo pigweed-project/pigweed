@@ -13,7 +13,11 @@
 // the License.
 
 #pragma once
+
 #include <pw_bluetooth/hci_commands.emb.h>
+#include <pw_bluetooth/hci_common.emb.h>
+
+#include <cstdint>
 
 #include "pw_bluetooth_sapphire/internal/host/hci-spec/constants.h"
 
@@ -47,9 +51,9 @@ struct ParameterSet {
 };
 
 constexpr ParameterSet kParameterSetT1{
-    .packet_types = static_cast<uint8_t>(ScoPacketTypeBits::kEv3) |
-                    static_cast<uint8_t>(ScoPacketTypeBits::kNot2Ev5) |
-                    static_cast<uint8_t>(ScoPacketTypeBits::kNot3Ev5),
+    .packet_types = static_cast<uint16_t>(ScoPacketTypeBits::kEv3) |
+                    static_cast<uint16_t>(ScoPacketTypeBits::kNot2Ev5) |
+                    static_cast<uint16_t>(ScoPacketTypeBits::kNot3Ev5),
     .transmit_receive_bandwidth = 8000,
     .transmit_receive_format = pw::bluetooth::emboss::CodingFormat::TRANSPARENT,
     .max_latency_ms = 8,
@@ -57,9 +61,9 @@ constexpr ParameterSet kParameterSetT1{
         hci_spec::ScoRetransmissionEffort::kQualityOptimized};
 
 constexpr ParameterSet kParameterSetT2{
-    .packet_types = static_cast<uint8_t>(ScoPacketTypeBits::kEv3) |
-                    static_cast<uint8_t>(ScoPacketTypeBits::kNot2Ev5) |
-                    static_cast<uint8_t>(ScoPacketTypeBits::kNot3Ev5),
+    .packet_types = static_cast<uint16_t>(ScoPacketTypeBits::kEv3) |
+                    static_cast<uint16_t>(ScoPacketTypeBits::kNot2Ev5) |
+                    static_cast<uint16_t>(ScoPacketTypeBits::kNot3Ev5),
     .transmit_receive_bandwidth = 8000,
     .transmit_receive_format = pw::bluetooth::emboss::CodingFormat::TRANSPARENT,
     .max_latency_ms = 13,
@@ -67,12 +71,12 @@ constexpr ParameterSet kParameterSetT2{
         hci_spec::ScoRetransmissionEffort::kQualityOptimized};
 
 constexpr ParameterSet kParameterSetS1{
-    .packet_types = static_cast<uint8_t>(ScoPacketTypeBits::kHv1) |
-                    static_cast<uint8_t>(ScoPacketTypeBits::kHv2) |
-                    static_cast<uint8_t>(ScoPacketTypeBits::kHv3) |
-                    static_cast<uint8_t>(ScoPacketTypeBits::kEv3) |
-                    static_cast<uint8_t>(ScoPacketTypeBits::kNot2Ev5) |
-                    static_cast<uint8_t>(ScoPacketTypeBits::kNot3Ev5),
+    .packet_types = static_cast<uint16_t>(ScoPacketTypeBits::kHv1) |
+                    static_cast<uint16_t>(ScoPacketTypeBits::kHv2) |
+                    static_cast<uint16_t>(ScoPacketTypeBits::kHv3) |
+                    static_cast<uint16_t>(ScoPacketTypeBits::kEv3) |
+                    static_cast<uint16_t>(ScoPacketTypeBits::kNot2Ev5) |
+                    static_cast<uint16_t>(ScoPacketTypeBits::kNot3Ev5),
     .transmit_receive_bandwidth = 8000,
     .transmit_receive_format = pw::bluetooth::emboss::CodingFormat::CVSD,
     .max_latency_ms = 7,
@@ -80,9 +84,9 @@ constexpr ParameterSet kParameterSetS1{
         hci_spec::ScoRetransmissionEffort::kPowerOptimized};
 
 constexpr ParameterSet kParameterSetS2{
-    .packet_types = static_cast<uint8_t>(ScoPacketTypeBits::kEv3) |
-                    static_cast<uint8_t>(ScoPacketTypeBits::kNot2Ev5) |
-                    static_cast<uint8_t>(ScoPacketTypeBits::kNot3Ev5),
+    .packet_types = static_cast<uint16_t>(ScoPacketTypeBits::kEv3) |
+                    static_cast<uint16_t>(ScoPacketTypeBits::kNot2Ev5) |
+                    static_cast<uint16_t>(ScoPacketTypeBits::kNot3Ev5),
     .transmit_receive_bandwidth = 8000,
     .transmit_receive_format = pw::bluetooth::emboss::CodingFormat::CVSD,
     .max_latency_ms = 7,
@@ -90,9 +94,9 @@ constexpr ParameterSet kParameterSetS2{
         hci_spec::ScoRetransmissionEffort::kPowerOptimized};
 
 constexpr ParameterSet kParameterSetS3{
-    .packet_types = static_cast<uint8_t>(ScoPacketTypeBits::kEv3) |
-                    static_cast<uint8_t>(ScoPacketTypeBits::kNot2Ev5) |
-                    static_cast<uint8_t>(ScoPacketTypeBits::kNot3Ev5),
+    .packet_types = static_cast<uint16_t>(ScoPacketTypeBits::kEv3) |
+                    static_cast<uint16_t>(ScoPacketTypeBits::kNot2Ev5) |
+                    static_cast<uint16_t>(ScoPacketTypeBits::kNot3Ev5),
     .transmit_receive_bandwidth = 8000,
     .transmit_receive_format = pw::bluetooth::emboss::CodingFormat::CVSD,
     .max_latency_ms = 10,
@@ -100,9 +104,9 @@ constexpr ParameterSet kParameterSetS3{
         hci_spec::ScoRetransmissionEffort::kPowerOptimized};
 
 constexpr ParameterSet kParameterSetS4{
-    .packet_types = static_cast<uint8_t>(ScoPacketTypeBits::kEv3) |
-                    static_cast<uint8_t>(ScoPacketTypeBits::kNot2Ev5) |
-                    static_cast<uint8_t>(ScoPacketTypeBits::kNot3Ev5),
+    .packet_types = static_cast<uint16_t>(ScoPacketTypeBits::kEv3) |
+                    static_cast<uint16_t>(ScoPacketTypeBits::kNot2Ev5) |
+                    static_cast<uint16_t>(ScoPacketTypeBits::kNot3Ev5),
     .transmit_receive_bandwidth = 8000,
     .transmit_receive_format = pw::bluetooth::emboss::CodingFormat::CVSD,
     .max_latency_ms = 12,
@@ -110,14 +114,14 @@ constexpr ParameterSet kParameterSetS4{
         hci_spec::ScoRetransmissionEffort::kQualityOptimized};
 
 constexpr ParameterSet kParameterSetD0{
-    .packet_types = static_cast<uint8_t>(ScoPacketTypeBits::kHv1),
+    .packet_types = static_cast<uint16_t>(ScoPacketTypeBits::kHv1),
     .transmit_receive_bandwidth = 8000,
     .transmit_receive_format = pw::bluetooth::emboss::CodingFormat::CVSD,
     .max_latency_ms = 0xFFFF,
     .retransmission_effort = hci_spec::ScoRetransmissionEffort::kDontCare};
 
 constexpr ParameterSet kParameterSetD1{
-    .packet_types = static_cast<uint8_t>(ScoPacketTypeBits::kHv3),
+    .packet_types = static_cast<uint16_t>(ScoPacketTypeBits::kHv3),
     .transmit_receive_bandwidth = 8000,
     .transmit_receive_format = pw::bluetooth::emboss::CodingFormat::CVSD,
     .max_latency_ms = 0xFFFF,

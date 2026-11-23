@@ -38,6 +38,7 @@ cc_library(
     tags = ["noclangtidy"],
     deps = [
         "//pw_bluetooth:emboss_hci_commands",
+        "//pw_bluetooth:emboss_hci_common",
         "//pw_bluetooth_sapphire/host/common",
         "//pw_bluetooth_sapphire/host/hci",
         "//pw_bluetooth_sapphire/host/hci-spec",
@@ -51,6 +52,7 @@ pw_cc_test(
     srcs = [
         "sco_connection_manager_test.cc",
         "sco_connection_test.cc",
+        "sco_test.cc",
     ],
     copts = [
         # TODO: https://pwbug.dev/464024322 - Fix warnings.
@@ -59,10 +61,14 @@ pw_cc_test(
     test_main = "//pw_bluetooth_sapphire/host/testing:gtest_main",
     deps = [
         ":sco",
+        "//pw_bluetooth:emboss_hci_commands",
+        "//pw_bluetooth:emboss_hci_common",
         "//pw_bluetooth_sapphire/host/hci:testing",
+        "//pw_bluetooth_sapphire/host/hci-spec",
         "//pw_bluetooth_sapphire/host/testing",
         "//pw_bluetooth_sapphire/host/testing:mock_controller",
         "//pw_bluetooth_sapphire/host/testing:test_helpers",
+        "//pw_bluetooth_sapphire/host/transport",
         "//pw_bluetooth_sapphire/host/transport:testing",
     ],
 )

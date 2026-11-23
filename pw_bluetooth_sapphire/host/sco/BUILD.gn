@@ -32,6 +32,7 @@ pw_source_set("sco") {
   public_configs = [ ":public_include_path" ]
   public_deps = [
     "$dir_pw_bluetooth:emboss_hci_commands",
+    "$dir_pw_bluetooth:emboss_hci_common",
     "$dir_pw_bluetooth_sapphire/host/common",
     "$dir_pw_bluetooth_sapphire/host/hci",
     "$dir_pw_bluetooth_sapphire/host/hci-spec",
@@ -44,14 +45,19 @@ pw_test("sco_test") {
   sources = [
     "sco_connection_manager_test.cc",
     "sco_connection_test.cc",
+    "sco_test.cc",
   ]
   test_main = "$dir_pw_bluetooth_sapphire/host/testing:gtest_main"
   deps = [
     ":sco",
+    "$dir_pw_bluetooth:emboss_hci_commands",
+    "$dir_pw_bluetooth:emboss_hci_common",
     "$dir_pw_bluetooth_sapphire/host/hci:testing",
+    "$dir_pw_bluetooth_sapphire/host/hci-spec",
     "$dir_pw_bluetooth_sapphire/host/testing",
     "$dir_pw_bluetooth_sapphire/host/testing:mock_controller",
     "$dir_pw_bluetooth_sapphire/host/testing:test_helpers",
+    "$dir_pw_bluetooth_sapphire/host/transport",
     "$dir_pw_bluetooth_sapphire/host/transport:testing",
   ]
 }
