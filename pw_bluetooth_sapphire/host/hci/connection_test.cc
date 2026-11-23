@@ -2043,6 +2043,64 @@ TEST_F(ConnectionTest, PeerDisconnectCallback) {
   EXPECT_EQ(1u, cb_count);
 }
 
+TEST_F(ConnectionTest, EnsureAllPacketTypesEnabledIsIdempotent) {
+  auto conn = NewACLConnection();
+
+  const auto expected_cmd = testing::ChangeConnectionPacketTypePacket(
+      kTestHandle, hci_spec::kEnableAllPacketTypes);
+  const auto status_rsp = testing::CommandStatusPacket(
+      pw::bluetooth::emboss::OpCode::CHANGE_CONNECTION_PACKET_TYPE,
+      pw::bluetooth::emboss::StatusCode::SUCCESS,
+      1);
+  EXPECT_CMD_PACKET_OUT(test_device(), expected_cmd, &status_rsp);
+
+  conn->EnsureAllPacketTypesEnabled();
+  RunUntilIdle();
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+
+  // Second call after an OK response should be a no-op.
+  conn->EnsureAllPacketTypesEnabled();
+  RunUntilIdle();
+
+  EXPECT_CMD_PACKET_OUT(test_device(), testing::DisconnectPacket(kTestHandle));
+  conn.reset();
+  RunUntilIdle();
+}
+
+TEST_F(ConnectionTest, EnsureAllPacketTypesEnabledRetriesAfterError) {
+  auto conn = NewACLConnection();
+
+  const auto expected_cmd = testing::ChangeConnectionPacketTypePacket(
+      kTestHandle, hci_spec::kEnableAllPacketTypes);
+  const auto error_rsp = testing::CommandStatusPacket(
+      pw::bluetooth::emboss::OpCode::CHANGE_CONNECTION_PACKET_TYPE,
+      pw::bluetooth::emboss::StatusCode::COMMAND_DISALLOWED,
+      1);
+  const auto ok_rsp = testing::CommandStatusPacket(
+      pw::bluetooth::emboss::OpCode::CHANGE_CONNECTION_PACKET_TYPE,
+      pw::bluetooth::emboss::StatusCode::SUCCESS,
+      1);
+
+  EXPECT_CMD_PACKET_OUT(test_device(), expected_cmd, &error_rsp);
+  conn->EnsureAllPacketTypesEnabled();
+  RunUntilIdle();
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+
+  // Retry after an error should send the command again.
+  EXPECT_CMD_PACKET_OUT(test_device(), expected_cmd, &ok_rsp);
+  conn->EnsureAllPacketTypesEnabled();
+  RunUntilIdle();
+  EXPECT_TRUE(test_device()->AllExpectedCommandPacketsSent());
+
+  // Subsequent call after OK should be a no-op.
+  conn->EnsureAllPacketTypesEnabled();
+  RunUntilIdle();
+
+  EXPECT_CMD_PACKET_OUT(test_device(), testing::DisconnectPacket(kTestHandle));
+  conn.reset();
+  RunUntilIdle();
+}
+
 // Test connection handling cases for all types of links.
 INSTANTIATE_TEST_SUITE_P(ConnectionTest,
                          LinkTypeConnectionTest,

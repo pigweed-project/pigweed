@@ -2930,6 +2930,30 @@ void FakeController::OnReadRemoteExtendedFeaturesCommandReceived(
   SendCommandChannelPacket(response.data());
 }
 
+void FakeController::OnChangeConnectionPacketTypeCommandReceived(
+    const pwemb::ChangeConnectionPacketTypeCommandView& params) {
+  hci_spec::ConnectionHandle handle = params.connection_handle().Read();
+  FakePeer* peer = FindByConnHandle(handle);
+  if (!peer) {
+    RespondWithCommandStatus(pwemb::OpCode::CHANGE_CONNECTION_PACKET_TYPE,
+                             pwemb::StatusCode::UNKNOWN_CONNECTION_ID);
+    return;
+  }
+
+  RespondWithCommandStatus(pwemb::OpCode::CHANGE_CONNECTION_PACKET_TYPE,
+                           pwemb::StatusCode::SUCCESS);
+
+  auto event =
+      hci::EventPacket::New<pwemb::ConnectionPacketTypeChangedEventWriter>(
+          static_cast<hci_spec::EventCode>(
+              pwemb::EventCode::CONNECTION_PACKET_TYPE_CHANGED));
+  event.view_t().status().Write(pwemb::StatusCode::SUCCESS);
+  event.view_t().connection_handle().Write(handle);
+  event.view_t().packet_type().BackingStorage().WriteUInt(
+      params.packet_type().BackingStorage().ReadUInt());
+  SendCommandChannelPacket(event.data());
+}
+
 void FakeController::OnAuthenticationRequestedCommandReceived(
     const pwemb::AuthenticationRequestedCommandView& params) {
   hci_spec::ConnectionHandle handle = params.connection_handle().Read();
@@ -6815,6 +6839,7 @@ void FakeController::HandleReceivedCommandPacket(
       break;
     }
     case hci_spec::kAuthenticationRequested:
+    case static_cast<uint16_t>(pwemb::OpCode::CHANGE_CONNECTION_PACKET_TYPE):
     case hci_spec::kCreateConnection:
     case hci_spec::kDisconnect:
     case hci_spec::kEnhancedAcceptSynchronousConnectionRequest:
@@ -6994,6 +7019,12 @@ void FakeController::HandleReceivedCommandPacket(
       const auto params =
           command_packet.view<pwemb::AuthenticationRequestedCommandView>();
       OnAuthenticationRequestedCommandReceived(params);
+      break;
+    }
+    case static_cast<uint16_t>(pwemb::OpCode::CHANGE_CONNECTION_PACKET_TYPE): {
+      const auto params =
+          command_packet.view<pwemb::ChangeConnectionPacketTypeCommandView>();
+      OnChangeConnectionPacketTypeCommandReceived(params);
       break;
     }
     case hci_spec::kSetConnectionEncryption: {

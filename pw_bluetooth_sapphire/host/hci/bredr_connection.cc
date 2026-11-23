@@ -37,6 +37,10 @@ BrEdrConnection::BrEdrConnection(hci_spec::ConnectionHandle handle,
 }
 
 void BrEdrConnection::EnsureAllPacketTypesEnabled() {
+  if (all_packet_types_enabled_) {
+    return;
+  }
+
   auto cmd = CommandPacket::New<
       pw::bluetooth::emboss::ChangeConnectionPacketTypeCommandWriter>(
       static_cast<hci_spec::OpCode>(
@@ -58,8 +62,9 @@ void BrEdrConnection::EnsureAllPacketTypesEnabled() {
             "hci-bredr",
             "failed to send Change Connection Packet Type command for %#.04x",
             handle)) {
-      // Log error
+      return;
     }
+    self->all_packet_types_enabled_ = true;
   };
 
   auto cmd_result = hci()->command_channel()->SendCommand(

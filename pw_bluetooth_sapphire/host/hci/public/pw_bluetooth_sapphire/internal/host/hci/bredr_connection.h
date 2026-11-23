@@ -35,7 +35,8 @@ class BrEdrConnection : public AclConnection, public WeakSelf<BrEdrConnection> {
                   pw::async::Dispatcher& dispatcher);
 
   // Sends a HCI_Change_Connection_Packet_Type command to the controller to
-  // enable all supported packet types for this connection.
+  // enable all supported packet types for this connection. No-op once a
+  // previous command has succeeded.
   void EnsureAllPacketTypesEnabled();
 
   bool StartEncryption() override;
@@ -70,6 +71,10 @@ class BrEdrConnection : public AclConnection, public WeakSelf<BrEdrConnection> {
 
   // Actual negotiated encryption key size (in bytes).
   std::optional<uint8_t> encryption_key_size_;
+
+  // True once HCI_Change_Connection_Packet_Type returns an OK CommandStatus;
+  // prevents redundant commands for this connection.
+  bool all_packet_types_enabled_ = false;
 };
 
 }  // namespace bt::hci

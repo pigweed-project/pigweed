@@ -1020,12 +1020,13 @@ void BrEdrConnectionManager::CompleteConnectionSetup(
     return;
   }
 
-  if (packet_type_optimization_enabled_ &&
-      conn_state.link().role() ==
-          pw::bluetooth::emboss::ConnectionRole::PERIPHERAL) {
+  // Send HCI_Change_Connection_Packet_Type for all links (both central and
+  // peripheral) because some controllers ignore the packet type mask in
+  // HCI_Create_Connection until it is explicitly set on the established link.
+  if (packet_type_optimization_enabled_) {
     bt_log(INFO,
            "gap-bredr",
-           "optimizing packet types for new incoming connection %#.04x",
+           "optimizing packet types for new connection %#.04x",
            handle);
     conn_state.link().EnsureAllPacketTypesEnabled();
   }

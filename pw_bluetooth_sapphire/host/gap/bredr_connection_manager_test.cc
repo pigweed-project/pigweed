@@ -2064,9 +2064,10 @@ TEST_F(BrEdrConnectionManagerTest, NoChangePacketTypeIfDisabled) {
 }
 
 // Test: When packet type optimization is enabled, establishing an outgoing
-// connection should NOT trigger the HCI_Change_Connection_Packet_Type command,
-// as we already enable all packet types in the Create Connection command.
-TEST_F(BrEdrConnectionManagerTest, NoChangePacketTypeForOutgoingConnection) {
+// connection should also trigger the HCI_Change_Connection_Packet_Type command.
+// Some controllers do not use the packet types requested in the Create
+// Connection command until they are explicitly changed.
+TEST_F(BrEdrConnectionManagerTest, ChangePacketTypeForOutgoingConnection) {
   connmgr()->set_packet_type_optimization_enabled(true);
 
   auto* peer = peer_cache()->NewPeer(kTestDevAddr, true);
@@ -2075,9 +2076,44 @@ TEST_F(BrEdrConnectionManagerTest, NoChangePacketTypeForOutgoingConnection) {
   QueueSuccessfulCreateConnection(peer, kConnectionHandle);
   QueueSuccessfulInterrogation(kTestDevAddr, kConnectionHandle);
 
-  // We do NOT expect ChangeConnectionPacketTypePacket.
-  // If it is sent, the MockController will fail the test because it's
-  // unexpected.
+  const auto expected_cmd = testing::ChangeConnectionPacketTypePacket(
+      kConnectionHandle, hci_spec::kEnableAllPacketTypes);
+  const auto status_rsp = testing::CommandStatusPacket(
+      pw::bluetooth::emboss::OpCode::CHANGE_CONNECTION_PACKET_TYPE,
+      pw::bluetooth::emboss::StatusCode::SUCCESS,
+      1);
+  const auto event_rsp = testing::ConnectionPacketTypeChangedEventPacket(
+      pw::bluetooth::emboss::StatusCode::SUCCESS,
+      kConnectionHandle,
+      hci_spec::kEnableAllPacketTypes);
+  EXPECT_CMD_PACKET_OUT(test_device(), expected_cmd, &status_rsp, &event_rsp);
+
+  bool callback_called = false;
+  auto status_cb = [&callback_called](hci::Result<> status, auto* conn) {
+    EXPECT_EQ(fit::ok(), status);
+    EXPECT_TRUE(conn);
+    callback_called = true;
+  };
+
+  EXPECT_TRUE(connmgr()->Connect(peer->identifier(), std::move(status_cb)));
+
+  RunUntilIdle();
+
+  EXPECT_TRUE(callback_called);
+  QueueDisconnection(kConnectionHandle);
+}
+
+// Test: When packet type optimization is disabled, establishing an outgoing
+// connection should NOT trigger the HCI_Change_Connection_Packet_Type command.
+TEST_F(BrEdrConnectionManagerTest,
+       NoChangePacketTypeForOutgoingConnectionIfDisabled) {
+  connmgr()->set_packet_type_optimization_enabled(false);
+
+  auto* peer = peer_cache()->NewPeer(kTestDevAddr, true);
+  ASSERT_TRUE(peer);
+
+  QueueSuccessfulCreateConnection(peer, kConnectionHandle);
+  QueueSuccessfulInterrogation(kTestDevAddr, kConnectionHandle);
 
   bool callback_called = false;
   auto status_cb = [&callback_called](hci::Result<> status, auto* conn) {

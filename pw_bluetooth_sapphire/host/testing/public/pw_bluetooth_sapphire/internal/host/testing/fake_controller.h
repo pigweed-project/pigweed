@@ -1100,6 +1100,11 @@ class FakeController final : public ControllerTestDoubleBase,
       const pw::bluetooth::emboss::ReadRemoteExtendedFeaturesCommandView&
           params);
 
+  // Called when a HCI_Change_Connection_Packet_Type command is received.
+  void OnChangeConnectionPacketTypeCommandReceived(
+      const pw::bluetooth::emboss::ChangeConnectionPacketTypeCommandView&
+          params);
+
   // Pairing command handlers:
 
   // Called when a HCI_Authentication_Requested command is received.
