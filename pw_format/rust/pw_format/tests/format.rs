@@ -17,7 +17,7 @@ use std::os::raw::{c_char, c_int};
 
 use crate::{
     Arg, ConversionSpec, FormatError, FormatFragment, FormatString, FormatStyle, Ilp32Platform,
-    Llp64Platform, Lp64Platform, NestedTokenSpec,
+    Llp64Platform, Lp64Platform, NestedTokenSpec, MAX_FIELD_LEN,
 };
 
 unsafe extern "C" {
@@ -1185,6 +1185,234 @@ fn test_dynamic_width_precision_overflow() {
         &err_formatter,
     );
     assert_eq!(res, "<[%.*f TYPE_ERROR]>");
+}
+
+#[test]
+fn test_field_len_boundary_at_max() {
+    let max = i64::from(MAX_FIELD_LEN);
+    let max_u = u64::from(MAX_FIELD_LEN);
+    let max_usize = usize::try_from(MAX_FIELD_LEN).unwrap();
+
+    let dyn_width = FormatString::parse_printf("%*d").unwrap();
+    for width_arg in [Arg::Int(max), Arg::Uint(max_u)] {
+        let pos = dyn_width.format(&[width_arg, Arg::Int(42)], FormatStyle::Printf);
+        assert_eq!(pos.len(), max_usize);
+        assert!(pos.starts_with("   "));
+        assert!(pos.ends_with("42"));
+    }
+
+    let neg = dyn_width.format(&[Arg::Int(-max), Arg::Int(42)], FormatStyle::Printf);
+    assert_eq!(neg.len(), max_usize);
+    assert!(neg.starts_with("42"));
+    assert!(neg.ends_with("   "));
+
+    let dyn_prec = FormatString::parse_printf("%.*d").unwrap();
+    for prec_arg in [Arg::Int(max), Arg::Uint(max_u)] {
+        let prec_out = dyn_prec.format(&[prec_arg, Arg::Int(42)], FormatStyle::Printf);
+        assert_eq!(prec_out.len(), max_usize);
+        assert!(prec_out.starts_with("000"));
+        assert!(prec_out.ends_with("42"));
+    }
+
+    let static_width = FormatString::parse_printf(&format!("%{MAX_FIELD_LEN}d")).unwrap();
+    let static_out = static_width.format(&[Arg::Int(42)], FormatStyle::Printf);
+    assert_eq!(static_out.len(), max_usize);
+    assert!(static_out.ends_with("42"));
+}
+
+#[test]
+fn test_dynamic_field_len_over_max_rejected() {
+    let over = i64::from(MAX_FIELD_LEN) + 1;
+    let over_u = u64::from(MAX_FIELD_LEN) + 1;
+    let err_formatter = SimpleTestError;
+
+    for (spec_str, args) in [
+        ("%*d", vec![Arg::Int(over), Arg::Int(42)]),
+        ("%*d", vec![Arg::Int(-over), Arg::Int(42)]),
+        ("%*d", vec![Arg::Uint(over_u), Arg::Int(42)]),
+        ("%.*f", vec![Arg::Uint(over_u), Arg::Float(1.0)]),
+        ("%.*d", vec![Arg::Int(over), Arg::Int(42)]),
+        ("%.*s", vec![Arg::Int(over), Arg::Str("hello".to_string())]),
+    ] {
+        let parsed = FormatString::parse_printf(spec_str).unwrap();
+        assert_eq!(parsed.format(&args, FormatStyle::Printf), spec_str);
+        let ok_args: Vec<Result<Arg, String>> = args.into_iter().map(Ok).collect();
+        assert_eq!(
+            parsed.format_with_errors(&ok_args, FormatStyle::Printf, &err_formatter),
+            format!("<[{spec_str} TYPE_ERROR]>")
+        );
+    }
+}
+
+#[test]
+fn test_static_field_len_over_max_rejected() {
+    let over = u64::from(MAX_FIELD_LEN) + 1;
+    let err_formatter = SimpleTestError;
+
+    for (style, raw_spec, printf_spec) in [
+        (
+            FormatStyle::Printf,
+            format!("%{over}d"),
+            format!("%{over}d"),
+        ),
+        (
+            FormatStyle::Printf,
+            format!("%.{over}f"),
+            format!("%.{over}f"),
+        ),
+        (
+            FormatStyle::Printf,
+            "%4294967295d".to_string(),
+            "%4294967295d".to_string(),
+        ),
+        (
+            FormatStyle::CoreFmt,
+            format!("{{:{over}}}"),
+            format!("%{over}v"),
+        ),
+        (
+            FormatStyle::CoreFmt,
+            format!("{{:.{over}}}"),
+            format!("%.{over}v"),
+        ),
+    ] {
+        let parsed = match style {
+            FormatStyle::Printf => FormatString::parse_printf(&raw_spec).unwrap(),
+            FormatStyle::CoreFmt => FormatString::parse_core_fmt(&raw_spec).unwrap(),
+        };
+        assert_eq!(parsed.format(&[Arg::Int(42)], style), printf_spec);
+        assert_eq!(
+            parsed.format_with_errors(&[Ok(Arg::Int(42))], style, &err_formatter),
+            format!("<[{printf_spec} TYPE_ERROR]>")
+        );
+    }
+}
+
+#[test]
+fn test_dynamic_negative_precision_semantics() {
+    let err_formatter = SimpleTestError;
+
+    for neg in [-1i64, i64::from(i32::MIN)] {
+        let fmt_d = FormatString::parse_printf("%.*d").unwrap();
+        assert_eq!(
+            fmt_d.format(&[Arg::Int(neg), Arg::Int(42)], FormatStyle::Printf),
+            "42"
+        );
+
+        let fmt_f = FormatString::parse_printf("%.*f").unwrap();
+        assert_eq!(
+            fmt_f.format(&[Arg::Int(neg), Arg::Float(1.5)], FormatStyle::Printf),
+            "1.500000"
+        );
+
+        let fmt_s = FormatString::parse_printf("%.*s").unwrap();
+        assert_eq!(
+            fmt_s.format(
+                &[Arg::Int(neg), Arg::Str("hello".to_string())],
+                FormatStyle::Printf
+            ),
+            "hello"
+        );
+    }
+
+    let underflow = i64::from(i32::MIN) - 1;
+    let fmt_d = FormatString::parse_printf("%.*d").unwrap();
+    assert_eq!(
+        fmt_d.format_with_errors(
+            &[Ok(Arg::Int(underflow)), Ok(Arg::Int(42))],
+            FormatStyle::Printf,
+            &err_formatter,
+        ),
+        "<[%.*d TYPE_ERROR]>"
+    );
+}
+
+#[test]
+fn test_dynamic_arg_error_drains_remaining_slots() {
+    let err_formatter = SimpleTestError;
+    let over = i64::from(MAX_FIELD_LEN) + 1;
+
+    let fmt_width = FormatString::parse_printf("%*d %s").unwrap();
+    let args_width = [Arg::Int(over), Arg::Int(42), Arg::Str("ok".to_string())];
+    assert_eq!(fmt_width.format(&args_width, FormatStyle::Printf), "%*d ok");
+    let ok_width: Vec<Result<Arg, String>> = args_width.into_iter().map(Ok).collect();
+    assert_eq!(
+        fmt_width.format_with_errors(&ok_width, FormatStyle::Printf, &err_formatter),
+        "<[%*d TYPE_ERROR]> ok"
+    );
+    assert_eq!(
+        fmt_width.format_with_errors(
+            &[
+                Err("decode_err".to_string()),
+                Ok(Arg::Int(42)),
+                Ok(Arg::Str("ok".to_string())),
+            ],
+            FormatStyle::Printf,
+            &err_formatter,
+        ),
+        "<[%*d ERROR]> ok"
+    );
+
+    let fmt_both = FormatString::parse_printf("%*.*f %s").unwrap();
+    let args_bad_width_type = [
+        Arg::Str("bad".to_string()),
+        Arg::Int(2),
+        Arg::Float(1.25),
+        Arg::Str("ok".to_string()),
+    ];
+    assert_eq!(
+        fmt_both.format(&args_bad_width_type, FormatStyle::Printf),
+        "%*.*f ok"
+    );
+
+    let args_bad_width_val = [
+        Arg::Int(over),
+        Arg::Int(2),
+        Arg::Float(1.25),
+        Arg::Str("ok".to_string()),
+    ];
+    assert_eq!(
+        fmt_both.format(&args_bad_width_val, FormatStyle::Printf),
+        "%*.*f ok"
+    );
+
+    let args_bad_prec = [
+        Arg::Int(8),
+        Arg::Int(over),
+        Arg::Float(1.25),
+        Arg::Str("ok".to_string()),
+    ];
+    assert_eq!(
+        fmt_both.format(&args_bad_prec, FormatStyle::Printf),
+        "%*.*f ok"
+    );
+
+    assert_eq!(
+        fmt_both.format_with_errors(
+            &[
+                Err("w_err".to_string()),
+                Ok(Arg::Int(2)),
+                Ok(Arg::Float(1.25)),
+                Ok(Arg::Str("ok".to_string())),
+            ],
+            FormatStyle::Printf,
+            &err_formatter,
+        ),
+        "<[%*.*f ERROR]> ok"
+    );
+    assert_eq!(
+        fmt_both.format_with_errors(
+            &[
+                Ok(Arg::Int(8)),
+                Err("p_err".to_string()),
+                Ok(Arg::Float(1.25)),
+                Ok(Arg::Str("ok".to_string())),
+            ],
+            FormatStyle::Printf,
+            &err_formatter,
+        ),
+        "<[%*.*f ERROR]> ok"
+    );
 }
 
 #[test]

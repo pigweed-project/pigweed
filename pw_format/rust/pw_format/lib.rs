@@ -124,7 +124,7 @@ pub use format_string::{
     Alignment, Arg, Argument, ConversionSpec, Flag, FormatError, FormatFragment, FormatString,
     FormatStyle, FormatValueError, Ilp32Platform, Length, Llp64Platform, Lp64Platform,
     MinFieldWidth, NestedDomain, NestedTokenSpec, NestedTokenValue, PlatformTypes, PointerInt,
-    Precision, Primitive, SignedInt, Style, UnsignedInt,
+    Precision, Primitive, SignedInt, Style, UnsignedInt, MAX_FIELD_LEN,
 };
 pub use printf::{canonicalize_domain, canonicalize_domain_cow};
 

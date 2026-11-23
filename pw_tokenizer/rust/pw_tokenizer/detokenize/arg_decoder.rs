@@ -16,7 +16,7 @@
 
 use std::borrow::Cow;
 
-pub use pw_format::{canonicalize_domain, canonicalize_domain_cow};
+pub use pw_format::{canonicalize_domain, canonicalize_domain_cow, MAX_FIELD_LEN};
 use pw_format::{Arg, FormatFragment, FormatString, NestedDomain};
 
 pub use super::decoded::{DecodeMetrics, DecodedFormatString};
@@ -981,5 +981,170 @@ mod tests {
         assert!(!res_dyn.is_successful());
         assert!(res_dyn.decoding_errors() >= 1);
         assert_eq!(res_dyn.value_with_errors(), "<[%*d ERROR]> <[%d SKIPPED]>");
+    }
+
+    #[test]
+    fn test_decoder_field_len_boundary_at_max() {
+        let resolver = MockTokenResolver::new();
+        let decoder = Decoder::new(&resolver);
+        let max = i64::from(MAX_FIELD_LEN);
+        let max_usize = usize::try_from(MAX_FIELD_LEN).unwrap();
+
+        let fmt_width = FormatString::parse_printf("%*d").unwrap();
+        let mut pos_payload = Vec::new();
+        push_signed_varint(&mut pos_payload, max);
+        push_signed_varint(&mut pos_payload, 42);
+        let res_pos = decoder.decode(&fmt_width, &pos_payload, "");
+        assert!(res_pos.is_successful());
+        let pos_val = res_pos.value();
+        assert_eq!(pos_val.len(), max_usize);
+        assert!(pos_val.ends_with("42"));
+
+        let mut neg_payload = Vec::new();
+        push_signed_varint(&mut neg_payload, -max);
+        push_signed_varint(&mut neg_payload, 42);
+        let res_neg = decoder.decode(&fmt_width, &neg_payload, "");
+        assert!(res_neg.is_successful());
+        let neg_val = res_neg.value();
+        assert_eq!(neg_val.len(), max_usize);
+        assert!(neg_val.starts_with("42"));
+
+        let fmt_prec = FormatString::parse_printf("%.*d").unwrap();
+        let mut prec_payload = Vec::new();
+        push_signed_varint(&mut prec_payload, max);
+        push_signed_varint(&mut prec_payload, 42);
+        let res_prec = decoder.decode(&fmt_prec, &prec_payload, "");
+        assert!(res_prec.is_successful());
+        let prec_val = res_prec.value();
+        assert_eq!(prec_val.len(), max_usize);
+        assert!(prec_val.starts_with("000"));
+        assert!(prec_val.ends_with("42"));
+    }
+
+    #[test]
+    fn test_decoder_oversized_dynamic_width_and_precision_rejected() {
+        let resolver = MockTokenResolver::new();
+        let decoder = Decoder::new(&resolver);
+        let over = i64::from(MAX_FIELD_LEN) + 1;
+
+        for bad_width in [
+            over,
+            -over,
+            i64::from(i32::MAX),
+            i64::from(i32::MIN),
+            i64::from(u32::MAX),
+        ] {
+            let fmt = FormatString::parse_printf("%*d %d").unwrap();
+            let mut payload = Vec::new();
+            push_signed_varint(&mut payload, bad_width);
+            push_signed_varint(&mut payload, 10);
+            push_signed_varint(&mut payload, 20);
+            let res = decoder.decode(&fmt, &payload, "");
+            assert!(!res.is_successful());
+            assert_eq!(res.value(), "%*d %d");
+            assert_eq!(res.value_with_errors(), "<[%*d ERROR]> <[%d SKIPPED]>");
+        }
+
+        for bad_prec in [over, i64::from(i32::MAX), i64::from(u32::MAX)] {
+            let fmt = FormatString::parse_printf("%.*f %d").unwrap();
+            let mut payload = Vec::new();
+            push_signed_varint(&mut payload, bad_prec);
+            payload.extend_from_slice(&1.5f32.to_le_bytes());
+            push_signed_varint(&mut payload, 20);
+            let res = decoder.decode(&fmt, &payload, "");
+            assert!(!res.is_successful());
+            assert_eq!(res.value(), "%.*f %d");
+            assert_eq!(res.value_with_errors(), "<[%.*f ERROR]> <[%d SKIPPED]>");
+        }
+
+        let fmt_both = FormatString::parse_printf("%*.*d %d").unwrap();
+        let mut both_payload = Vec::new();
+        push_signed_varint(&mut both_payload, 4);
+        push_signed_varint(&mut both_payload, over);
+        push_signed_varint(&mut both_payload, 10);
+        push_signed_varint(&mut both_payload, 20);
+        let res_both = decoder.decode(&fmt_both, &both_payload, "");
+        assert!(!res_both.is_successful());
+        assert_eq!(
+            res_both.value_with_errors(),
+            "<[%*.*d ERROR]> <[%d SKIPPED]>"
+        );
+    }
+
+    #[test]
+    fn test_decoder_negative_dynamic_precision_semantics() {
+        let resolver = MockTokenResolver::new();
+        let decoder = Decoder::new(&resolver);
+        let fmt = FormatString::parse_printf("%.*s %d").unwrap();
+
+        for neg in [-1i64, i64::from(i32::MIN)] {
+            let mut payload = Vec::new();
+            push_signed_varint(&mut payload, neg);
+            payload.push(5);
+            payload.extend_from_slice(b"hello");
+            push_signed_varint(&mut payload, 7);
+            let res = decoder.decode(&fmt, &payload, "");
+            assert!(res.is_successful());
+            assert_eq!(res.value(), "hello 7");
+        }
+
+        let fmt_both = FormatString::parse_printf("%*.*d").unwrap();
+        let mut neg_both_payload = Vec::new();
+        push_signed_varint(&mut neg_both_payload, -4);
+        push_signed_varint(&mut neg_both_payload, -1);
+        push_signed_varint(&mut neg_both_payload, 7);
+        let res_both = decoder.decode(&fmt_both, &neg_both_payload, "");
+        assert!(res_both.is_successful());
+        assert_eq!(res_both.value(), "7   ");
+
+        let mut underflow_payload = Vec::new();
+        push_signed_varint(&mut underflow_payload, i64::from(i32::MIN) - 1);
+        underflow_payload.push(5);
+        underflow_payload.extend_from_slice(b"hello");
+        push_signed_varint(&mut underflow_payload, 7);
+        let res = decoder.decode(&fmt, &underflow_payload, "");
+        assert!(!res.is_successful());
+        assert_eq!(res.value_with_errors(), "<[%.*s ERROR]> <[%d SKIPPED]>");
+    }
+
+    #[test]
+    fn test_decoder_static_oversized_field_len_rejected() {
+        let resolver = MockTokenResolver::new();
+        let decoder = Decoder::new(&resolver);
+        let over = u64::from(MAX_FIELD_LEN) + 1;
+
+        for (spec, expected_err) in [
+            (
+                format!("%{over}d %d"),
+                format!("<[%{over}d ERROR]> <[%d SKIPPED]>"),
+            ),
+            (
+                format!("%.{over}d %d"),
+                format!("<[%.{over}d ERROR]> <[%d SKIPPED]>"),
+            ),
+            (
+                "%4294967295d %d".to_string(),
+                "<[%4294967295d ERROR]> <[%d SKIPPED]>".to_string(),
+            ),
+        ] {
+            let fmt = FormatString::parse_printf(&spec).unwrap();
+            let mut payload = Vec::new();
+            push_signed_varint(&mut payload, 10);
+            push_signed_varint(&mut payload, 20);
+            let res = decoder.decode(&fmt, &payload, "");
+            assert!(!res.is_successful());
+            assert_eq!(res.value(), spec);
+            assert_eq!(res.value_with_errors(), expected_err);
+        }
+
+        let fmt_ok = FormatString::parse_printf(&format!("%{MAX_FIELD_LEN}d")).unwrap();
+        let mut ok_payload = Vec::new();
+        push_signed_varint(&mut ok_payload, 42);
+        let res_ok = decoder.decode(&fmt_ok, &ok_payload, "");
+        assert!(res_ok.is_successful());
+        assert_eq!(
+            res_ok.value().len(),
+            usize::try_from(MAX_FIELD_LEN).unwrap()
+        );
     }
 }

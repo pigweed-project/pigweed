@@ -18,7 +18,7 @@ use std::borrow::Cow;
 
 use pw_format::{
     Arg, ConversionSpec, FormatString, MinFieldWidth, NestedTokenSpec, NestedTokenValue, Precision,
-    Primitive,
+    Primitive, MAX_FIELD_LEN,
 };
 
 use super::{
@@ -275,7 +275,25 @@ impl<'sess, 'data, 'dec> DecodingSession<'sess, 'data, 'dec> {
         }
     }
 
-    fn decode_dynamic_field(&mut self, is_dynamic: bool) -> bool {
+    fn is_valid_dynamic_width(val: i64) -> bool {
+        val.unsigned_abs() <= u64::from(MAX_FIELD_LEN)
+    }
+
+    fn is_valid_dynamic_precision(val: i64) -> bool {
+        // Per C99 §7.19.6.1p5, a negative `int` precision is treated as omitted.
+        // Require `i32` range so values below `i32::MIN` are rejected as corrupted.
+        if val < 0 {
+            i32::try_from(val).is_ok()
+        } else {
+            val.cast_unsigned() <= u64::from(MAX_FIELD_LEN)
+        }
+    }
+
+    fn decode_dynamic_field(
+        &mut self,
+        is_dynamic: bool,
+        is_valid: impl FnOnce(i64) -> bool,
+    ) -> bool {
         if !is_dynamic {
             return true;
         }
@@ -286,7 +304,7 @@ impl<'sess, 'data, 'dec> DecodingSession<'sess, 'data, 'dec> {
                 return false;
             }
         };
-        if u32::try_from(val.unsigned_abs()).is_err() {
+        if !is_valid(val) {
             self.record_error(TokenizerError::DecodeError);
             return false;
         }
@@ -300,9 +318,18 @@ impl<'sess, 'data, 'dec> DecodingSession<'sess, 'data, 'dec> {
             return;
         }
 
-        if !self.decode_dynamic_field(spec.min_field_width == MinFieldWidth::Variable)
-            || !self.decode_dynamic_field(spec.precision == Precision::Variable)
-        {
+        if !spec.has_valid_field_lengths() {
+            self.record_error(TokenizerError::DecodeError);
+            return;
+        }
+
+        if !self.decode_dynamic_field(
+            spec.min_field_width == MinFieldWidth::Variable,
+            Self::is_valid_dynamic_width,
+        ) || !self.decode_dynamic_field(
+            spec.precision == Precision::Variable,
+            Self::is_valid_dynamic_precision,
+        ) {
             return;
         }
 

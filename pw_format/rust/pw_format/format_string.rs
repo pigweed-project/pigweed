@@ -13,6 +13,7 @@
 // the License.
 
 use core::convert::Infallible;
+use core::iter::Peekable;
 use core::marker::PhantomData;
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -33,6 +34,14 @@ pub use self::platform::{
 };
 use self::text::{format_char, format_str};
 use crate::{core_fmt, printf};
+
+/// Maximum allowed minimum field width or precision (`65,536`) when
+/// formatting values at runtime.
+///
+/// Bounding width and precision specifier counts prevents corrupted or
+/// untrusted arguments (such as wire varints in `pw_tokenizer`) or malformed
+/// format strings from triggering multi-GiB heap allocations.
+pub const MAX_FIELD_LEN: u32 = 0x0001_0000;
 
 /// Primitive type of a conversion (integer, float, string, etc.)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -315,6 +324,14 @@ impl Default for ConversionSpec {
 }
 
 impl ConversionSpec {
+    /// Returns `true` if fixed width and precision do not exceed
+    /// [`MAX_FIELD_LEN`].
+    #[must_use]
+    pub const fn has_valid_field_lengths(&self) -> bool {
+        !matches!(self.min_field_width, MinFieldWidth::Fixed(w) if w > MAX_FIELD_LEN)
+            && !matches!(self.precision, Precision::Fixed(p) if p > MAX_FIELD_LEN)
+    }
+
     /// Reconstructs the conversion specifier back to its printf format string representation (e.g., `%+05.2ld`).
     #[must_use]
     pub fn to_printf(&self) -> String {
@@ -746,28 +763,23 @@ impl FormatString {
     }
 }
 
-/// Resolved dynamic field width or precision (`*`) integer argument.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum DynamicInt {
-    /// Non-negative width or precision magnitude.
-    Positive(u32),
-    /// Negative width or precision magnitude (indicating left-justification for width
-    /// or omitted precision).
-    Negative(u32),
-}
-
 /// State for formatting a single [`FormatString`] with a sequence of arguments.
 ///
 /// # Lifetimes
 ///
 /// * `'a`: The lifetime of the decoded [`Arg`] items (and any decoding errors)
-///   yielded by the `args` iterator `I` (see the `impl` block).
+///   yielded by the `args` iterator `I`.
 /// * `'b`: The lifetime of the borrowed error formatter (`error_formatter`) and
 ///   the output string buffer (`output`) for the duration of the formatting
 ///   session.
-struct FormatSession<'b, I, FE, P: PlatformTypes> {
-    /// Iterator yielding references to decoded [`Arg`] results for each conversion.
-    args: I,
+struct FormatSession<'a, 'b, I, FE, P: PlatformTypes>
+where
+    I: Iterator<Item = &'a Result<Arg, FE::Error>>,
+    FE: FormatError,
+    FE::Error: 'a,
+{
+    /// Peekable iterator yielding references to decoded [`Arg`] results for each conversion.
+    args: Peekable<I>,
     /// The formatting style ([`FormatStyle::Printf`] or [`FormatStyle::CoreFmt`]).
     style: FormatStyle,
     /// Formatter invoked to produce fallback text when an argument is missing,
@@ -779,7 +791,7 @@ struct FormatSession<'b, I, FE, P: PlatformTypes> {
     _platform: PhantomData<P>,
 }
 
-impl<'a, 'b, I, FE, P: PlatformTypes> FormatSession<'b, I, FE, P>
+impl<'a, 'b, I, FE, P: PlatformTypes> FormatSession<'a, 'b, I, FE, P>
 where
     I: Iterator<Item = &'a Result<Arg, FE::Error>>,
     FE: FormatError,
@@ -787,7 +799,7 @@ where
 {
     fn new(args: I, style: FormatStyle, error_formatter: &'b FE, output: &'b mut String) -> Self {
         Self {
-            args,
+            args: args.peekable(),
             style,
             error_formatter,
             output,
@@ -808,6 +820,38 @@ where
     fn push_type_error(&mut self, spec: &ConversionSpec, arg: &Arg) {
         self.output
             .push_str(&self.error_formatter.format_type_error(spec, arg));
+    }
+
+    // Only consume `Ok` slots so downstream `Err` markers (such as
+    // `TokenizerError::Skipped` after an aborted decode) stay intact.
+    fn drain_remaining_ok_args(&mut self, count: usize) {
+        for _ in 0..count {
+            if matches!(self.args.peek(), Some(Ok(_))) {
+                self.args.next();
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn fail_dynamic_arg(&mut self, spec: &ConversionSpec, arg: &Arg, remaining_ok_slots: usize) {
+        self.push_type_error(spec, arg);
+        self.drain_remaining_ok_args(remaining_ok_slots);
+    }
+
+    fn next_arg(&mut self, spec: &ConversionSpec, remaining_ok_slots: usize) -> Option<&'a Arg> {
+        let Some(decoded) = self.args.next() else {
+            self.push_missing(spec);
+            return None;
+        };
+        match decoded {
+            Ok(arg) => Some(arg),
+            Err(err) => {
+                self.push_error(spec, err);
+                self.drain_remaining_ok_args(remaining_ok_slots);
+                None
+            }
+        }
     }
 
     fn format_fragment(&mut self, fragment: &FormatFragment) {
@@ -853,17 +897,8 @@ where
             return;
         };
 
-        let Some(decoded) = self.args.next() else {
-            self.push_missing(spec);
+        let Some(arg) = self.next_arg(spec, 0) else {
             return;
-        };
-
-        let arg = match decoded {
-            Ok(arg) => arg,
-            Err(err) => {
-                self.push_error(spec, err);
-                return;
-            }
         };
 
         let initial_len = self.output.len();
@@ -891,70 +926,54 @@ where
         Some(Cow::Owned(resolved))
     }
 
-    fn consume_dynamic_int_arg(&mut self, spec: &ConversionSpec) -> Option<DynamicInt> {
-        let Some(decoded) = self.args.next() else {
-            self.push_missing(spec);
-            return None;
-        };
-        let arg = match decoded {
-            Ok(arg) => arg,
-            Err(err) => {
-                self.push_error(spec, err);
-                return None;
-            }
-        };
-
-        match arg {
-            Arg::Int(val) => match u32::try_from(val.unsigned_abs()) {
-                Ok(u) if *val < 0 => Some(DynamicInt::Negative(u)),
-                Ok(u) => Some(DynamicInt::Positive(u)),
-                Err(_) => {
-                    self.push_type_error(spec, arg);
-                    None
-                }
-            },
-            Arg::Uint(val) => match u32::try_from(*val) {
-                Ok(u) => Some(DynamicInt::Positive(u)),
-                Err(_) => {
-                    self.push_type_error(spec, arg);
-                    None
-                }
-            },
-            other => {
-                self.push_type_error(spec, other);
-                None
-            }
-        }
-    }
-
     fn resolve_dynamic_width(
         &mut self,
         spec: &ConversionSpec,
         flags: &mut HashSet<Flag>,
     ) -> Option<MinFieldWidth> {
-        match spec.min_field_width {
-            MinFieldWidth::Fixed(w) => Some(MinFieldWidth::Fixed(w)),
-            MinFieldWidth::None => Some(MinFieldWidth::None),
-            MinFieldWidth::Variable => match self.consume_dynamic_int_arg(spec)? {
-                DynamicInt::Positive(w) => Some(MinFieldWidth::Fixed(w)),
-                DynamicInt::Negative(w) => {
-                    flags.insert(Flag::LeftJustify);
-                    Some(MinFieldWidth::Fixed(w))
-                }
-            },
+        let MinFieldWidth::Variable = spec.min_field_width else {
+            return Some(spec.min_field_width);
+        };
+        let remaining_slots = usize::from(spec.precision == Precision::Variable) + 1;
+        let arg = self.next_arg(spec, remaining_slots)?;
+        let (width, is_negative) = match arg {
+            Arg::Int(val) => (validate_field_len(val.unsigned_abs()), *val < 0),
+            Arg::Uint(val) => (validate_field_len(*val), false),
+            _ => (None, false),
+        };
+        let Some(w) = width else {
+            self.fail_dynamic_arg(spec, arg, remaining_slots);
+            return None;
+        };
+        if is_negative {
+            flags.insert(Flag::LeftJustify);
         }
+        Some(MinFieldWidth::Fixed(w))
     }
 
     fn resolve_dynamic_precision(&mut self, spec: &ConversionSpec) -> Option<Precision> {
-        match spec.precision {
-            Precision::Fixed(p) => Some(Precision::Fixed(p)),
-            Precision::None => Some(Precision::None),
-            Precision::Variable => match self.consume_dynamic_int_arg(spec)? {
-                DynamicInt::Positive(p) => Some(Precision::Fixed(p)),
-                DynamicInt::Negative(_) => Some(Precision::None),
-            },
-        }
+        let Precision::Variable = spec.precision else {
+            return Some(spec.precision);
+        };
+        let arg = self.next_arg(spec, 1)?;
+        let resolved = match arg {
+            // Per C99 §7.19.6.1p5, a negative 32-bit C `int` precision is treated
+            // as omitted; values below `i32::MIN` are rejected as out of range.
+            Arg::Int(val) if *val < 0 => i32::try_from(*val).ok().map(|_| Precision::None),
+            Arg::Int(val) => validate_field_len(val.cast_unsigned()).map(Precision::Fixed),
+            Arg::Uint(val) => validate_field_len(*val).map(Precision::Fixed),
+            _ => None,
+        };
+        let Some(precision) = resolved else {
+            self.fail_dynamic_arg(spec, arg, 1);
+            return None;
+        };
+        Some(precision)
     }
+}
+
+fn validate_field_len(val: u64) -> Option<u32> {
+    u32::try_from(val).ok().filter(|&v| v <= MAX_FIELD_LEN)
 }
 
 /// Errors that can occur when formatting an [`Arg`] for a [`ConversionSpec`].
@@ -974,6 +993,10 @@ fn format_value<P: PlatformTypes>(
     style: FormatStyle,
     output: &mut String,
 ) -> Result<(), FormatValueError> {
+    if !spec.has_valid_field_lengths() {
+        return Err(FormatValueError::ValueOutOfRange);
+    }
+
     match (spec.primitive, arg) {
         (Primitive::Integer, Arg::Int(v)) => format_int::<P>(*v, spec, style, output),
         (Primitive::Integer, Arg::Uint(v)) => format_int::<P>(v.cast_signed(), spec, style, output),

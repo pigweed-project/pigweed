@@ -34,7 +34,8 @@ pub(crate) mod primitives;
 pub mod varint;
 
 pub use arg_decoder::{
-    canonicalize_domain, Decoder, TokenResolver, DEFAULT_RECURSION_PASSES, MAX_RECURSION_DEPTH,
+    canonicalize_domain, Decoder, TokenResolver, DEFAULT_RECURSION_PASSES, MAX_FIELD_LEN,
+    MAX_RECURSION_DEPTH,
 };
 pub use database::{Database, TokenizedStringEntry};
 pub use decoded::{DecodeMetrics, DecodedFormatString};
@@ -850,5 +851,25 @@ mod tests {
             res_preparsed.matches[0],
             DetokenizeAttempt::Success(ref d) if matches!(d.fmt_str, Cow::Borrowed(_))
         ));
+    }
+
+    #[test]
+    fn test_detokenize_collision_rejects_oversized_dynamic_width() {
+        let csv = "00000001,,,%*d\n\
+                   00000001,,,%f\n";
+        let detok = Detokenizer::from_csv(csv).unwrap();
+
+        // Payload bytes [0x82, 0x80, 0x08, 0x40]:
+        // - For `%*d`: first varint [0x82, 0x80, 0x08] is zigzag 65_537 (> MAX_FIELD_LEN),
+        //   followed by 0x40 (32), so `%*d` must fail with DecodeError.
+        // - For `%f`: valid 4-byte IEEE-754 little-endian f32.
+        let float_bytes = [0x82, 0x80, 0x08, 0x40];
+        let mut encoded = 1u32.to_le_bytes().to_vec();
+        encoded.extend_from_slice(&float_bytes);
+
+        let res = detok.detokenize(&encoded);
+        assert!(res.is_ok);
+        let expected = format!("{:.6}", f64::from(f32::from_le_bytes(float_bytes)));
+        assert_eq!(res.best_string(), expected);
     }
 }
