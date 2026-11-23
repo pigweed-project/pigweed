@@ -71,7 +71,9 @@ BrEdrDiscoverySession::BrEdrDiscoverySession(
     : manager_(std::move(manager)) {}
 
 BrEdrDiscoverySession::~BrEdrDiscoverySession() {
-  manager_->RemoveDiscoverySession(this);
+  if (manager_.is_alive()) {
+    manager_->RemoveDiscoverySession(this);
+  }
 }
 
 void BrEdrDiscoverySession::NotifyDiscoveryResult(const Peer& peer) const {
@@ -91,7 +93,9 @@ BrEdrDiscoverableSession::BrEdrDiscoverableSession(
     : manager_(std::move(manager)) {}
 
 BrEdrDiscoverableSession::~BrEdrDiscoverableSession() {
-  manager_->RemoveDiscoverableSession(this);
+  if (manager_.is_alive()) {
+    manager_->RemoveDiscoverableSession(this);
+  }
 }
 
 BrEdrDiscoveryManager::BrEdrDiscoveryManager(
@@ -340,6 +344,9 @@ void BrEdrDiscoveryManager::UpdateEIRResponseData(
           std::move(write_eir),
           [self, local_name = std::move(name), cb = std::move(callback)](
               auto, const hci::EventPacket& event) mutable {
+            if (!self.is_alive()) {
+              return;
+            }
             if (!HCI_IS_ERROR(event, WARN, "gap", "write EIR failed")) {
               self->local_name_ = std::move(local_name);
             }
@@ -368,6 +375,9 @@ void BrEdrDiscoveryManager::UpdateLocalName(std::string name,
           std::move(write_name),
           [self, name_as_str = std::move(name), cb = std::move(callback)](
               auto, const hci::EventPacket& event) mutable {
+            if (!self.is_alive()) {
+              return;
+            }
             if (HCI_IS_ERROR(event, WARN, "gap", "set local name failed")) {
               cb(event.ToResult());
               return;

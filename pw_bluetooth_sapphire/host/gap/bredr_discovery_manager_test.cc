@@ -1173,6 +1173,89 @@ TEST_F(BrEdrDiscoveryManagerTest, UpdateEIRResponseDataError) {
   EXPECT_EQ(1u, callback_count);
 }
 
+TEST_F(BrEdrDiscoveryManagerTest, UpdateLocalNameDestroyedBeforeResponse) {
+  EXPECT_CMD_PACKET_OUT(test_device(), kWriteLocalName, );
+
+  size_t callback_count = 0u;
+  discovery_manager()->UpdateLocalName(
+      "ABC", [&callback_count](const auto&) { callback_count++; });
+  RunUntilIdle();
+
+  DestroyDiscoveryManager();
+
+  // Completing WriteLocalName after the manager is destroyed must not assert
+  // or send WriteExtendedInquiryResponse.
+  test_device()->SendCommandChannelPacket(kWriteLocalNameRsp);
+  RunUntilIdle();
+  EXPECT_EQ(0u, callback_count);
+}
+
+TEST_F(BrEdrDiscoveryManagerTest,
+       UpdateEIRResponseDataDestroyedBeforeResponse) {
+  EXPECT_CMD_PACKET_OUT(test_device(), kWriteLocalName, );
+
+  size_t callback_count = 0u;
+  discovery_manager()->UpdateLocalName(
+      "ABC", [&callback_count](const auto&) { callback_count++; });
+  RunUntilIdle();
+
+  EXPECT_CMD_PACKET_OUT(test_device(), kWriteExtendedInquiryResponse, );
+  test_device()->SendCommandChannelPacket(kWriteLocalNameRsp);
+  RunUntilIdle();
+
+  DestroyDiscoveryManager();
+
+  // Completing WriteExtendedInquiryResponse after the manager is destroyed
+  // must not assert or invoke the callback.
+  test_device()->SendCommandChannelPacket(kWriteExtendedInquiryResponseRsp);
+  RunUntilIdle();
+  EXPECT_EQ(0u, callback_count);
+}
+
+TEST_F(BrEdrDiscoveryManagerTest, DiscoverySessionDestroyedAfterManager) {
+  EXPECT_CMD_PACKET_OUT(test_device(), kInquiry, &kInquiryRsp);
+
+  std::unique_ptr<BrEdrDiscoverySession> session;
+  discovery_manager()->RequestDiscovery([&session](auto status, auto cb_sess) {
+    ASSERT_EQ(fit::ok(), status);
+    session = std::move(cb_sess);
+  });
+  RunUntilIdle();
+  ASSERT_TRUE(session);
+
+  bool error_cb_called = false;
+  session->set_error_callback([&error_cb_called] { error_cb_called = true; });
+
+  DestroyDiscoveryManager();
+  EXPECT_TRUE(error_cb_called);
+
+  // Dropping the session after manager destruction must be safe.
+  session.reset();
+  RunUntilIdle();
+}
+
+TEST_F(BrEdrDiscoveryManagerTest, DiscoverableSessionDestroyedAfterManager) {
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kReadScanEnable, &kReadScanEnableRspNone);
+  EXPECT_CMD_PACKET_OUT(
+      test_device(), kWriteScanEnableInq, &kWriteScanEnableRsp);
+
+  std::unique_ptr<BrEdrDiscoverableSession> session;
+  discovery_manager()->RequestDiscoverable(
+      [&session](auto status, auto cb_sess) {
+        ASSERT_EQ(fit::ok(), status);
+        session = std::move(cb_sess);
+      });
+  RunUntilIdle();
+  ASSERT_TRUE(session);
+
+  DestroyDiscoveryManager();
+
+  // Dropping the session after manager destruction must be safe.
+  session.reset();
+  RunUntilIdle();
+}
+
 // Test: requesting discoverable works
 // Test: requesting discoverable while discoverable is pending doesn't send
 // any more HCI commands
