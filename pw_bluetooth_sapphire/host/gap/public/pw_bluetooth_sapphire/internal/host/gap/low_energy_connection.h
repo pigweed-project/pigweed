@@ -167,6 +167,13 @@ class LowEnergyConnection final : public sm::Delegate {
   using WeakPtr = WeakSelf<LowEnergyConnection>::WeakPtr;
   LowEnergyConnection::WeakPtr GetWeakPtr() { return weak_self_.GetWeakPtr(); }
 
+  // NOTE: This is intended ONLY for unit tests. DO NOT use outside of tests.
+  void UpdateConnectionParamsForTesting(
+      const hci_spec::LEPreferredConnectionParameters& params,
+      hci::ResultCallback<> status_cb = nullptr) {
+    UpdateConnectionParams(params, std::move(status_cb));
+  }
+
  private:
   LowEnergyConnection(
       Peer::WeakPtr peer,
@@ -273,8 +280,10 @@ class LowEnergyConnection final : public sm::Delegate {
   // initiating the Connection Parameters Request Link Layer Control Procedure
   // (Core Spec v5.2, Vol 6, Part B, Sec 5.1.7).
   //
-  // If non-null, |status_cb| will be called when the HCI Command Status event
-  // is received.
+  // If |params| fails hci_spec::LEPreferredConnectionParameters::IsValid(), no
+  // HCI command is sent; if non-null, |status_cb| is called synchronously with
+  // HostError::kInvalidParameters. Otherwise, if non-null, |status_cb| will be
+  // called when the HCI Command Status event is received.
   //
   // The HCI LE Connection Update Complete event will be generated after the
   // parameters have been applied or if the update fails, and will indicate the

@@ -16,6 +16,8 @@
 
 #include <pw_assert/check.h>
 
+#include "pw_bluetooth_sapphire/internal/host/common/error.h"
+#include "pw_bluetooth_sapphire/internal/host/common/host_error.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/low_energy_connection_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/sm/security_manager.h"
 
@@ -628,24 +630,36 @@ void LowEnergyConnection::L2capRequestConnectionParameterUpdate(
 void LowEnergyConnection::UpdateConnectionParams(
     const hci_spec::LEPreferredConnectionParameters& params,
     StatusCallback status_cb) {
+  if (!params.IsValid()) {
+    bt_log(WARN,
+           "gap-le",
+           "invalid LE conn params (peer: %s, handle: %#.4x, min: %#.4x, "
+           "max: %#.4x, latency: %#.4x, timeout: %#.4x)",
+           bt_str(peer_id()),
+           handle(),
+           params.min_interval(),
+           params.max_interval(),
+           params.max_latency(),
+           params.supervision_timeout());
+    if (status_cb) {
+      status_cb(ToResult(HostError::kInvalidParameters));
+    }
+    return;
+  }
+
   bt_log(DEBUG,
          "gap-le",
          "updating connection parameters (peer: %s)",
          bt_str(peer_id()));
-  // Callers must only pass parameters that are valid for the
-  // HCI_LE_Connection_Update command: parameters received from the peer are
-  // validated by GenericAccessClient (GAP characteristic) and LogicalLink
-  // (L2CAP request) before they get here.
-  PW_DCHECK(params.IsValid());
   auto command = hci::CommandPacket::New<
       pw::bluetooth::emboss::LEConnectionUpdateCommandWriter>(
       hci_spec::kLEConnectionUpdate);
   auto view = command.view_t();
   view.connection_handle().Write(handle());
-  view.connection_interval_min().UncheckedWrite(params.min_interval());
-  view.connection_interval_max().UncheckedWrite(params.max_interval());
-  view.max_latency().UncheckedWrite(params.max_latency());
-  view.supervision_timeout().UncheckedWrite(params.supervision_timeout());
+  view.connection_interval_min().Write(params.min_interval());
+  view.connection_interval_max().Write(params.max_interval());
+  view.max_latency().Write(params.max_latency());
+  view.supervision_timeout().Write(params.supervision_timeout());
   view.min_connection_event_length().Write(0x0000);
   view.max_connection_event_length().Write(0x0000);
 

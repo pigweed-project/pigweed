@@ -651,6 +651,15 @@ void LowEnergyConnectionManager::SetDisconnectCallbackForTesting(
   test_disconn_cb_ = std::move(callback);
 }
 
+void LowEnergyConnectionManager::UpdateConnectionParamsForTesting(
+    PeerId peer_id,
+    const hci_spec::LEPreferredConnectionParameters& params,
+    hci::ResultCallback<> status_cb) {
+  auto iter = connections_.find(peer_id);
+  PW_CHECK(iter != connections_.end());
+  iter->second->UpdateConnectionParamsForTesting(params, std::move(status_cb));
+}
+
 void LowEnergyConnectionManager::ReleaseReference(
     LowEnergyConnectionHandle* handle) {
   PW_CHECK(handle);

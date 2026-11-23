@@ -30,6 +30,7 @@
 #include "pw_bluetooth_sapphire/internal/host/gap/low_energy_discovery_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/gap/periodic_advertising_sync_manager.h"
 #include "pw_bluetooth_sapphire/internal/host/gatt/gatt.h"
+#include "pw_bluetooth_sapphire/internal/host/hci-spec/le_connection_parameters.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/low_energy_connection.h"
 #include "pw_bluetooth_sapphire/internal/host/hci/low_energy_connector.h"
 #include "pw_bluetooth_sapphire/internal/host/iso/iso_group_manager.h"
@@ -227,6 +228,15 @@ class LowEnergyConnectionManager final {
   // instead. DO NOT use outside of tests.
   using DisconnectCallback = fit::function<void(hci_spec::ConnectionHandle)>;
   void SetDisconnectCallbackForTesting(DisconnectCallback callback);
+
+  // Forwards to internal::LowEnergyConnection::UpdateConnectionParams for the
+  // connected peer |peer_id|.
+  //
+  // NOTE: This is intended ONLY for unit tests. DO NOT use outside of tests.
+  void UpdateConnectionParamsForTesting(
+      PeerId peer_id,
+      const hci_spec::LEPreferredConnectionParameters& params,
+      hci::ResultCallback<> status_cb = nullptr);
 
   // Sets the timeout interval to be used on future connect requests. The
   // default value is kLECreateConnectionTimeout.

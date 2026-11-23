@@ -18,6 +18,7 @@
 #include <lib/fit/function.h>
 #include <pw_assert/check.h>
 
+#include <array>
 #include <cstddef>
 #include <limits>
 #include <memory>
@@ -1965,6 +1966,167 @@ TEST_F(LowEnergyConnectionManagerTest,
   ASSERT_TRUE(actual.has_value());
   EXPECT_EQ(updated_preferred, *peer->le()->preferred_connection_parameters());
   EXPECT_EQ(actual.value(), *peer->le()->connection_parameters());
+}
+
+TEST_F(LowEnergyConnectionManagerTest,
+       CentralRejectsInvalidConnectionParameterUpdate) {
+  test_device()->AddPeer(std::make_unique<FakePeer>(kAddress0, dispatcher()));
+  auto* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  ASSERT_TRUE(peer);
+
+  std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
+  conn_mgr()->Connect(
+      peer->identifier(),
+      [&conn_handle](auto result) {
+        ASSERT_EQ(fit::ok(), result);
+        conn_handle = std::move(result).value();
+      },
+      kConnectionOptions);
+  RunFor(kLEConnectionPauseCentral);
+  ASSERT_TRUE(conn_handle);
+
+  const std::optional<hci_spec::LEConnectionParameters> initial_params =
+      peer->le()->connection_parameters();
+
+  size_t hci_conn_update_cmd_count = 0;
+  test_device()->pause_responses_for_opcode(hci_spec::kLEConnectionUpdate,
+                                            [&](fit::closure resume) {
+                                              hci_conn_update_cmd_count++;
+                                              resume();
+                                            });
+
+  const std::array kInvalidParams = {
+      // Out-of-range (default-constructed all zeros).
+      hci_spec::LEPreferredConnectionParameters(),
+      // Individual fields in range, but supervision_timeout (160 ms) violates
+      // timeout > (1 + max_latency) * max_interval * 2 (480 ms).
+      hci_spec::LEPreferredConnectionParameters(
+          /*min_interval=*/0x0006,
+          /*max_interval=*/0x0040,
+          /*max_latency=*/2,
+          /*supervision_timeout=*/0x0010),
+  };
+
+  for (const auto& invalid : kInvalidParams) {
+    ASSERT_FALSE(invalid.IsValid());
+    fake_l2cap()->TriggerLEConnectionParameterUpdate(conn_handle->handle(),
+                                                     invalid);
+    RunUntilIdle();
+    EXPECT_EQ(0u, hci_conn_update_cmd_count);
+    EXPECT_EQ(initial_params, peer->le()->connection_parameters());
+  }
+
+  // A subsequent valid update should still send HCI_LE_Connection_Update.
+  const hci_spec::LEPreferredConnectionParameters kValidParams(
+      /*min_interval=*/0x0010,
+      /*max_interval=*/0x0020,
+      /*max_latency=*/2,
+      /*supervision_timeout=*/0x00C8);
+  ASSERT_TRUE(kValidParams.IsValid());
+
+  fake_l2cap()->TriggerLEConnectionParameterUpdate(conn_handle->handle(),
+                                                   kValidParams);
+  RunUntilIdle();
+
+  EXPECT_EQ(1u, hci_conn_update_cmd_count);
+  ASSERT_TRUE(peer->le()->connection_parameters().has_value());
+  EXPECT_EQ(0x0018u, peer->le()->connection_parameters()->interval());
+  EXPECT_EQ(2u, peer->le()->connection_parameters()->latency());
+  EXPECT_EQ(0x00C8u,
+            peer->le()->connection_parameters()->supervision_timeout());
+}
+
+TEST_F(LowEnergyConnectionManagerTest,
+       CentralSkipsInitialUpdateForInvalidCachedPreferredConnectionParameters) {
+  test_device()->AddPeer(std::make_unique<FakePeer>(kAddress0, dispatcher()));
+  auto* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  ASSERT_TRUE(peer);
+
+  // Pre-populate invalid default-constructed preferred parameters on the peer.
+  const hci_spec::LEPreferredConnectionParameters kInvalidCached;
+  ASSERT_FALSE(kInvalidCached.IsValid());
+  peer->MutLe().SetPreferredConnectionParameters(kInvalidCached);
+
+  size_t hci_conn_update_cmd_count = 0;
+  test_device()->pause_responses_for_opcode(hci_spec::kLEConnectionUpdate,
+                                            [&](fit::closure resume) {
+                                              hci_conn_update_cmd_count++;
+                                              resume();
+                                            });
+
+  std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
+  conn_mgr()->Connect(
+      peer->identifier(),
+      [&conn_handle](auto result) {
+        ASSERT_EQ(fit::ok(), result);
+        conn_handle = std::move(result).value();
+      },
+      kConnectionOptions);
+  RunFor(kLEConnectionPauseCentral);
+
+  ASSERT_TRUE(conn_handle);
+  EXPECT_TRUE(conn_handle->active());
+  EXPECT_EQ(0u, hci_conn_update_cmd_count);
+}
+
+TEST_F(LowEnergyConnectionManagerTest,
+       UpdateConnectionParamsInvokesCallbackSynchronouslyOnInvalidParams) {
+  test_device()->AddPeer(std::make_unique<FakePeer>(kAddress0, dispatcher()));
+  auto* peer = peer_cache()->NewPeer(kAddress0, /*connectable=*/true);
+  ASSERT_TRUE(peer);
+
+  std::unique_ptr<LowEnergyConnectionHandle> conn_handle;
+  conn_mgr()->Connect(
+      peer->identifier(),
+      [&conn_handle](auto result) {
+        ASSERT_EQ(fit::ok(), result);
+        conn_handle = std::move(result).value();
+      },
+      kConnectionOptions);
+  RunFor(kLEConnectionPauseCentral);
+  ASSERT_TRUE(conn_handle);
+
+  size_t hci_conn_update_cmd_count = 0;
+  test_device()->pause_responses_for_opcode(hci_spec::kLEConnectionUpdate,
+                                            [&](fit::closure resume) {
+                                              hci_conn_update_cmd_count++;
+                                              resume();
+                                            });
+
+  std::optional<hci::Result<>> invalid_status;
+  const hci_spec::LEPreferredConnectionParameters kInvalidParams;
+  ASSERT_FALSE(kInvalidParams.IsValid());
+
+  conn_mgr()->UpdateConnectionParamsForTesting(
+      peer->identifier(), kInvalidParams, [&](hci::Result<> status) {
+        invalid_status = status;
+      });
+
+  // Callback must run synchronously with kInvalidParameters, without sending an
+  // HCI command.
+  ASSERT_TRUE(invalid_status.has_value());
+  EXPECT_EQ(ToResult(HostError::kInvalidParameters), *invalid_status);
+  RunUntilIdle();
+  EXPECT_EQ(0u, hci_conn_update_cmd_count);
+
+  // Verify a valid call still sends the command and resolves asynchronously.
+  std::optional<hci::Result<>> valid_status;
+  const hci_spec::LEPreferredConnectionParameters kValidParams(
+      /*min_interval=*/0x0010,
+      /*max_interval=*/0x0020,
+      /*max_latency=*/2,
+      /*supervision_timeout=*/0x00C8);
+  ASSERT_TRUE(kValidParams.IsValid());
+
+  conn_mgr()->UpdateConnectionParamsForTesting(
+      peer->identifier(), kValidParams, [&](hci::Result<> status) {
+        valid_status = status;
+      });
+  EXPECT_FALSE(valid_status.has_value());
+  RunUntilIdle();
+  EXPECT_EQ(1u, hci_conn_update_cmd_count);
+  ASSERT_TRUE(valid_status.has_value());
+  EXPECT_EQ(fit::ok(), *valid_status);
 }
 
 TEST_F(LowEnergyConnectionManagerTest,
