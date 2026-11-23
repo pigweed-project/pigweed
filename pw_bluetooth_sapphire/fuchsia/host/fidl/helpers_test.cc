@@ -2098,11 +2098,10 @@ TEST_F(HelpersAdapterTest, FidlToScoParameters) {
   EXPECT_EQ(view.output_transport_unit_size_bits().Read(), 0u);
 
   EXPECT_EQ(view.max_latency_ms().Read(),
-            bt::sco::kParameterSetT2.max_latency_ms);
-  EXPECT_EQ(view.packet_types().BackingStorage().ReadUInt(),
-            bt::sco::kParameterSetT2.packet_types);
+            bt::sco::kParameterSetT2.max_latency_ms());
+  EXPECT_EQ(view.packet_types().BackingStorage().ReadUInt(), 0x0308u);
   EXPECT_EQ(view.retransmission_effort().Read(),
-            bt::sco::kParameterSetT2.retransmission_effort);
+            bt::sco::kParameterSetT2.retransmission_effort());
 
   // When the IO coding format is Linear PCM, the PCM data format is required.
   params.clear_io_pcm_data_format();
@@ -2119,6 +2118,48 @@ TEST_F(HelpersAdapterTest, FidlToScoParameters) {
   EXPECT_EQ(view.input_pcm_data_format().Read(),
             pw::bluetooth::emboss::PcmDataFormat::NOT_APPLICABLE);
   EXPECT_EQ(view.input_pcm_sample_payload_msb_position().Read(), 0u);
+}
+
+TEST_F(HelpersAdapterTest, FidlToScoParametersAllParameterSets) {
+  using Effort = pw::bluetooth::emboss::SynchronousConnectionParameters::
+      ScoRetransmissionEffort;
+  struct TestCase {
+    fbredr::HfpParameterSet fidl_set;
+    uint16_t expected_packet_types;
+    uint16_t expected_max_latency_ms;
+    Effort expected_effort;
+  };
+  constexpr TestCase kCases[] = {
+      {fbredr::HfpParameterSet::T1, 0x0308u, 8u, Effort::QUALITY_OPTIMIZED},
+      {fbredr::HfpParameterSet::T2, 0x0308u, 13u, Effort::QUALITY_OPTIMIZED},
+      {fbredr::HfpParameterSet::S1, 0x030Fu, 7u, Effort::POWER_OPTIMIZED},
+      {fbredr::HfpParameterSet::S2, 0x0308u, 7u, Effort::POWER_OPTIMIZED},
+      {fbredr::HfpParameterSet::S3, 0x0308u, 10u, Effort::POWER_OPTIMIZED},
+      {fbredr::HfpParameterSet::S4, 0x0308u, 12u, Effort::QUALITY_OPTIMIZED},
+      {fbredr::HfpParameterSet::D0, 0x0001u, 0xFFFFu, Effort::DONT_CARE},
+      {fbredr::HfpParameterSet::D1, 0x0004u, 0xFFFFu, Effort::DONT_CARE},
+  };
+
+  for (const TestCase& tc : kCases) {
+    fbredr::ScoConnectionParameters params;
+    params.set_parameter_set(tc.fidl_set);
+    params.set_air_coding_format(fbt::AssignedCodingFormat::CVSD);
+    params.set_air_frame_size(8u);
+    params.set_io_bandwidth(8000u);
+    params.set_io_coding_format(fbt::AssignedCodingFormat::CVSD);
+    params.set_io_frame_size(8u);
+    params.set_path(fbredr::DataPath::HOST);
+
+    auto result = FidlToScoParameters(params, /*sco_offload_path_index=*/0);
+    ASSERT_TRUE(result.is_ok());
+    auto view = result.value().view();
+    EXPECT_EQ(view.transmit_bandwidth().Read(), 8000u);
+    EXPECT_EQ(view.receive_bandwidth().Read(), 8000u);
+    EXPECT_EQ(view.packet_types().BackingStorage().ReadUInt(),
+              tc.expected_packet_types);
+    EXPECT_EQ(view.max_latency_ms().Read(), tc.expected_max_latency_ms);
+    EXPECT_EQ(view.retransmission_effort().Read(), tc.expected_effort);
+  }
 }
 
 class HelpersTestFakeAdapter

@@ -101,6 +101,7 @@ fuchsia_cc_library(
         "helpers.cc",
     ],
     copts = ["-Wno-format"],
+    implementation_deps = ["//pw_bluetooth_sapphire/host/sco"],
     deps = [
         ":public",
         "//pw_bluetooth_sapphire/host/common",
@@ -254,6 +255,7 @@ fuchsia_cc_test(
         "//pw_bluetooth_sapphire/host/gap:testing",
         "//pw_bluetooth_sapphire/host/gatt:testing",
         "//pw_bluetooth_sapphire/host/iso:testing",
+        "//pw_bluetooth_sapphire/host/sco",
         "//pw_bluetooth_sapphire/host/testing",
         "//pw_bluetooth_sapphire/host/testing:fake_controller",
         "//pw_bluetooth_sapphire/host/testing:gtest_helpers",

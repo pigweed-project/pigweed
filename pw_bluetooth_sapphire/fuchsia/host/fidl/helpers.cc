@@ -2459,8 +2459,10 @@ FidlToScoParameters(const fbredr::ScoConnectionParameters& params,
     bt_log(WARN, "fidl", "Unrecognized SCO parameters parameter_set");
     return fpromise::error();
   }
-  view.transmit_bandwidth().Write(param_set.value().transmit_receive_bandwidth);
-  view.receive_bandwidth().Write(param_set.value().transmit_receive_bandwidth);
+  view.transmit_bandwidth().Write(
+      param_set.value().transmit_receive_bandwidth());
+  view.receive_bandwidth().Write(
+      param_set.value().transmit_receive_bandwidth());
 
   if (!params.has_air_coding_format()) {
     bt_log(WARN, "fidl", "SCO parameters missing air_coding_format");
@@ -2566,10 +2568,9 @@ FidlToScoParameters(const fbredr::ScoConnectionParameters& params,
   view.input_transport_unit_size_bits().Write(0u);
   view.output_transport_unit_size_bits().Write(0u);
 
-  view.max_latency_ms().Write(param_set.value().max_latency_ms);
-  view.packet_types().BackingStorage().WriteUInt(
-      param_set.value().packet_types);
-  view.retransmission_effort().Write(param_set.value().retransmission_effort);
+  view.max_latency_ms().Write(param_set.value().max_latency_ms());
+  param_set.value().WritePacketTypes(view);
+  view.retransmission_effort().Write(param_set.value().retransmission_effort());
 
   return fpromise::ok(out);
 }
