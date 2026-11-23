@@ -2102,9 +2102,7 @@ TEST_F(HelpersAdapterTest, FidlToScoParameters) {
   EXPECT_EQ(view.packet_types().BackingStorage().ReadUInt(),
             bt::sco::kParameterSetT2.packet_types);
   EXPECT_EQ(view.retransmission_effort().Read(),
-            static_cast<pw::bluetooth::emboss::SynchronousConnectionParameters::
-                            ScoRetransmissionEffort>(
-                bt::sco::kParameterSetT2.retransmission_effort));
+            bt::sco::kParameterSetT2.retransmission_effort);
 
   // When the IO coding format is Linear PCM, the PCM data format is required.
   params.clear_io_pcm_data_format();

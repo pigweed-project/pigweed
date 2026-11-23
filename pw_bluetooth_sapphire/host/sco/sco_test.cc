@@ -19,7 +19,6 @@
 
 #include <cstdint>
 
-#include "pw_bluetooth_sapphire/internal/host/hci-spec/constants.h"
 #include "pw_bluetooth_sapphire/internal/host/transport/emboss_packet.h"
 #include "pw_unit_test/framework.h"
 
@@ -28,6 +27,8 @@ namespace {
 
 using pw::bluetooth::emboss::CodingFormat;
 using pw::bluetooth::emboss::SynchronousConnectionParametersWriter;
+using ScoRetransmissionEffort = pw::bluetooth::emboss::
+    SynchronousConnectionParameters::ScoRetransmissionEffort;
 
 void ExpectSingleSlotEscoPacketTypes(uint16_t raw_packet_types) {
   StaticPacket<SynchronousConnectionParametersWriter> params;
@@ -52,7 +53,7 @@ TEST(ScoParameterSetTest, T1) {
   EXPECT_EQ(kParameterSetT1.transmit_receive_format, CodingFormat::TRANSPARENT);
   EXPECT_EQ(kParameterSetT1.max_latency_ms, 8u);
   EXPECT_EQ(kParameterSetT1.retransmission_effort,
-            hci_spec::ScoRetransmissionEffort::kQualityOptimized);
+            ScoRetransmissionEffort::QUALITY_OPTIMIZED);
 }
 
 TEST(ScoParameterSetTest, T2) {
@@ -61,7 +62,7 @@ TEST(ScoParameterSetTest, T2) {
   EXPECT_EQ(kParameterSetT2.transmit_receive_format, CodingFormat::TRANSPARENT);
   EXPECT_EQ(kParameterSetT2.max_latency_ms, 13u);
   EXPECT_EQ(kParameterSetT2.retransmission_effort,
-            hci_spec::ScoRetransmissionEffort::kQualityOptimized);
+            ScoRetransmissionEffort::QUALITY_OPTIMIZED);
 }
 
 TEST(ScoParameterSetTest, S1) {
@@ -84,7 +85,7 @@ TEST(ScoParameterSetTest, S1) {
   EXPECT_EQ(kParameterSetS1.transmit_receive_format, CodingFormat::CVSD);
   EXPECT_EQ(kParameterSetS1.max_latency_ms, 7u);
   EXPECT_EQ(kParameterSetS1.retransmission_effort,
-            hci_spec::ScoRetransmissionEffort::kPowerOptimized);
+            ScoRetransmissionEffort::POWER_OPTIMIZED);
 }
 
 TEST(ScoParameterSetTest, S2) {
@@ -93,7 +94,7 @@ TEST(ScoParameterSetTest, S2) {
   EXPECT_EQ(kParameterSetS2.transmit_receive_format, CodingFormat::CVSD);
   EXPECT_EQ(kParameterSetS2.max_latency_ms, 7u);
   EXPECT_EQ(kParameterSetS2.retransmission_effort,
-            hci_spec::ScoRetransmissionEffort::kPowerOptimized);
+            ScoRetransmissionEffort::POWER_OPTIMIZED);
 }
 
 TEST(ScoParameterSetTest, S3) {
@@ -102,7 +103,7 @@ TEST(ScoParameterSetTest, S3) {
   EXPECT_EQ(kParameterSetS3.transmit_receive_format, CodingFormat::CVSD);
   EXPECT_EQ(kParameterSetS3.max_latency_ms, 10u);
   EXPECT_EQ(kParameterSetS3.retransmission_effort,
-            hci_spec::ScoRetransmissionEffort::kPowerOptimized);
+            ScoRetransmissionEffort::POWER_OPTIMIZED);
 }
 
 TEST(ScoParameterSetTest, S4) {
@@ -111,7 +112,7 @@ TEST(ScoParameterSetTest, S4) {
   EXPECT_EQ(kParameterSetS4.transmit_receive_format, CodingFormat::CVSD);
   EXPECT_EQ(kParameterSetS4.max_latency_ms, 12u);
   EXPECT_EQ(kParameterSetS4.retransmission_effort,
-            hci_spec::ScoRetransmissionEffort::kQualityOptimized);
+            ScoRetransmissionEffort::QUALITY_OPTIMIZED);
 }
 
 TEST(ScoParameterSetTest, D0) {
@@ -134,7 +135,7 @@ TEST(ScoParameterSetTest, D0) {
   EXPECT_EQ(kParameterSetD0.transmit_receive_format, CodingFormat::CVSD);
   EXPECT_EQ(kParameterSetD0.max_latency_ms, 0xFFFFu);
   EXPECT_EQ(kParameterSetD0.retransmission_effort,
-            hci_spec::ScoRetransmissionEffort::kDontCare);
+            ScoRetransmissionEffort::DONT_CARE);
 }
 
 TEST(ScoParameterSetTest, D1) {
@@ -157,7 +158,7 @@ TEST(ScoParameterSetTest, D1) {
   EXPECT_EQ(kParameterSetD1.transmit_receive_format, CodingFormat::CVSD);
   EXPECT_EQ(kParameterSetD1.max_latency_ms, 0xFFFFu);
   EXPECT_EQ(kParameterSetD1.retransmission_effort,
-            hci_spec::ScoRetransmissionEffort::kDontCare);
+            ScoRetransmissionEffort::DONT_CARE);
 }
 
 }  // namespace

@@ -905,20 +905,6 @@ enum class RoleSwitchBits : uint8_t {
   kAllowRoleSwitch = 0x1
 };
 
-enum class ScoRetransmissionEffort : uint8_t {
-  // SCO or eSCO
-  kNone = 0x00,
-
-  // eSCO only
-  kPowerOptimized  = 0x01,
-
-  // eSCO only
-  kQualityOptimized  = 0x02,
-
-  // SCO or eSCO
-  kDontCare = 0xFF,
-};
-
 // Flush Timeout = N * 0.625ms (Core Spec v5.2, Vol 4, Part E, Sec 7.3.30).
 inline constexpr float kFlushTimeoutCommandParameterToMillisecondsConversionFactor = 0.625f;
 inline constexpr float kFlushTimeoutMsToCommandParameterConversionFactor = 1.0f / kFlushTimeoutCommandParameterToMillisecondsConversionFactor;

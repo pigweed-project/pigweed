@@ -2569,10 +2569,7 @@ FidlToScoParameters(const fbredr::ScoConnectionParameters& params,
   view.max_latency_ms().Write(param_set.value().max_latency_ms);
   view.packet_types().BackingStorage().WriteUInt(
       param_set.value().packet_types);
-  view.retransmission_effort().Write(
-      static_cast<pw::bluetooth::emboss::SynchronousConnectionParameters::
-                      ScoRetransmissionEffort>(
-          param_set.value().retransmission_effort));
+  view.retransmission_effort().Write(param_set.value().retransmission_effort);
 
   return fpromise::ok(out);
 }
