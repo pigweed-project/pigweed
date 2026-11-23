@@ -101,7 +101,7 @@ class ProfileServer : public ServerBase<fuchsia::bluetooth::bredr::Profile> {
    private:
     std::unique_ptr<bt::l2cap::A2dpOffloadManager::Configuration>
     AudioOffloadConfigFromFidl(
-        fuchsia::bluetooth::bredr::AudioOffloadConfiguration&
+        const fuchsia::bluetooth::bredr::AudioOffloadConfiguration&
             audio_offload_configuration);
 
     ProfileServer& profile_server_;

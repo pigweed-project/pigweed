@@ -3607,6 +3607,174 @@ INSTANTIATE_TEST_SUITE_P(ProfileServerTestFakeAdapter,
                          AndroidSupportedFeaturesTest,
                          ::testing::ValuesIn(kVendorCapabilitiesParams));
 
+class AudioOffloadConfigTest : public ProfileServerTestFakeAdapter {
+ protected:
+  fidlbredr::AudioOffloadExtPtr ConnectAudioOffloadExt(
+      FakeChannel::WeakPtr* out_channel = nullptr) {
+    if (out_channel) {
+      adapter()->fake_bredr()->set_l2cap_channel_callback(
+          [out_channel](FakeChannel::WeakPtr chan) {
+            *out_channel = std::move(chan);
+          });
+    }
+    AddAndroidVendorExtSupport(
+        adapter(),
+        static_cast<uint32_t>(android_emb::A2dpCodecType::SBC) |
+            static_cast<uint32_t>(android_emb::A2dpCodecType::AAC));
+
+    fidlbredr::L2capParameters l2cap_params;
+    l2cap_params.set_psm(fidlbredr::PSM_AVDTP);
+    l2cap_params.set_parameters(fbt::ChannelParameters());
+    fidlbredr::ConnectParameters conn_params;
+    conn_params.set_l2cap(std::move(l2cap_params));
+
+    std::optional<fidlbredr::Channel> response_channel;
+    client()->Connect(
+        fuchsia::bluetooth::PeerId{1},
+        std::move(conn_params),
+        [&response_channel](fidlbredr::Profile_Connect_Result result) {
+          ASSERT_TRUE(result.is_response());
+          response_channel = std::move(result.response().channel);
+        });
+    RunLoopUntilIdle();
+    EXPECT_TRUE(response_channel.has_value());
+    EXPECT_TRUE(response_channel->has_ext_audio_offload());
+    response_channel_ = std::move(response_channel);
+    return response_channel_->mutable_ext_audio_offload()->Bind();
+  }
+
+  std::optional<fidlbredr::Channel> response_channel_;
+
+  static fidlbredr::AudioOffloadConfiguration MakeValidSbcConfig() {
+    fidlbredr::AudioOffloadFeatures codec;
+    codec.set_sbc(fidlbredr::AudioSbcSupport{});
+
+    fidlbredr::AudioEncoderSettings encoder_settings;
+    encoder_settings.set_sbc(fuchsia::media::SbcEncoderSettings{});
+
+    fidlbredr::AudioOffloadConfiguration config;
+    config.set_codec(std::move(codec));
+    config.set_sampling_frequency(fidlbredr::AudioSamplingFrequency::HZ_44100);
+    config.set_bits_per_sample(fidlbredr::AudioBitsPerSample::BPS_16);
+    config.set_channel_mode(fidlbredr::AudioChannelMode::MONO);
+    config.set_encoder_settings(std::move(encoder_settings));
+    return config;
+  }
+
+  void ExpectStartFailsWithNotSupported(
+      fidlbredr::AudioOffloadConfiguration config) {
+    fidlbredr::AudioOffloadExtPtr ext = ConnectAudioOffloadExt();
+    fidlbredr::AudioOffloadControllerPtr controller;
+    std::optional<zx_status_t> epitaph;
+    controller.set_error_handler(
+        [&epitaph](zx_status_t status) { epitaph = status; });
+
+    ext->StartAudioOffload(std::move(config), controller.NewRequest());
+    RunLoopUntilIdle();
+
+    ASSERT_TRUE(epitaph.has_value());
+    EXPECT_EQ(epitaph.value(), ZX_ERR_NOT_SUPPORTED);
+  }
+};
+
+TEST_F(AudioOffloadConfigTest, OptionalFieldsDefaultedWhenOmitted) {
+  FakeChannel::WeakPtr fake_channel;
+  fidlbredr::AudioOffloadExtPtr ext = ConnectAudioOffloadExt(&fake_channel);
+  ASSERT_TRUE(fake_channel.is_alive());
+
+  fidlbredr::AudioOffloadControllerPtr controller;
+  std::optional<zx_status_t> epitaph;
+  controller.set_error_handler(
+      [&epitaph](zx_status_t status) { epitaph = status; });
+  size_t on_started_count = 0;
+  controller.events().OnStarted = [&on_started_count]() { on_started_count++; };
+
+  ext->StartAudioOffload(MakeValidSbcConfig(), controller.NewRequest());
+  RunLoopUntilIdle();
+
+  EXPECT_EQ(on_started_count, 1u);
+  EXPECT_FALSE(epitaph.has_value());
+  ASSERT_TRUE(fake_channel->a2dp_offload_configuration().has_value());
+  auto captured = fake_channel->a2dp_offload_configuration().value();
+  EXPECT_EQ(captured.max_latency, 0u);
+  EXPECT_EQ(captured.encoded_audio_bit_rate, 0u);
+  EXPECT_EQ(captured.scms_t_enable.view().enabled().Read(),
+            pw::bluetooth::emboss::GenericEnableParam::DISABLE);
+  EXPECT_EQ(captured.scms_t_enable.view().header().Read(), 0x00u);
+}
+
+TEST_F(AudioOffloadConfigTest, EncodedBitRateAtMaxSucceeds) {
+  FakeChannel::WeakPtr fake_channel;
+  fidlbredr::AudioOffloadExtPtr ext = ConnectAudioOffloadExt(&fake_channel);
+  ASSERT_TRUE(fake_channel.is_alive());
+
+  fidlbredr::AudioOffloadConfiguration config = MakeValidSbcConfig();
+  config.set_encoded_bit_rate(0x00FFFFFF);
+
+  fidlbredr::AudioOffloadControllerPtr controller;
+  std::optional<zx_status_t> epitaph;
+  controller.set_error_handler(
+      [&epitaph](zx_status_t status) { epitaph = status; });
+  size_t on_started_count = 0;
+  controller.events().OnStarted = [&on_started_count]() { on_started_count++; };
+
+  ext->StartAudioOffload(std::move(config), controller.NewRequest());
+  RunLoopUntilIdle();
+
+  EXPECT_EQ(on_started_count, 1u);
+  EXPECT_FALSE(epitaph.has_value());
+  ASSERT_TRUE(fake_channel->a2dp_offload_configuration().has_value());
+  EXPECT_EQ(fake_channel->a2dp_offload_configuration()->encoded_audio_bit_rate,
+            0x00FFFFFFu);
+}
+
+TEST_F(AudioOffloadConfigTest, EncodedBitRateExceedsMaxFails) {
+  fidlbredr::AudioOffloadConfiguration config = MakeValidSbcConfig();
+  config.set_encoded_bit_rate(0x01000000);
+  ExpectStartFailsWithNotSupported(std::move(config));
+}
+
+TEST_F(AudioOffloadConfigTest, MissingCodecFails) {
+  fidlbredr::AudioOffloadConfiguration config = MakeValidSbcConfig();
+  config.clear_codec();
+  ExpectStartFailsWithNotSupported(std::move(config));
+}
+
+TEST_F(AudioOffloadConfigTest, MissingSamplingFrequencyFails) {
+  fidlbredr::AudioOffloadConfiguration config = MakeValidSbcConfig();
+  config.clear_sampling_frequency();
+  ExpectStartFailsWithNotSupported(std::move(config));
+}
+
+TEST_F(AudioOffloadConfigTest, MissingBitsPerSampleFails) {
+  fidlbredr::AudioOffloadConfiguration config = MakeValidSbcConfig();
+  config.clear_bits_per_sample();
+  ExpectStartFailsWithNotSupported(std::move(config));
+}
+
+TEST_F(AudioOffloadConfigTest, MissingChannelModeFails) {
+  fidlbredr::AudioOffloadConfiguration config = MakeValidSbcConfig();
+  config.clear_channel_mode();
+  ExpectStartFailsWithNotSupported(std::move(config));
+}
+
+TEST_F(AudioOffloadConfigTest, MissingEncoderSettingsFails) {
+  fidlbredr::AudioOffloadConfiguration config = MakeValidSbcConfig();
+  config.clear_encoder_settings();
+  ExpectStartFailsWithNotSupported(std::move(config));
+}
+
+TEST_F(AudioOffloadConfigTest, MismatchedCodecAndEncoderSettingsFails) {
+  fidlbredr::AudioOffloadConfiguration config = MakeValidSbcConfig();
+  fuchsia::media::AacEncoderSettings aac;
+  aac.transport.set_adts(fuchsia::media::AacTransportAdts{});
+  aac.bit_rate.set_variable(fuchsia::media::AacVariableBitRate::V1);
+  fidlbredr::AudioEncoderSettings aac_settings;
+  aac_settings.set_aac(std::move(aac));
+  config.set_encoder_settings(std::move(aac_settings));
+  ExpectStartFailsWithNotSupported(std::move(config));
+}
+
 TEST_F(ProfileServerTestFakeAdapter,
        ServiceUuidSearchResultRelayedToFidlClient) {
   fidlbredr::SearchResultsHandle search_results_handle;

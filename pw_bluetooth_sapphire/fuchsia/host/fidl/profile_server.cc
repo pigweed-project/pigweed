@@ -483,7 +483,11 @@ void ProfileServer::AudioOffloadController::Stop(
 
 std::unique_ptr<bt::l2cap::A2dpOffloadManager::Configuration>
 ProfileServer::AudioOffloadExt::AudioOffloadConfigFromFidl(
-    fidlbredr::AudioOffloadConfiguration& audio_offload_configuration) {
+    const fidlbredr::AudioOffloadConfiguration& audio_offload_configuration) {
+  if (!audio_offload_configuration.has_codec()) {
+    bt_log(WARN, "fidl", "%s: missing codec", __FUNCTION__);
+    return nullptr;
+  }
   auto codec =
       fidl_helpers::FidlToCodecType(audio_offload_configuration.codec());
   if (!codec.has_value()) {
@@ -491,9 +495,10 @@ ProfileServer::AudioOffloadExt::AudioOffloadConfigFromFidl(
     return nullptr;
   }
 
-  std::unique_ptr<bt::l2cap::A2dpOffloadManager::Configuration> config =
-      std::make_unique<bt::l2cap::A2dpOffloadManager::Configuration>();
-
+  if (!audio_offload_configuration.has_sampling_frequency()) {
+    bt_log(WARN, "fidl", "%s: missing sampling frequency", __FUNCTION__);
+    return nullptr;
+  }
   std::optional<android_emb::A2dpSamplingFrequency> sampling_frequency =
       fidl_helpers::FidlToSamplingFrequency(
           audio_offload_configuration.sampling_frequency());
@@ -502,6 +507,10 @@ ProfileServer::AudioOffloadExt::AudioOffloadConfigFromFidl(
     return nullptr;
   }
 
+  if (!audio_offload_configuration.has_bits_per_sample()) {
+    bt_log(WARN, "fidl", "%s: missing bits per sample", __FUNCTION__);
+    return nullptr;
+  }
   std::optional<android_emb::A2dpBitsPerSample> audio_bits_per_sample =
       fidl_helpers::FidlToBitsPerSample(
           audio_offload_configuration.bits_per_sample());
@@ -510,6 +519,10 @@ ProfileServer::AudioOffloadExt::AudioOffloadConfigFromFidl(
     return nullptr;
   }
 
+  if (!audio_offload_configuration.has_channel_mode()) {
+    bt_log(WARN, "fidl", "%s: missing channel mode", __FUNCTION__);
+    return nullptr;
+  }
   std::optional<android_emb::A2dpChannelMode> audio_channel_mode =
       fidl_helpers::FidlToChannelMode(
           audio_offload_configuration.channel_mode());
@@ -518,17 +531,43 @@ ProfileServer::AudioOffloadExt::AudioOffloadConfigFromFidl(
     return nullptr;
   }
 
+  if (!audio_offload_configuration.has_encoder_settings()) {
+    bt_log(WARN, "fidl", "%s: missing encoder settings", __FUNCTION__);
+    return nullptr;
+  }
+
+  constexpr uint32_t kMaxEncodedAudioBitRate = 0x00FFFFFF;
+  const uint32_t encoded_bit_rate =
+      audio_offload_configuration.has_encoded_bit_rate()
+          ? audio_offload_configuration.encoded_bit_rate()
+          : 0;
+  if (encoded_bit_rate > kMaxEncodedAudioBitRate) {
+    bt_log(WARN,
+           "fidl",
+           "%s: encoded_bit_rate %u exceeds maximum %u",
+           __FUNCTION__,
+           encoded_bit_rate,
+           kMaxEncodedAudioBitRate);
+    return nullptr;
+  }
+
+  std::unique_ptr<bt::l2cap::A2dpOffloadManager::Configuration> config =
+      std::make_unique<bt::l2cap::A2dpOffloadManager::Configuration>();
+
   config->codec = codec.value();
-  config->max_latency = audio_offload_configuration.max_latency();
+  config->max_latency = audio_offload_configuration.has_max_latency()
+                            ? audio_offload_configuration.max_latency()
+                            : 0;
   config->scms_t_enable = fidl_helpers::FidlToScmsTEnable(
+      audio_offload_configuration.has_scms_t_enable() &&
       audio_offload_configuration.scms_t_enable());
   config->sampling_frequency = sampling_frequency.value();
   config->bits_per_sample = audio_bits_per_sample.value();
   config->channel_mode = audio_channel_mode.value();
-  config->encoded_audio_bit_rate =
-      audio_offload_configuration.encoded_bit_rate();
+  config->encoded_audio_bit_rate = encoded_bit_rate;
 
-  if (audio_offload_configuration.encoder_settings().is_sbc()) {
+  if (codec.value() == android_emb::A2dpCodecType::SBC &&
+      audio_offload_configuration.encoder_settings().is_sbc()) {
     if (audio_offload_configuration.sampling_frequency() ==
             fuchsia::bluetooth::bredr::AudioSamplingFrequency::HZ_88200 ||
         audio_offload_configuration.sampling_frequency() ==
@@ -546,11 +585,16 @@ ProfileServer::AudioOffloadExt::AudioOffloadConfigFromFidl(
         audio_offload_configuration.encoder_settings(),
         audio_offload_configuration.sampling_frequency(),
         audio_offload_configuration.channel_mode());
-  } else if (audio_offload_configuration.encoder_settings().is_aac()) {
+  } else if (codec.value() == android_emb::A2dpCodecType::AAC &&
+             audio_offload_configuration.encoder_settings().is_aac()) {
     config->aac_configuration = fidl_helpers::FidlToEncoderSettingsAac(
         audio_offload_configuration.encoder_settings(),
         audio_offload_configuration.sampling_frequency(),
         audio_offload_configuration.channel_mode());
+  } else {
+    bt_log(
+        WARN, "fidl", "%s: encoder settings do not match codec", __FUNCTION__);
+    return nullptr;
   }
 
   return config;

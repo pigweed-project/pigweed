@@ -100,6 +100,11 @@ class FakeChannel : public Channel {
 
   A2dpOffloadStatus a2dp_offload_status() { return audio_offloading_status_; }
 
+  const std::optional<A2dpOffloadManager::Configuration>&
+  a2dp_offload_configuration() const {
+    return a2dp_offload_config_;
+  }
+
   void set_run_upgrade_security_cb_synchronously(bool value) {
     run_upgrade_security_cb_synchronously_ = value;
   }
@@ -148,6 +153,7 @@ class FakeChannel : public Channel {
   FlushTimeoutCallback flush_timeout_cb_;
 
   A2dpOffloadStatus audio_offloading_status_ = A2dpOffloadStatus::kStopped;
+  std::optional<A2dpOffloadManager::Configuration> a2dp_offload_config_;
 
   std::optional<HostError> a2dp_offload_error_;
 

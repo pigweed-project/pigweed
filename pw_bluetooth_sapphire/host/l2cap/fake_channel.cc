@@ -191,8 +191,10 @@ void FakeChannel::SetBrEdrAutomaticFlushTimeout(
   callback(fit::ok());
 }
 
-void FakeChannel::StartA2dpOffload(const A2dpOffloadManager::Configuration&,
-                                   hci::ResultCallback<> callback) {
+void FakeChannel::StartA2dpOffload(
+    const A2dpOffloadManager::Configuration& config,
+    hci::ResultCallback<> callback) {
+  a2dp_offload_config_ = config;
   if (a2dp_offload_error_.has_value()) {
     callback(ToResult(a2dp_offload_error_.value()));
     audio_offloading_status_ = A2dpOffloadStatus::kStopped;
