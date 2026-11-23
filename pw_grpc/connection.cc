@@ -14,6 +14,7 @@
 
 #include "pw_grpc/connection.h"
 
+#include <algorithm>
 #include <cinttypes>
 #include <cstring>
 #include <string_view>
@@ -82,6 +83,7 @@ namespace {
 using internal::FrameHeader;
 using internal::FrameType;
 using internal::Http2Error;
+using internal::kLengthPrefixedMessageHdrSize;
 using internal::kMaxConcurrentStreams;
 using internal::kMaxGrpcMessageSize;
 
@@ -91,7 +93,6 @@ constexpr std::string_view kExpectedConnectionPrefaceLiteral(
 
 static_assert(kMaxMethodNameSize == kHpackMaxStringSize);
 
-constexpr size_t kLengthPrefixedMessageHdrSize = 5;
 constexpr size_t kInitialReadQueueCapacity = 8;
 
 enum {
@@ -177,6 +178,118 @@ constexpr std::array<T, N> MakeArrayWithValue(Args&&... args) {
                                       std::forward<Args>(args)...);
 }
 
+PW_PACKED(struct) Setting {
+  uint16_t id;
+  uint32_t value;
+};
+
+PW_PACKED(struct) ServerSettingsFrame {
+  WireFrameHeader header;
+  Setting settings[2];
+};
+
+ServerSettingsFrame MakeServerSettingsFrame() {
+  return ServerSettingsFrame{
+      .header = WireFrameHeader(FrameHeader{
+          .payload_length = 12,
+          .type = FrameType::SETTINGS,
+          .flags = 0,
+          .stream_id = 0,
+      }),
+      .settings =
+          {
+              {
+                  .id = ToNetworkOrder(SETTINGS_HEADER_TABLE_SIZE),
+                  .value = ToNetworkOrder(kHpackDynamicHeaderTableSize),
+              },
+              {
+                  .id = ToNetworkOrder(SETTINGS_MAX_CONCURRENT_STREAMS),
+                  .value = ToNetworkOrder(kMaxConcurrentStreams),
+              },
+          },
+  };
+}
+
+PW_PACKED(struct) PingFrame {
+  WireFrameHeader header;
+  uint64_t opaque_data;
+};
+
+PW_PACKED(struct) RstStreamFrame {
+  WireFrameHeader header;
+  uint32_t error_code;
+};
+
+PW_PACKED(struct) WindowUpdateFrame {
+  WireFrameHeader header;
+  uint32_t increment;
+};
+
+PW_PACKED(struct) GoAwayFrame {
+  WireFrameHeader header;
+  uint32_t last_stream_id;
+  uint32_t error_code;
+};
+
+// Bounds-checked writer for assembling HTTP/2 frames into a transport packet.
+class PacketAppender {
+ public:
+  explicit PacketAppender(ByteSpan packet) : packet_(packet) {}
+
+  size_t written() const { return written_; }
+  size_t remaining() const { return packet_.size() - written_; }
+
+  [[nodiscard]] bool TryAppend(ConstByteSpan src) {
+    if (src.size() > remaining()) {
+      return false;
+    }
+    if (!src.empty()) {
+      std::memcpy(packet_.data() + written_, src.data(), src.size());
+      written_ += src.size();
+    }
+    return true;
+  }
+
+  // Reserves `size` bytes at the current cursor and returns the writable slice,
+  // or an empty span if insufficient space remains.
+  [[nodiscard]] ByteSpan Reserve(size_t size) {
+    if (size > remaining()) {
+      return {};
+    }
+    ByteSpan slot = packet_.subspan(written_, size);
+    written_ += size;
+    return slot;
+  }
+
+ private:
+  ByteSpan packet_;
+  size_t written_ = 0;
+};
+
+bool TryWriteHeadersIntoPacket(PacketAppender& out,
+                               StreamId stream_id,
+                               ConstByteSpan payload1,
+                               ConstByteSpan payload2,
+                               bool end_stream) {
+  const size_t total_size =
+      sizeof(WireFrameHeader) + payload1.size() + payload2.size();
+  if (out.remaining() < total_size) {
+    return false;
+  }
+  WireFrameHeader frame(FrameHeader{
+      .payload_length =
+          static_cast<uint32_t>(payload1.size() + payload2.size()),
+      .type = FrameType::HEADERS,
+      .flags = static_cast<uint8_t>(FLAGS_END_HEADERS |
+                                    (end_stream ? FLAGS_END_STREAM : 0)),
+      .stream_id = stream_id,
+  });
+  PW_CHECK(out.TryAppend(ObjectAsBytes(frame)));
+  PW_CHECK(out.TryAppend(payload1));
+  PW_CHECK(out.TryAppend(payload2));
+  return true;
+}
+
 }  // namespace
 
 Connection::Connection(
@@ -200,16 +313,24 @@ Connection::Connection(
                     static_cast<Allocator*>(message_assembly_allocator),
                     static_cast<Allocator&>(send_allocator),
                     send_queue),
+      frame_source_(*this),
       reader_(*this, callbacks, reader, read_allocator),
       writer_(*this),
       close_connection_callback_(std::move(close_connection_callback)) {}
 
-void Connection::RegisterSpaceAvailableCallback() {
-  if (read_dispatcher_ == nullptr) {
+void Connection::RegisterSendQueue() {
+  std::lock_guard lock(callback_mutex_);
+  if (callback_closed_) {
     return;
   }
-  std::lock_guard lock(callback_mutex_);
-  if (callback_closed_ || callback_registered_) {
+  if (send_queue_.SupportsPull()) {
+    if (!frame_source_registered_) {
+      frame_source_registered_ = true;
+      send_queue_.SetFrameSource(&frame_source_);
+    }
+    return;
+  }
+  if (read_dispatcher_ == nullptr || callback_registered_) {
     return;
   }
   callback_registered_ = true;
@@ -221,17 +342,25 @@ void Connection::RegisterSpaceAvailableCallback() {
   });
 }
 
-void Connection::UnregisterSpaceAvailableCallback() {
+void Connection::UnregisterSendQueue() {
   std::lock_guard lock(callback_mutex_);
   callback_closed_ = true;
-  if (!callback_registered_) {
-    return;
+  if (callback_registered_) {
+    callback_registered_ = false;
+    send_queue_.set_on_space_available(nullptr);
   }
-  callback_registered_ = false;
-  send_queue_.set_on_space_available(nullptr);
+  if (frame_source_registered_) {
+    frame_source_registered_ = false;
+    send_queue_.SetFrameSource(nullptr);
+  }
 }
 
 void Connection::CloseConnection() {
+  UnregisterSendQueue();
+  RunCloseConnectionCallback();
+}
+
+void Connection::RunCloseConnectionCallback() {
   CloseConnectionCallback callback;
   {
     std::lock_guard lock(callback_mutex_);
@@ -248,7 +377,7 @@ void Connection::CloseConnection() {
 }
 
 Connection::~Connection() {
-  UnregisterSpaceAvailableCallback();
+  UnregisterSendQueue();
   reader_.Drain();
   bool wait_for_task = false;
   {
@@ -265,6 +394,11 @@ Connection::~Connection() {
   if (wait_for_task) {
     drain_done_.acquire();
   }
+}
+
+StatusWithSize Connection::PullFrameSource::FillPacket(ByteSpan packet) {
+  auto state = connection_.LockState();
+  return state->FillPacket(packet);
 }
 
 bool Connection::SharedState::HasPendingDrain() const {
@@ -344,10 +478,6 @@ Status Connection::SharedState::SendTrailers(Stream& stream,
 }
 
 Status Connection::SharedState::SendPingAck(uint64_t opaque_data) {
-  PW_PACKED(struct) PingFrame {
-    WireFrameHeader header;
-    uint64_t opaque_data;
-  };
   PingFrame ack_frame = {
       .header = WireFrameHeader(FrameHeader{
           .payload_length = 8,
@@ -369,22 +499,19 @@ Connection::SharedState::SharedState(Connection& connection,
       message_assembly_allocator_(message_assembly_allocator),
       send_allocator_(send_allocator),
       send_queue_(send_queue),
+      use_pull_(send_queue.SupportsPull()),
       connection_(connection) {}
 
 Result<Connection::DataFrame> Connection::DataFrame::Create(
     Allocator& allocator, size_t message_payload_size) {
-  DataFrame data_frame(allocator, message_payload_size);
-  if (data_frame.bytes_ == nullptr) {
+  UniquePtr<std::byte[]> bytes = allocator.MakeUnique<std::byte[]>(
+      message_payload_size + kLengthPrefixedMessageHdrSize +
+      sizeof(WireFrameHeader));
+  if (bytes == nullptr) {
     return Status::ResourceExhausted();
   }
-  return data_frame;
+  return DataFrame(std::move(bytes));
 }
-
-Connection::DataFrame::DataFrame(Allocator& allocator,
-                                 size_t message_payload_size)
-    : bytes_(allocator.MakeUnique<std::byte[]>(message_payload_size +
-                                               kLengthPrefixedMessageHdrSize +
-                                               sizeof(WireFrameHeader))) {}
 
 size_t Connection::DataFrame::frame_payload_size() const {
   return bytes_.size() - sizeof(WireFrameHeader);
@@ -513,6 +640,329 @@ Connection::Stream* Connection::SharedState::LookupStream(StreamId id) {
   return nullptr;
 }
 
+bool Connection::SharedState::HasPendingPullData() const {
+  for (const Stream& stream : streams_) {
+    if (stream.id != 0 && !stream.pending_writes.empty()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void Connection::SharedState::EnqueuePullWrite(Stream& stream,
+                                               PendingWrite& write) {
+  stream.pending_writes.push_back(write);
+  send_queue_.NotifyDataReady();
+}
+
+void Connection::SharedState::LatchPullResponseComplete(Stream& stream,
+                                                        Status response_code) {
+  if (!stream.pending_writes.empty()) {
+    const int32_t available_window =
+        std::min(stream.send_window, connection_send_window_);
+    if (!response_code.ok() || available_window <= 0) {
+      if (stream.pending_writes.front().offset > 0) {
+        // Avoid truncating a partially sent gRPC message.
+        SendRstStream(stream.id, Http2Error::CANCEL).IgnoreError();
+        ResetStream(stream);
+        return;
+      }
+      stream.CancelPendingWrites();
+    }
+  }
+  stream.end_stream_latched = true;
+  stream.latched_response_code = response_code;
+  stream.assembly_buffer = nullptr;
+  stream.assembly = {};
+  send_queue_.NotifyDataReady();
+}
+
+StatusWithSize Connection::SharedState::FillPacket(ByteSpan packet) {
+  if (packet.size() < FrameSource::kMinPacketSize) {
+    return StatusWithSize::InvalidArgument();
+  }
+
+  PacketAppender out(packet);
+
+  if (connection_closed_) {
+    static_assert(FrameSource::kMinPacketSize >= sizeof(GoAwayFrame));
+    if (const std::optional<PendingGoAway> goaway =
+            std::exchange(pending_goaway_, std::nullopt);
+        goaway.has_value()) {
+      GoAwayFrame frame{
+          .header = WireFrameHeader(FrameHeader{
+              .payload_length = 8,
+              .type = FrameType::GOAWAY,
+              .flags = 0,
+              .stream_id = 0,
+          }),
+          .last_stream_id = ToNetworkOrder(goaway->last_stream_id),
+          .error_code = ToNetworkOrder(goaway->code),
+      };
+      PW_CHECK(out.TryAppend(ObjectAsBytes(frame)));
+    }
+    return StatusWithSize(out.written());
+  }
+
+  // Priority 1: Control frames (never flow-control or DRR gated).
+  if (pending_server_settings_) {
+    ServerSettingsFrame server_frame = MakeServerSettingsFrame();
+    if (out.TryAppend(ObjectAsBytes(server_frame))) {
+      pending_server_settings_ = false;
+    }
+  }
+
+  while (pending_settings_acks_ > 0) {
+    WireFrameHeader ack(FrameHeader{
+        .payload_length = 0,
+        .type = FrameType::SETTINGS,
+        .flags = FLAGS_ACK,
+        .stream_id = 0,
+    });
+    if (!out.TryAppend(ObjectAsBytes(ack))) {
+      break;
+    }
+    pending_settings_acks_--;
+  }
+
+  while (!pending_ping_acks_.empty()) {
+    PingFrame ack{
+        .header = WireFrameHeader(FrameHeader{
+            .payload_length = 8,
+            .type = FrameType::PING,
+            .flags = FLAGS_ACK,
+            .stream_id = 0,
+        }),
+        .opaque_data = pending_ping_acks_.front(),
+    };
+    if (!out.TryAppend(ObjectAsBytes(ack))) {
+      break;
+    }
+    pending_ping_acks_.pop_front();
+  }
+
+  while (!pending_rst_streams_.empty()) {
+    const PendingRstStream rst = pending_rst_streams_.front();
+    RstStreamFrame frame{
+        .header = WireFrameHeader(FrameHeader{
+            .payload_length = 4,
+            .type = FrameType::RST_STREAM,
+            .flags = 0,
+            .stream_id = rst.stream_id,
+        }),
+        .error_code = ToNetworkOrder(rst.code),
+    };
+    if (!out.TryAppend(ObjectAsBytes(frame))) {
+      break;
+    }
+    pending_rst_streams_.pop_front();
+  }
+
+  const uint32_t connection_increment = static_cast<uint32_t>(
+      kTargetConnectionWindowSize - connection_recv_window_);
+  constexpr size_t kConnectionWindowUpdateThreshold =
+      kTargetConnectionWindowSize / 2;
+  if (connection_increment > kConnectionWindowUpdateThreshold &&
+      (connection_increment & 0x80000000U) == 0) {
+    WindowUpdateFrame frame{
+        .header = WireFrameHeader(FrameHeader{
+            .payload_length = 4,
+            .type = FrameType::WINDOW_UPDATE,
+            .flags = 0,
+            .stream_id = 0,
+        }),
+        .increment =
+            bytes::ConvertOrderTo(std::endian::big, connection_increment),
+    };
+    if (out.TryAppend(ObjectAsBytes(frame))) {
+      connection_recv_window_ += static_cast<int32_t>(connection_increment);
+    }
+  }
+
+  constexpr size_t kStreamWindowUpdateThreshold = kTargetStreamWindowSize / 2;
+  for (Stream& stream : streams_) {
+    if (stream.id == 0 || stream.end_stream_latched) {
+      continue;
+    }
+    const uint32_t stream_increment =
+        static_cast<uint32_t>(kTargetStreamWindowSize - stream.recv_window);
+    if (stream_increment > kStreamWindowUpdateThreshold &&
+        (stream_increment & 0x80000000U) == 0) {
+      WindowUpdateFrame frame{
+          .header = WireFrameHeader(FrameHeader{
+              .payload_length = 4,
+              .type = FrameType::WINDOW_UPDATE,
+              .flags = 0,
+              .stream_id = stream.id,
+          }),
+          .increment =
+              bytes::ConvertOrderTo(std::endian::big, stream_increment),
+      };
+      if (out.TryAppend(ObjectAsBytes(frame))) {
+        stream.recv_window += static_cast<int32_t>(stream_increment);
+      }
+    }
+  }
+
+  // Priority 2: Trailers for streams that have no remaining DATA to send.
+  for (Stream& stream : streams_) {
+    if (stream.id == 0 || !stream.end_stream_latched ||
+        !stream.pending_writes.empty()) {
+      continue;
+    }
+    const ConstByteSpan headers_payload =
+        stream.started_response ? ConstByteSpan() : ResponseHeadersPayload();
+    const ConstByteSpan trailers_payload =
+        ResponseTrailersPayload(stream.latched_response_code);
+    if (TryWriteHeadersIntoPacket(out,
+                                  stream.id,
+                                  headers_payload,
+                                  trailers_payload,
+                                  /*end_stream=*/true)) {
+      ResetStream(stream);
+    }
+  }
+
+  // Priority 3: DATA frames scheduled by Deficit Round Robin (DRR).
+  const ConstByteSpan response_headers = ResponseHeadersPayload();
+  const size_t initial_headers_frame_size =
+      sizeof(WireFrameHeader) + response_headers.size();
+
+  while (connection_send_window_ > 0 &&
+         out.remaining() > sizeof(WireFrameHeader)) {
+    bool made_progress = false;
+    bool packet_tail_too_small = false;
+
+    for (size_t offset = 0; offset < streams_.size(); ++offset) {
+      const size_t idx = (drr_cursor_ + offset) % streams_.size();
+      Stream& stream = streams_[idx];
+      if (stream.id == 0 || stream.pending_writes.empty()) {
+        stream.drr_deficit = 0;
+        continue;
+      }
+      if (stream.send_window <= 0) {
+        continue;
+      }
+
+      if (!stream.started_response) {
+        const size_t min_needed =
+            out.written() == 0
+                ? initial_headers_frame_size
+                : initial_headers_frame_size + sizeof(WireFrameHeader) + 1;
+        if (out.remaining() < min_needed) {
+          drr_cursor_ = idx;
+          packet_tail_too_small = true;
+          break;
+        }
+        PW_CHECK(TryWriteHeadersIntoPacket(out,
+                                           stream.id,
+                                           response_headers,
+                                           ConstByteSpan(),
+                                           /*end_stream=*/false));
+        stream.started_response = true;
+        if (out.remaining() <= sizeof(WireFrameHeader)) {
+          drr_cursor_ = idx;
+          made_progress = true;
+          break;
+        }
+      }
+
+      if (stream.drr_deficit == 0) {
+        stream.drr_deficit = kDrrQuantumBytes;
+      }
+
+      const size_t avail_payload = out.remaining() - sizeof(WireFrameHeader);
+      const size_t max_payload = std::min<size_t>(
+          {avail_payload,
+           static_cast<size_t>(stream.drr_deficit),
+           static_cast<size_t>(stream.send_window),
+           static_cast<size_t>(connection_send_window_),
+           static_cast<size_t>(internal::kMaxFramePayloadSize)});
+      if (max_payload == 0) {
+        drr_cursor_ = idx;
+        packet_tail_too_small = true;
+        break;
+      }
+
+      ByteSpan header_slot = out.Reserve(sizeof(WireFrameHeader));
+      PW_CHECK_UINT_EQ(header_slot.size(), sizeof(WireFrameHeader));
+      size_t payload_written = 0;
+
+      while (!stream.pending_writes.empty() && payload_written < max_payload) {
+        PendingWrite& write = stream.pending_writes.front();
+        size_t to_copy =
+            std::min<size_t>(write.remaining(), max_payload - payload_written);
+        while (to_copy > 0) {
+          ConstByteSpan chunk;
+          if (write.offset < write.prefix.size()) {
+            const size_t chunk_len =
+                std::min<size_t>(write.prefix.size() - write.offset, to_copy);
+            chunk =
+                ConstByteSpan(write.prefix).subspan(write.offset, chunk_len);
+          } else {
+            const size_t msg_offset = write.offset - write.prefix.size();
+            const size_t chunk_len =
+                std::min<size_t>(write.message.size() - msg_offset, to_copy);
+            chunk = write.message.subspan(msg_offset, chunk_len);
+          }
+          PW_CHECK(out.TryAppend(chunk));
+          payload_written += chunk.size();
+          write.offset += chunk.size();
+          to_copy -= chunk.size();
+        }
+
+        if (write.offset == write.total_size()) {
+          stream.pending_writes.pop_front();
+          write.status = OkStatus();
+          write.done.release();
+        }
+      }
+
+      WireFrameHeader data_hdr(FrameHeader{
+          .payload_length = static_cast<uint32_t>(payload_written),
+          .type = FrameType::DATA,
+          .flags = 0,
+          .stream_id = stream.id,
+      });
+      ConstByteSpan hdr_span = ObjectAsBytes(data_hdr);
+      std::memcpy(header_slot.data(), hdr_span.data(), hdr_span.size());
+
+      stream.send_window -= static_cast<int32_t>(payload_written);
+      connection_send_window_ -= static_cast<int32_t>(payload_written);
+      stream.drr_deficit -= static_cast<uint32_t>(payload_written);
+
+      if (stream.pending_writes.empty()) {
+        stream.drr_deficit = 0;
+        if (stream.end_stream_latched) {
+          const ConstByteSpan trailers_payload =
+              ResponseTrailersPayload(stream.latched_response_code);
+          if (TryWriteHeadersIntoPacket(out,
+                                        stream.id,
+                                        ConstByteSpan(),
+                                        trailers_payload,
+                                        /*end_stream=*/true)) {
+            ResetStream(stream);
+          }
+        }
+        drr_cursor_ = (idx + 1) % streams_.size();
+      } else if (stream.drr_deficit == 0 || stream.send_window <= 0) {
+        drr_cursor_ = (idx + 1) % streams_.size();
+      } else {
+        drr_cursor_ = idx;
+      }
+
+      made_progress = true;
+      break;
+    }
+
+    if (!made_progress || packet_tail_too_small) {
+      break;
+    }
+  }
+
+  return StatusWithSize(out.written());
+}
+
 Status Connection::SharedState::DrainResponseQueue(Stream& stream) {
   while (stream.response_queue.size() > 0) {
     size_t message_size = stream.response_queue.front().frame_payload_size();
@@ -540,6 +990,10 @@ Status Connection::SharedState::DrainResponseQueue(Stream& stream) {
 }
 
 Status Connection::SharedState::DrainResponseQueues() {
+  if (use_pull_) {
+    send_queue_.NotifyDataReady();
+    return OkStatus();
+  }
   struct DrainUpdater {
     Connection::SharedState* state;
     ~DrainUpdater() {
@@ -564,7 +1018,7 @@ Status Connection::SharedState::DrainResponseQueues() {
     if (!SendPingAck(pending_ping_acks_.front()).ok()) {
       break;
     }
-    pending_ping_acks_.erase(pending_ping_acks_.begin());
+    pending_ping_acks_.pop_front();
   }
   uint32_t connection_increment = static_cast<uint32_t>(
       kTargetConnectionWindowSize - connection_recv_window_);
@@ -606,7 +1060,7 @@ Status Connection::SharedState::DrainResponseQueues() {
   for (Stream& stream : streams_) {
     if (stream.end_stream_latched && stream.response_queue.empty()) {
       if (SendTrailers(stream, stream.latched_response_code).ok()) {
-        stream.Reset();
+        ResetStream(stream);
       }
     }
   }
@@ -695,10 +1149,14 @@ Status Connection::SharedState::SendHeaders(StreamId stream_id,
 // RFC 9113 §6.4
 Status Connection::SharedState::SendRstStream(StreamId stream_id,
                                               Http2Error code) {
-  PW_PACKED(struct) RstStreamFrame {
-    WireFrameHeader header;
-    uint32_t error_code;
-  };
+  if (use_pull_) {
+    if (pending_rst_streams_.full()) {
+      return Status::ResourceExhausted();
+    }
+    pending_rst_streams_.push_back(PendingRstStream{stream_id, code});
+    send_queue_.NotifyDataReady();
+    return OkStatus();
+  }
   RstStreamFrame frame{
       .header = WireFrameHeader(FrameHeader{
           .payload_length = 4,
@@ -732,10 +1190,6 @@ Status Connection::SharedState::SendWindowUpdates(Stream* stream,
                connection_increment,
                stream_increment);
 
-  PW_PACKED(struct) WindowUpdateFrame {
-    WireFrameHeader header;
-    uint32_t increment;
-  };
   WindowUpdateFrame frames[2] = {
       {
           .header = WireFrameHeader(FrameHeader{
@@ -810,6 +1264,26 @@ Status Connection::Writer::SendResponseMessage(StreamId stream_id,
 
     const size_t frame_payload_size =
         message.size() + kLengthPrefixedMessageHdrSize;
+
+    if (state->use_pull()) {
+      PendingWrite pending;
+      ByteBuilder prefix(pending.prefix);
+      prefix.PutUint8(0);
+      prefix.PutUint32(static_cast<uint32_t>(message.size()), endian::big);
+      pending.message = message;
+
+      state->EnqueuePullWrite(*stream, pending);
+      connection_.UnlockState(std::move(state));
+
+      pending.done.acquire();
+      // The waker removed `pending` from `pending_writes` with the state lock
+      // held. Take the lock again so `pending` outlives the waker's release()
+      // call. `pending` is declared after `state` so it is destroyed while the
+      // lock is held.
+      state = connection_.LockState();
+      return pending.status;
+    }
+
     if (static_cast<int32_t>(frame_payload_size) <= stream->send_window &&
         static_cast<int32_t>(frame_payload_size) <=
             state->connection_send_window()) {
@@ -927,6 +1401,11 @@ Status Connection::Writer::SendResponseComplete(StreamId stream_id,
     return Status::NotFound();
   }
 
+  if (state->use_pull()) {
+    state->LatchPullResponseComplete(*stream, response_code);
+    return OkStatus();
+  }
+
   Status status;
   if (!stream->response_queue.empty()) {
     status = pw::Status::ResourceExhausted();
@@ -940,7 +1419,7 @@ Status Connection::Writer::SendResponseComplete(StreamId stream_id,
                 stream_id,
                 status.code());
     if (connection_.read_dispatcher_ == nullptr) {
-      stream->Reset();
+      state->ResetStream(*stream);
     } else {
       stream->end_stream_latched = true;
       stream->latched_response_code = response_code;
@@ -953,7 +1432,7 @@ Status Connection::Writer::SendResponseComplete(StreamId stream_id,
   }
 
   PW_LOG_DEBUG("Conn.CloseStream id=%" PRIu32, stream_id);
-  stream->Reset();
+  state->ResetStream(*stream);
 
   return OkStatus();
 }
@@ -1041,7 +1520,7 @@ void Connection::Reader::CloseStream(sync::BorrowedPointer<SharedState>&& state,
   const StreamId id = stream->id;
   const bool was_latched = stream->end_stream_latched;
   PW_LOG_DEBUG("Conn.CloseStream id=%" PRIu32, id);
-  stream->Reset();
+  state->ResetStream(*stream);
   connection_.UnlockState(std::move(state));
   if (!was_latched) {
     callbacks_.OnCancel(id);
@@ -1085,33 +1564,7 @@ Status Connection::Reader::ProcessConnectionPreface() {
 
   // We must send a SETTINGS frame.
   // RFC 9113 §6.5.2
-  PW_PACKED(struct) Setting {
-    uint16_t id;
-    uint32_t value;
-  };
-  PW_PACKED(struct) SettingsFrame {
-    WireFrameHeader header;
-    Setting settings[2];
-  };
-  SettingsFrame server_frame{
-      .header = WireFrameHeader(FrameHeader{
-          .payload_length = 12,
-          .type = FrameType::SETTINGS,
-          .flags = 0,
-          .stream_id = 0,
-      }),
-      .settings =
-          {
-              {
-                  .id = ToNetworkOrder(SETTINGS_HEADER_TABLE_SIZE),
-                  .value = ToNetworkOrder(kHpackDynamicHeaderTableSize),
-              },
-              {
-                  .id = ToNetworkOrder(SETTINGS_MAX_CONCURRENT_STREAMS),
-                  .value = ToNetworkOrder(kMaxConcurrentStreams),
-              },
-          },
-  };
+  ServerSettingsFrame server_frame = MakeServerSettingsFrame();
   PW_LOG_DEBUG("Conn.Send SETTINGS");
 
   {
@@ -1119,10 +1572,16 @@ Status Connection::Reader::ProcessConnectionPreface() {
     if (state->connection_closed()) {
       return Status::Unavailable();
     }
-    PW_TRY(state->SendBytes(ObjectAsBytes(server_frame)));
+    if (state->use_pull()) {
+      state->QueueServerSettings();
+      // We must ack the client's SETTINGS frame *after* sending our SETTINGS.
+      state->DeferSettingsAck();
+    } else {
+      PW_TRY(state->SendBytes(ObjectAsBytes(server_frame)));
 
-    // We must ack the client's SETTINGS frame *after* sending our SETTINGS.
-    PW_TRY(state->SendSettingsAck());
+      // We must ack the client's SETTINGS frame *after* sending our SETTINGS.
+      PW_TRY(state->SendSettingsAck());
+    }
   }
 
   received_connection_preface_ = true;
@@ -1591,6 +2050,13 @@ Status Connection::SharedState::AddConnectionSendWindow(int32_t delta) {
     return Status::Internal();
   }
 
+  if (use_pull_) {
+    if (connection_send_window_ > 0 && HasPendingPullData()) {
+      send_queue_.NotifyDataReady();
+    }
+    return OkStatus();
+  }
+
   DrainResponseQueues().IgnoreError();
 
   for (Stream& stream : streams_) {
@@ -1617,7 +2083,16 @@ Status Connection::SharedState::AddAllStreamsSendWindow(int32_t delta) {
       continue;
     }
     PW_CHECK(CheckedIncrement(stream.send_window, delta));
-    stream.SignalWindowAvailable();
+    if (!use_pull_) {
+      stream.SignalWindowAvailable();
+    }
+  }
+
+  if (use_pull_) {
+    if (delta > 0 && HasPendingPullData()) {
+      send_queue_.NotifyDataReady();
+    }
+    return OkStatus();
   }
 
   DrainResponseQueues().IgnoreError();
@@ -1634,6 +2109,13 @@ Status Connection::SharedState::AddStreamSendWindow(StreamId id,
 
   if (!CheckedIncrement(stream->send_window, delta)) {
     return Status::Internal();
+  }
+
+  if (use_pull_) {
+    if (stream->send_window > 0 && !stream->pending_writes.empty()) {
+      send_queue_.NotifyDataReady();
+    }
+    return OkStatus();
   }
 
   DrainResponseQueues().IgnoreError();
@@ -1672,6 +2154,10 @@ Status Connection::SharedState::UpdateRecvWindow(Stream* stream,
   // Suppress window updates till we reach target.
   if (connection_increment > kConnectionWindowUpdateThreshold ||
       stream_increment > kStreamWindowUpdateThreshold) {
+    if (use_pull_) {
+      send_queue_.NotifyDataReady();
+      return OkStatus();
+    }
     if (auto status =
             SendWindowUpdates(stream, connection_increment, stream_increment);
         !status.ok()) {
@@ -1825,7 +2311,9 @@ Status Connection::Reader::ProcessSettingsFrame(const FrameHeader& frame,
 
   if (send_ack) {
     auto state = connection_.LockState();
-    if (auto status = state->SendSettingsAck(); !status.ok()) {
+    if (state->use_pull()) {
+      state->DeferSettingsAck();
+    } else if (auto status = state->SendSettingsAck(); !status.ok()) {
       if (status.IsResourceExhausted() &&
           connection_.read_dispatcher_ != nullptr) {
         state->DeferSettingsAck();
@@ -1868,7 +2356,9 @@ Status Connection::Reader::ProcessPingFrame(const FrameHeader& frame) {
       ByteBuilder(payload).begin().ReadUint64(endian::native);
   {
     auto state = connection_.LockState();
-    if (auto status = state->SendPingAck(opaque_data); !status.ok()) {
+    if (state->use_pull()) {
+      state->DeferPingAck(opaque_data);
+    } else if (auto status = state->SendPingAck(opaque_data); !status.ok()) {
       if (status.IsResourceExhausted() &&
           connection_.read_dispatcher_ != nullptr) {
         state->DeferPingAck(opaque_data);
@@ -1983,24 +2473,9 @@ void Connection::Reader::SendGoAwayLocked(
     return;
   }
 
-  PW_PACKED(struct) GoAwayFrame {
-    WireFrameHeader header;
-    uint32_t last_stream_id;
-    uint32_t error_code;
-  };
-  GoAwayFrame frame{
-      .header = WireFrameHeader(FrameHeader{
-          .payload_length = 8,
-          .type = FrameType::GOAWAY,
-          .flags = 0,
-          .stream_id = 0,
-      }),
-      .last_stream_id = ToNetworkOrder(state->last_stream_id()),
-      .error_code = ToNetworkOrder(code),
-  };
-
   // Collect open unlatched stream IDs before SharedState::Close() resets all
   // streams, then invoke OnCancel() after releasing the lock.
+  const StreamId last_stream_id = state->last_stream_id();
   pw::Vector<StreamId, internal::kMaxConcurrentStreams> canceled_streams;
   state->ForAllStreams([&canceled_streams](Stream* stream) {
     PW_LOG_DEBUG("Conn.CloseStream id=%" PRIu32, stream->id);
@@ -2009,15 +2484,31 @@ void Connection::Reader::SendGoAwayLocked(
     }
   });
   state->Close();
-  // Ignore errors since we're about to close the connection anyway.
-  state->SendBytes(ObjectAsBytes(frame)).IgnoreError();
+  if (state->use_pull()) {
+    state->QueueGoAway(last_stream_id, code);
+  } else {
+    GoAwayFrame frame{
+        .header = WireFrameHeader(FrameHeader{
+            .payload_length = 8,
+            .type = FrameType::GOAWAY,
+            .flags = 0,
+            .stream_id = 0,
+        }),
+        .last_stream_id = ToNetworkOrder(last_stream_id),
+        .error_code = ToNetworkOrder(code),
+    };
+    // Ignore errors since we're about to close the connection anyway.
+    state->SendBytes(ObjectAsBytes(frame)).IgnoreError();
+  }
   connection_.UnlockState(std::move(state));
 
   for (StreamId id : canceled_streams) {
     callbacks_.OnCancel(id);
   }
 
-  connection_.CloseConnection();
+  // Run close callback without detaching frame_source_ so the pull transport
+  // can still emit pending_goaway_ before CloseConnection() or ~Connection().
+  connection_.RunCloseConnectionCallback();
 }
 
 // RFC 9113 §6.4

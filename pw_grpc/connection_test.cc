@@ -2450,5 +2450,884 @@ TEST_F(ConnectionTest, UnknownFrameTypesDrainPayloadWithoutDesync) {
   ExpectSingleGoAwayFrame(control_frames, kStreamId, kHttp2ErrorFrameSizeError);
 }
 
+// Test-controlled pull SendQueue that records NotifyDataReady() calls and
+// lets tests invoke FillPacket() synchronously with exact packet sizes.
+class ManualPullSendQueue : public SendQueue {
+ public:
+  bool QueueSend(UniquePtr<std::byte[]>&& /*buffer*/) override { return false; }
+  void set_on_error(ErrorHandler&& /*error_handler*/) override {}
+  void Run() override {}
+  void RequestStop() override {}
+
+  bool SupportsPull() const override { return true; }
+
+  void SetWaitingOnPullNotification(sync::ThreadNotification* waiting_on_pull)
+      PW_LOCKS_EXCLUDED(mutex_) {
+    std::lock_guard<sync::Mutex> lock(mutex_);
+    waiting_on_pull_ = waiting_on_pull;
+  }
+
+  void SetFrameSource(FrameSource* source) override
+      PW_LOCKS_EXCLUDED(source_mutex_, mutex_) {
+    std::lock_guard<sync::Mutex> source_lock(source_mutex_);
+    bool wait_for_pull = false;
+    sync::ThreadNotification* waiting_hook = nullptr;
+    {
+      std::lock_guard<sync::Mutex> lock(mutex_);
+      if (source_ == source) {
+        return;
+      }
+      source_ = nullptr;
+      wait_for_pull = pull_active_;
+      waiting_for_pull_ = wait_for_pull;
+      waiting_hook = waiting_on_pull_;
+    }
+    if (wait_for_pull) {
+      if (waiting_hook != nullptr) {
+        waiting_hook->release();
+      }
+      pull_done_.acquire();
+      std::lock_guard<sync::Mutex> lock(mutex_);
+    }
+    if (source != nullptr) {
+      std::lock_guard<sync::Mutex> lock(mutex_);
+      source_ = source;
+    }
+  }
+
+  void NotifyDataReady() override {
+    notify_count_.fetch_add(1, std::memory_order_acq_rel);
+    data_ready_.release();
+  }
+
+  void WaitForNotifyCount(uint32_t target_count) {
+    while (notify_count_.load(std::memory_order_acquire) < target_count) {
+      data_ready_.acquire();
+    }
+  }
+
+  StatusWithSize PullOnePacket(ByteSpan packet) PW_LOCKS_EXCLUDED(mutex_) {
+    FrameSource* source = nullptr;
+    {
+      std::lock_guard<sync::Mutex> lock(mutex_);
+      if (source_ == nullptr) {
+        return StatusWithSize(Status::FailedPrecondition(), 0);
+      }
+      source = source_;
+      pull_active_ = true;
+    }
+
+    const StatusWithSize result = source->FillPacket(packet);
+
+    {
+      std::lock_guard<sync::Mutex> lock(mutex_);
+      pull_active_ = false;
+      if (waiting_for_pull_) {
+        waiting_for_pull_ = false;
+        pull_done_.release();
+      }
+    }
+    return result;
+  }
+
+  // Simulates an in-flight pull parked between acquiring the source and
+  // releasing pull_active_, to verify SetFrameSource(nullptr) waits for it.
+  void RunBlockingPull(sync::ThreadNotification& entered_pull,
+                       sync::ThreadNotification& release_pull,
+                       std::atomic<bool>& pull_released)
+      PW_LOCKS_EXCLUDED(mutex_) {
+    {
+      std::lock_guard<sync::Mutex> lock(mutex_);
+      ASSERT_NE(source_, nullptr);
+      pull_active_ = true;
+    }
+    entered_pull.release();
+    release_pull.acquire();
+    pull_released.store(true, std::memory_order_release);
+    {
+      std::lock_guard<sync::Mutex> lock(mutex_);
+      pull_active_ = false;
+      if (waiting_for_pull_) {
+        waiting_for_pull_ = false;
+        pull_done_.release();
+      }
+    }
+  }
+
+  uint32_t notify_count() const {
+    return notify_count_.load(std::memory_order_acquire);
+  }
+
+  bool has_source() const PW_LOCKS_EXCLUDED(mutex_) {
+    std::lock_guard<sync::Mutex> lock(mutex_);
+    return source_ != nullptr;
+  }
+
+ private:
+  mutable sync::Mutex source_mutex_ PW_ACQUIRED_BEFORE(mutex_);
+  mutable sync::Mutex mutex_;
+  FrameSource* source_ PW_GUARDED_BY(mutex_) = nullptr;
+  bool pull_active_ PW_GUARDED_BY(mutex_) = false;
+  bool waiting_for_pull_ PW_GUARDED_BY(mutex_) = false;
+  sync::ThreadNotification* waiting_on_pull_ PW_GUARDED_BY(mutex_) = nullptr;
+  sync::ThreadNotification pull_done_;
+  sync::ThreadNotification data_ready_;
+  std::atomic<uint32_t> notify_count_{0};
+};
+
+struct ParsedFrameView {
+  uint8_t type = 0;
+  uint8_t flags = 0;
+  StreamId stream_id = 0;
+  ConstByteSpan payload;
+};
+
+void ParsePacketFrames(ConstByteSpan packet, Vector<ParsedFrameView>& out) {
+  out.clear();
+  size_t offset = 0;
+  while (offset + kFrameHeaderSize <= packet.size()) {
+    const uint32_t length = (static_cast<uint32_t>(packet[offset]) << 16) |
+                            (static_cast<uint32_t>(packet[offset + 1]) << 8) |
+                            static_cast<uint32_t>(packet[offset + 2]);
+    ASSERT_LE(offset + kFrameHeaderSize + length, packet.size());
+    const uint8_t type = static_cast<uint8_t>(packet[offset + 3]);
+    const uint8_t flags = static_cast<uint8_t>(packet[offset + 4]);
+    const StreamId stream_id =
+        bytes::ReadInOrder<uint32_t>(endian::big, packet.data() + offset + 5) &
+        0x7fffffffU;
+    ASSERT_FALSE(out.full());
+    out.push_back(ParsedFrameView{
+        .type = type,
+        .flags = flags,
+        .stream_id = stream_id,
+        .payload = packet.subspan(offset + kFrameHeaderSize, length),
+    });
+    offset += kFrameHeaderSize + length;
+  }
+  EXPECT_EQ(offset, packet.size());
+}
+
+struct PullHarness {
+  static constexpr size_t kPullSendAllocatorSize = 64 * 1024;
+
+  PullHarness()
+      : raw_send_allocator(send_pool),
+        send_allocator(raw_send_allocator),
+        connection(reader,
+                   send_queue,
+                   callbacks,
+                   /*message_assembly_allocator=*/nullptr,
+                   send_allocator,
+                   [this]() { reader.Close(); }) {}
+
+  std::array<std::byte, kPullSendAllocatorSize> send_pool{};
+  allocator::BestFitAllocator<> raw_send_allocator;
+  allocator::SynchronizedAllocator<sync::Mutex> send_allocator;
+  BlockingInMemoryReader reader;
+  ManualPullSendQueue send_queue;
+  RecordingCallbacks callbacks;
+  Connection connection;
+  std::optional<ReaderRunner> reader_runner;
+};
+
+std::optional<PullHarness> g_pull_harness;
+
+class ConnectionPullTest : public ::testing::Test {
+ protected:
+  static constexpr size_t kRfcommPacketSize = 960;
+
+  void SetUp() override { g_pull_harness.emplace(); }
+
+  void TearDown() override {
+    if (g_pull_harness.has_value()) {
+      g_pull_harness->connection.CloseConnection();
+      if (g_pull_harness->reader_runner.has_value()) {
+        g_pull_harness->reader_runner->StopAndJoin();
+      }
+      g_pull_harness.reset();
+    }
+  }
+
+  PullHarness& harness() { return *g_pull_harness; }
+
+  void StartConnection(uint32_t initial_window = kDefaultInitialWindowSize) {
+    harness().reader_runner.emplace(harness().connection, harness().reader);
+    if (initial_window == kDefaultInitialWindowSize) {
+      harness().reader.PushClientPreface();
+    } else {
+      harness().reader.PushClientPrefaceWithWindow(initial_window);
+    }
+    harness().reader.WaitUntilIdle();
+    ASSERT_TRUE(harness().send_queue.has_source());
+  }
+
+  void OpenStream(StreamId stream_id) {
+    harness().reader.PushRequestHeaders(stream_id);
+    harness().reader.WaitUntilIdle();
+  }
+
+  void DrainControlPacket() {
+    std::array<std::byte, kRfcommPacketSize> packet{};
+    const StatusWithSize pulled = harness().send_queue.PullOnePacket(packet);
+    ASSERT_EQ(pulled.status(), OkStatus());
+    ASSERT_GT(pulled.size(), 0U);
+  }
+};
+
+TEST_F(ConnectionPullTest, PrefaceAndUnaryResponsePackIntoOnePacket) {
+  StartConnection();
+
+  std::array<std::byte, kRfcommPacketSize> preface_packet{};
+  const StatusWithSize preface_pulled =
+      harness().send_queue.PullOnePacket(preface_packet);
+  ASSERT_EQ(preface_pulled.status(), OkStatus());
+  Vector<ParsedFrameView, 8> frames;
+  ParsePacketFrames(ConstByteSpan(preface_packet.data(), preface_pulled.size()),
+                    frames);
+  ASSERT_EQ(frames.size(), 2U);
+  EXPECT_EQ(frames[0].type, kFrameTypeSettings);
+  EXPECT_EQ(frames[0].flags, 0U);
+  EXPECT_EQ(frames[1].type, kFrameTypeSettings);
+  EXPECT_EQ(frames[1].flags, kFlagAck);
+
+  constexpr StreamId kStreamId = 1;
+  OpenStream(kStreamId);
+  constexpr auto kResponse = bytes::Array<0x11, 0x22, 0x33>();
+  const uint32_t before_write = harness().send_queue.notify_count();
+  ResponseWriter writer(harness().connection, kStreamId, kResponse);
+  harness().send_queue.WaitForNotifyCount(before_write + 1);
+  EXPECT_EQ(harness().connection.SendResponseComplete(kStreamId, OkStatus()),
+            OkStatus());
+
+  std::array<std::byte, kRfcommPacketSize> response_packet{};
+  const StatusWithSize pulled =
+      harness().send_queue.PullOnePacket(response_packet);
+  ASSERT_EQ(pulled.status(), OkStatus());
+  EXPECT_EQ(writer.Join(), OkStatus());
+  // Pull mode copies directly from the writer without send_allocator usage.
+  EXPECT_EQ(harness().raw_send_allocator.GetAllocated(), 0U);
+
+  ParsePacketFrames(ConstByteSpan(response_packet.data(), pulled.size()),
+                    frames);
+  // Response HEADERS + DATA + Trailers HEADERS(END_STREAM) fit in one packet.
+  ASSERT_EQ(frames.size(), 3U);
+  EXPECT_EQ(frames[0].type, kFrameTypeHeaders);
+  EXPECT_EQ(frames[0].flags, kFlagEndHeaders);
+  EXPECT_EQ(frames[0].stream_id, kStreamId);
+  EXPECT_EQ(frames[1].type, kFrameTypeData);
+  EXPECT_EQ(frames[1].stream_id, kStreamId);
+  ASSERT_EQ(frames[1].payload.size(),
+            kLengthPrefixedMessageHdrSize + kResponse.size());
+  EXPECT_EQ(frames[2].type, kFrameTypeHeaders);
+  EXPECT_EQ(frames[2].flags, kFlagEndHeaders | kFlagEndStream);
+  EXPECT_EQ(frames[2].stream_id, kStreamId);
+
+  // Subsequent pull returns 0 bytes.
+  const StatusWithSize empty_pull =
+      harness().send_queue.PullOnePacket(response_packet);
+  EXPECT_EQ(empty_pull.status(), OkStatus());
+  EXPECT_EQ(empty_pull.size(), 0U);
+}
+
+TEST_F(ConnectionPullTest, SmallStreamNotStarvedBySaturatedBulkStream) {
+  StartConnection();
+  DrainControlPacket();
+
+  constexpr StreamId kBulkStream = 1;
+  constexpr StreamId kAudioStream = 3;
+  OpenStream(kBulkStream);
+  OpenStream(kAudioStream);
+
+  // Park a bulk writer with a multi-packet payload, then enqueue an audio
+  // frame on a second stream.
+  constexpr size_t kBulkPayloadSize = kRfcommPacketSize * 4;
+  static std::array<std::byte, kBulkPayloadSize> bulk_payload{};
+  bulk_payload.fill(std::byte{0xbb});
+  const uint32_t before_bulk = harness().send_queue.notify_count();
+  ResponseWriter bulk_writer(harness().connection, kBulkStream, bulk_payload);
+  harness().send_queue.WaitForNotifyCount(before_bulk + 1);
+
+  constexpr size_t kAudioPayloadSize = 155;
+  std::array<std::byte, kAudioPayloadSize> audio_payload{};
+  audio_payload.fill(std::byte{0xaa});
+  const uint32_t before_audio = harness().send_queue.notify_count();
+  ResponseWriter audio_writer(
+      harness().connection, kAudioStream, audio_payload);
+  harness().send_queue.WaitForNotifyCount(before_audio + 1);
+
+  // Pull up to 2 packets and verify audio arrives within the first 2 packets
+  // while bulk is still in progress.
+  bool saw_audio = false;
+  std::array<std::byte, kRfcommPacketSize> packet{};
+  Vector<ParsedFrameView, 16> frames;
+  for (int p = 0; p < 2; ++p) {
+    const StatusWithSize pulled = harness().send_queue.PullOnePacket(packet);
+    ASSERT_EQ(pulled.status(), OkStatus());
+    ASSERT_GT(pulled.size(), 0U);
+    ParsePacketFrames(ConstByteSpan(packet.data(), pulled.size()), frames);
+    for (const ParsedFrameView& f : frames) {
+      if (f.type == kFrameTypeData && f.stream_id == kAudioStream) {
+        saw_audio = true;
+      }
+    }
+  }
+  EXPECT_TRUE(saw_audio);
+  EXPECT_EQ(audio_writer.Join(), OkStatus());
+
+  // Drain remaining packets so the bulk writer completes cleanly.
+  for (int p = 0; p < 8; ++p) {
+    const StatusWithSize pulled = harness().send_queue.PullOnePacket(packet);
+    ASSERT_EQ(pulled.status(), OkStatus());
+    if (pulled.size() == 0) {
+      break;
+    }
+  }
+  EXPECT_EQ(bulk_writer.Join(), OkStatus());
+}
+
+TEST_F(ConnectionPullTest, DrrSharesBytesEquallyBetweenBulkStreams) {
+  StartConnection();
+  DrainControlPacket();
+
+  constexpr StreamId kStreamA = 1;
+  constexpr StreamId kStreamB = 3;
+  OpenStream(kStreamA);
+  OpenStream(kStreamB);
+
+  constexpr size_t kBulkSize = 6000;
+  static std::array<std::byte, kBulkSize> msg_a{};
+  static std::array<std::byte, kBulkSize> msg_b{};
+  msg_a.fill(std::byte{0x11});
+  msg_b.fill(std::byte{0x22});
+
+  const uint32_t before_writes = harness().send_queue.notify_count();
+  ResponseWriter writer_a(harness().connection, kStreamA, msg_a);
+  ResponseWriter writer_b(harness().connection, kStreamB, msg_b);
+  harness().send_queue.WaitForNotifyCount(before_writes + 2);
+
+  // Pull 8 packets (~7.6 KiB) — less than total pending (12 KiB) so both
+  // streams stay saturated throughout.
+  size_t stream_a_bytes = 0;
+  size_t stream_b_bytes = 0;
+  std::array<std::byte, kRfcommPacketSize> packet{};
+  Vector<ParsedFrameView, 16> frames;
+  for (int p = 0; p < 8; ++p) {
+    const StatusWithSize pulled = harness().send_queue.PullOnePacket(packet);
+    ASSERT_EQ(pulled.status(), OkStatus());
+    ASSERT_GT(pulled.size(), 0U);
+    ParsePacketFrames(ConstByteSpan(packet.data(), pulled.size()), frames);
+    for (const ParsedFrameView& f : frames) {
+      if (f.type == kFrameTypeData) {
+        if (f.stream_id == kStreamA) {
+          stream_a_bytes += f.payload.size();
+        } else if (f.stream_id == kStreamB) {
+          stream_b_bytes += f.payload.size();
+        }
+      }
+    }
+  }
+
+  EXPECT_GT(stream_a_bytes, 0U);
+  EXPECT_GT(stream_b_bytes, 0U);
+  const size_t diff = stream_a_bytes > stream_b_bytes
+                          ? stream_a_bytes - stream_b_bytes
+                          : stream_b_bytes - stream_a_bytes;
+  // Equal byte share within one DRR quantum (1024 B).
+  EXPECT_LE(diff, 1024U);
+
+  // Drain the rest so both writers unblock and finish.
+  for (int p = 0; p < 16; ++p) {
+    const StatusWithSize pulled = harness().send_queue.PullOnePacket(packet);
+    ASSERT_EQ(pulled.status(), OkStatus());
+    if (pulled.size() == 0) {
+      break;
+    }
+  }
+  EXPECT_EQ(writer_a.Join(), OkStatus());
+  EXPECT_EQ(writer_b.Join(), OkStatus());
+}
+
+TEST_F(ConnectionPullTest, LargeMessageSplitsAcrossPacketsCleanly) {
+  StartConnection();
+  DrainControlPacket();
+
+  constexpr StreamId kStreamId = 1;
+  OpenStream(kStreamId);
+
+  constexpr size_t kLargeMessageSize = 2500;
+  static std::array<std::byte, kLargeMessageSize> message{};
+  for (size_t i = 0; i < kLargeMessageSize; ++i) {
+    message[i] = static_cast<std::byte>(i & 0xffU);
+  }
+  const uint32_t before_write = harness().send_queue.notify_count();
+  ResponseWriter writer(harness().connection, kStreamId, message);
+  harness().send_queue.WaitForNotifyCount(before_write + 1);
+  ASSERT_EQ(harness().connection.SendResponseComplete(kStreamId, OkStatus()),
+            OkStatus());
+
+  static std::array<std::byte,
+                    kLargeMessageSize + kLengthPrefixedMessageHdrSize>
+      reassembled{};
+  size_t reassembled_size = 0;
+  size_t data_frame_count = 0;
+  bool saw_end_stream = false;
+
+  std::array<std::byte, kRfcommPacketSize> packet{};
+  Vector<ParsedFrameView, 16> frames;
+  for (int p = 0; p < 8; ++p) {
+    const StatusWithSize pulled = harness().send_queue.PullOnePacket(packet);
+    ASSERT_EQ(pulled.status(), OkStatus());
+    if (pulled.size() == 0) {
+      break;
+    }
+    ParsePacketFrames(ConstByteSpan(packet.data(), pulled.size()), frames);
+    for (const ParsedFrameView& f : frames) {
+      if (f.type == kFrameTypeData && f.stream_id == kStreamId) {
+        ASSERT_LE(reassembled_size + f.payload.size(), reassembled.size());
+        std::memcpy(reassembled.data() + reassembled_size,
+                    f.payload.data(),
+                    f.payload.size());
+        reassembled_size += f.payload.size();
+        ++data_frame_count;
+      } else if (f.type == kFrameTypeHeaders && f.stream_id == kStreamId &&
+                 (f.flags & kFlagEndStream) != 0) {
+        saw_end_stream = true;
+      }
+    }
+  }
+
+  EXPECT_EQ(writer.Join(), OkStatus());
+  EXPECT_EQ(harness().raw_send_allocator.GetAllocated(), 0U);
+  EXPECT_GT(data_frame_count, 1U);
+  EXPECT_TRUE(saw_end_stream);
+  ASSERT_EQ(reassembled_size,
+            kLengthPrefixedMessageHdrSize + kLargeMessageSize);
+  EXPECT_EQ(reassembled[0], std::byte{0});
+  EXPECT_EQ(bytes::ReadInOrder<uint32_t>(endian::big, reassembled.data() + 1),
+            kLargeMessageSize);
+  EXPECT_TRUE(std::equal(message.begin(),
+                         message.end(),
+                         reassembled.begin() + kLengthPrefixedMessageHdrSize));
+}
+
+TEST_F(ConnectionPullTest, ConcurrentWritersOnSameStreamCoalesceInOrder) {
+  StartConnection();
+  DrainControlPacket();
+
+  constexpr StreamId kStreamId = 1;
+  OpenStream(kStreamId);
+
+  constexpr size_t kMsgSize = 64;
+  std::array<std::byte, kMsgSize> msg1{};
+  std::array<std::byte, kMsgSize> msg2{};
+  msg1.fill(std::byte{0x11});
+  msg2.fill(std::byte{0x22});
+
+  const uint32_t base_notify = harness().send_queue.notify_count();
+  ResponseWriter writer1(harness().connection, kStreamId, msg1);
+  harness().send_queue.WaitForNotifyCount(base_notify + 1);
+  ResponseWriter writer2(harness().connection, kStreamId, msg2);
+  harness().send_queue.WaitForNotifyCount(base_notify + 2);
+
+  std::array<std::byte, kRfcommPacketSize> packet{};
+  const StatusWithSize pulled = harness().send_queue.PullOnePacket(packet);
+  ASSERT_EQ(pulled.status(), OkStatus());
+  EXPECT_EQ(writer1.Join(), OkStatus());
+  EXPECT_EQ(writer2.Join(), OkStatus());
+  EXPECT_EQ(harness().raw_send_allocator.GetAllocated(), 0U);
+
+  Vector<ParsedFrameView, 8> frames;
+  ParsePacketFrames(ConstByteSpan(packet.data(), pulled.size()), frames);
+  ASSERT_EQ(frames.size(), 2U);
+  EXPECT_EQ(frames[0].type, kFrameTypeHeaders);
+  EXPECT_EQ(frames[1].type, kFrameTypeData);
+  constexpr size_t kOneFramedSize = kLengthPrefixedMessageHdrSize + kMsgSize;
+  ASSERT_EQ(frames[1].payload.size(), kOneFramedSize * 2);
+  EXPECT_TRUE(
+      std::equal(msg1.begin(),
+                 msg1.end(),
+                 frames[1].payload.begin() + kLengthPrefixedMessageHdrSize));
+  EXPECT_TRUE(std::equal(msg2.begin(),
+                         msg2.end(),
+                         frames[1].payload.begin() + kOneFramedSize +
+                             kLengthPrefixedMessageHdrSize));
+}
+
+TEST_F(ConnectionPullTest, ControlFramesPrecedeQueuedData) {
+  StartConnection();
+  DrainControlPacket();
+
+  constexpr StreamId kBulkStream = 1;
+  OpenStream(kBulkStream);
+  static std::array<std::byte, 896> bulk_payload{};
+  const uint32_t before_write = harness().send_queue.notify_count();
+  ResponseWriter writer(harness().connection, kBulkStream, bulk_payload);
+  harness().send_queue.WaitForNotifyCount(before_write + 1);
+
+  constexpr auto kPingOpaque =
+      bytes::Array<0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08>();
+  harness().reader.PushPing(kPingOpaque);
+  harness().reader.WaitUntilIdle();
+
+  std::array<std::byte, kRfcommPacketSize> packet{};
+  const StatusWithSize pulled = harness().send_queue.PullOnePacket(packet);
+  ASSERT_EQ(pulled.status(), OkStatus());
+  Vector<ParsedFrameView, 8> frames;
+  ParsePacketFrames(ConstByteSpan(packet.data(), pulled.size()), frames);
+  ASSERT_GE(frames.size(), 2U);
+  EXPECT_EQ(frames[0].type, kFrameTypePing);
+  EXPECT_EQ(frames[0].flags, kFlagAck);
+
+  for (int p = 0; p < 4; ++p) {
+    const StatusWithSize more = harness().send_queue.PullOnePacket(packet);
+    ASSERT_EQ(more.status(), OkStatus());
+    if (more.size() == 0) {
+      break;
+    }
+  }
+  EXPECT_EQ(writer.Join(), OkStatus());
+}
+
+TEST_F(ConnectionPullTest, WindowBlockedStreamDoesNotStarveOtherStream) {
+  constexpr uint32_t kSmallWindow = 200;
+  StartConnection(kSmallWindow);
+  DrainControlPacket();
+
+  constexpr StreamId kBlockedStream = 1;
+  constexpr StreamId kActiveStream = 3;
+  OpenStream(kBlockedStream);
+  OpenStream(kActiveStream);
+
+  // Give stream 3 extra send window while stream 1 only has kSmallWindow (200).
+  harness().reader.PushWindowUpdate(kActiveStream, 4096);
+  harness().reader.WaitUntilIdle();
+
+  static std::array<std::byte, 500> msg1{};
+  static std::array<std::byte, 400> msg3{};
+  const uint32_t before_writes = harness().send_queue.notify_count();
+  ResponseWriter writer1(harness().connection, kBlockedStream, msg1);
+  ResponseWriter writer3(harness().connection, kActiveStream, msg3);
+  harness().send_queue.WaitForNotifyCount(before_writes + 2);
+
+  // Pull packets: stream 1 uses its 200 B window and stalls, while stream 3
+  // finishes its entire 405 B message without waiting on stream 1.
+  size_t s1_bytes = 0;
+  size_t s3_bytes = 0;
+  std::array<std::byte, kRfcommPacketSize> packet{};
+  Vector<ParsedFrameView, 16> frames;
+  for (int p = 0; p < 4; ++p) {
+    const StatusWithSize pulled = harness().send_queue.PullOnePacket(packet);
+    ASSERT_EQ(pulled.status(), OkStatus());
+    if (pulled.size() == 0) {
+      break;
+    }
+    ParsePacketFrames(ConstByteSpan(packet.data(), pulled.size()), frames);
+    for (const ParsedFrameView& f : frames) {
+      if (f.type == kFrameTypeData) {
+        if (f.stream_id == kBlockedStream) {
+          s1_bytes += f.payload.size();
+        } else if (f.stream_id == kActiveStream) {
+          s3_bytes += f.payload.size();
+        }
+      }
+    }
+  }
+  EXPECT_EQ(s1_bytes, kSmallWindow);
+  EXPECT_EQ(s3_bytes, kLengthPrefixedMessageHdrSize + msg3.size());
+  EXPECT_EQ(writer3.Join(), OkStatus());
+
+  // Grant stream 1 more window and verify it resumes and finishes.
+  harness().reader.PushWindowUpdate(kBlockedStream, 4096);
+  harness().reader.WaitUntilIdle();
+  for (int p = 0; p < 4; ++p) {
+    const StatusWithSize pulled = harness().send_queue.PullOnePacket(packet);
+    ASSERT_EQ(pulled.status(), OkStatus());
+    if (pulled.size() == 0) {
+      break;
+    }
+    ParsePacketFrames(ConstByteSpan(packet.data(), pulled.size()), frames);
+    for (const ParsedFrameView& f : frames) {
+      if (f.type == kFrameTypeData && f.stream_id == kBlockedStream) {
+        s1_bytes += f.payload.size();
+      }
+    }
+  }
+  EXPECT_EQ(s1_bytes, kLengthPrefixedMessageHdrSize + msg1.size());
+  EXPECT_EQ(writer1.Join(), OkStatus());
+}
+
+TEST_F(ConnectionPullTest, BlockedWriterUnblocksOnClose) {
+  StartConnection();
+  DrainControlPacket();
+
+  constexpr StreamId kBulkStream = 1;
+  OpenStream(kBulkStream);
+
+  static std::array<std::byte, 896> bulk_payload{};
+  const uint32_t before_write = harness().send_queue.notify_count();
+  ResponseWriter blocked_writer(
+      harness().connection, kBulkStream, bulk_payload);
+  harness().send_queue.WaitForNotifyCount(before_write + 1);
+
+  harness().reader.Close();
+  harness().reader.WaitUntilIdle();
+  EXPECT_EQ(blocked_writer.Join(), Status::Unavailable());
+}
+
+TEST_F(ConnectionPullTest, BlockedWriterUnblocksOnMidMessageRstStream) {
+  StartConnection();
+  DrainControlPacket();
+
+  constexpr StreamId kStreamId = 1;
+  OpenStream(kStreamId);
+
+  constexpr size_t kLargePayloadSize = kRfcommPacketSize * 3;
+  static std::array<std::byte, kLargePayloadSize> payload{};
+  const uint32_t before_write = harness().send_queue.notify_count();
+  ResponseWriter writer(harness().connection, kStreamId, payload);
+  harness().send_queue.WaitForNotifyCount(before_write + 1);
+
+  // Pull one packet so the message is partially transmitted and still pending.
+  std::array<std::byte, kRfcommPacketSize> packet{};
+  const StatusWithSize first = harness().send_queue.PullOnePacket(packet);
+  ASSERT_EQ(first.status(), OkStatus());
+  ASSERT_GT(first.size(), 0U);
+
+  // Client cancels the stream; blocked writer must wake with UNAVAILABLE.
+  harness().reader.PushRstStream(kStreamId, kHttp2ErrorCancel);
+  harness().reader.WaitUntilIdle();
+  EXPECT_EQ(writer.Join(), Status::Unavailable());
+
+  const StatusWithSize after_rst = harness().send_queue.PullOnePacket(packet);
+  EXPECT_EQ(after_rst.status(), OkStatus());
+  EXPECT_EQ(after_rst.size(), 0U);
+}
+
+TEST_F(ConnectionPullTest, EmitsWindowUpdateRstStreamAndGoAway) {
+  StartConnection();
+  DrainControlPacket();
+
+  // 1. Outbound WINDOW_UPDATE once inbound DATA crosses half the 65535 B
+  // window.
+  constexpr StreamId kStreamId = 1;
+  OpenStream(kStreamId);
+  constexpr size_t kChunkSize = kMaxRecordedMessageSize;
+  std::array<std::byte, kChunkSize> chunk{};
+  constexpr size_t kFramedChunk = kLengthPrefixedMessageHdrSize + kChunkSize;
+  constexpr size_t kChunksToThreshold =
+      (kDefaultInitialWindowSize / 2) / kFramedChunk + 2;
+  for (size_t i = 0; i < kChunksToThreshold; ++i) {
+    harness().reader.PushRequestData(kStreamId, chunk, /*end_stream=*/false);
+    if ((i & 3U) == 3U || i + 1 == kChunksToThreshold) {
+      harness().reader.WaitUntilIdle();
+    }
+  }
+
+  std::array<std::byte, kRfcommPacketSize> packet{};
+  Vector<ParsedFrameView, 16> frames;
+  const StatusWithSize wu_pulled = harness().send_queue.PullOnePacket(packet);
+  ASSERT_EQ(wu_pulled.status(), OkStatus());
+  ParsePacketFrames(ConstByteSpan(packet.data(), wu_pulled.size()), frames);
+  bool saw_conn_wu = false;
+  bool saw_stream_wu = false;
+  for (const ParsedFrameView& f : frames) {
+    if (f.type == kFrameTypeWindowUpdate) {
+      if (f.stream_id == 0) {
+        saw_conn_wu = true;
+      } else if (f.stream_id == kStreamId) {
+        saw_stream_wu = true;
+      }
+    }
+  }
+  EXPECT_TRUE(saw_conn_wu);
+  EXPECT_TRUE(saw_stream_wu);
+
+  // 2. Outbound RST_STREAM queued in pending_rst_streams_ when client sends
+  // HEADERS with END_STREAM (disallowed by gRPC).
+  constexpr StreamId kBadStreamId = 3;
+  ByteBuffer<kFrameScratchSize> bad_headers;
+  AppendFrameHeader(bad_headers,
+                    /*payload_length=*/1,
+                    kFrameTypeHeaders,
+                    kFlagEndHeaders | kFlagEndStream,
+                    kBadStreamId);
+  bad_headers.PutUint8(0x84);
+  ASSERT_EQ(bad_headers.status(), OkStatus());
+  harness().reader.Push(bad_headers);
+  harness().reader.WaitUntilIdle();
+
+  const StatusWithSize rst_pulled = harness().send_queue.PullOnePacket(packet);
+  ASSERT_EQ(rst_pulled.status(), OkStatus());
+  ParsePacketFrames(ConstByteSpan(packet.data(), rst_pulled.size()), frames);
+  ASSERT_EQ(frames.size(), 1U);
+  EXPECT_EQ(frames[0].type, kFrameTypeRstStream);
+  EXPECT_EQ(frames[0].stream_id, kBadStreamId);
+  ASSERT_EQ(frames[0].payload.size(), 4U);
+  EXPECT_EQ(bytes::ReadInOrder<uint32_t>(endian::big, frames[0].payload.data()),
+            kHttp2ErrorProtocolError);
+
+  // 3. Outbound GOAWAY emitted even after connection_closed_ is set on error.
+  harness().reader.PushRawDataFrame(
+      /*stream_id=*/0, ConstByteSpan(), /*end_stream=*/false);
+  harness().reader.WaitUntilIdle();
+
+  const StatusWithSize goaway_pulled =
+      harness().send_queue.PullOnePacket(packet);
+  ASSERT_EQ(goaway_pulled.status(), OkStatus());
+  ParsePacketFrames(ConstByteSpan(packet.data(), goaway_pulled.size()), frames);
+  ASSERT_EQ(frames.size(), 1U);
+  EXPECT_EQ(frames[0].type, kFrameTypeGoAway);
+  EXPECT_EQ(frames[0].stream_id, 0U);
+  ASSERT_EQ(frames[0].payload.size(), 8U);
+  EXPECT_EQ(
+      bytes::ReadInOrder<uint32_t>(endian::big, frames[0].payload.data() + 4),
+      kHttp2ErrorProtocolError);
+
+  const StatusWithSize after_goaway =
+      harness().send_queue.PullOnePacket(packet);
+  EXPECT_EQ(after_goaway.status(), OkStatus());
+  EXPECT_EQ(after_goaway.size(), 0U);
+}
+
+TEST_F(ConnectionPullTest, FillPacketRejectsTooSmallBuffer) {
+  StartConnection();
+
+  std::array<std::byte, FrameSource::kMinPacketSize - 1> tiny_packet{};
+  const StatusWithSize tiny_result =
+      harness().send_queue.PullOnePacket(tiny_packet);
+  EXPECT_EQ(tiny_result.status(), Status::InvalidArgument());
+
+  std::array<std::byte, FrameSource::kMinPacketSize> min_packet{};
+  const StatusWithSize min_result =
+      harness().send_queue.PullOnePacket(min_packet);
+  EXPECT_EQ(min_result.status(), OkStatus());
+  EXPECT_GT(min_result.size(), 0U);
+}
+
+TEST_F(ConnectionPullTest, TeardownWaitsForInProgressPull) {
+  StartConnection();
+
+  sync::ThreadNotification entered_pull;
+  sync::ThreadNotification release_pull;
+  sync::ThreadNotification waiting_on_pull;
+  std::atomic<bool> pull_released{false};
+  std::atomic<bool> close_returned{false};
+  std::atomic<bool> released_before_close{false};
+
+  harness().send_queue.SetWaitingOnPullNotification(&waiting_on_pull);
+
+  thread::test::TestThreadContext puller_ctx;
+  thread::Thread puller_thread(puller_ctx.options(), [&]() {
+    harness().send_queue.RunBlockingPull(
+        entered_pull, release_pull, pull_released);
+  });
+  entered_pull.acquire();
+
+  thread::test::TestThreadContext closer_ctx;
+  thread::Thread closer_thread(closer_ctx.options(), [&]() {
+    harness().connection.CloseConnection();
+    released_before_close.store(pull_released.load(std::memory_order_acquire),
+                                std::memory_order_release);
+    close_returned.store(true, std::memory_order_release);
+  });
+
+  // Wait until CloseConnection() is parked inside SetFrameSource(nullptr).
+  waiting_on_pull.acquire();
+  EXPECT_FALSE(close_returned.load(std::memory_order_acquire));
+
+  // Unblock pull; CloseConnection() must complete only after pull exits.
+  release_pull.release();
+  puller_thread.join();
+  closer_thread.join();
+  harness().send_queue.SetWaitingOnPullNotification(nullptr);
+  EXPECT_TRUE(close_returned.load(std::memory_order_acquire));
+  EXPECT_TRUE(released_before_close.load(std::memory_order_acquire));
+  EXPECT_FALSE(harness().send_queue.has_source());
+}
+
+TEST_F(ConnectionPullTest,
+       ZeroWindowSendResponseCompleteCancelsPendingWriteAndEmitsTrailers) {
+  StartConnection(/*initial_send_window=*/0);
+  DrainControlPacket();
+
+  constexpr StreamId kStreamId = 1;
+  OpenStream(kStreamId);
+
+  constexpr auto kPayload = bytes::Array<0x10, 0x20, 0x30, 0x40>();
+  const uint32_t before_write = harness().send_queue.notify_count();
+  ResponseWriter writer(harness().connection, kStreamId, kPayload);
+  harness().send_queue.WaitForNotifyCount(before_write + 1);
+
+  // Pull returns nothing while window is 0, so the write stays at offset 0.
+  std::array<std::byte, kRfcommPacketSize> packet{};
+  const StatusWithSize stalled = harness().send_queue.PullOnePacket(packet);
+  EXPECT_EQ(stalled.status(), OkStatus());
+  EXPECT_EQ(stalled.size(), 0U);
+
+  // Completing the RPC while window is 0 must unblock the writer and emit
+  // response headers/trailers with END_STREAM instead of deadlocking.
+  ASSERT_EQ(harness().connection.SendResponseComplete(kStreamId, OkStatus()),
+            OkStatus());
+  EXPECT_EQ(writer.Join(), Status::Unavailable());
+
+  const StatusWithSize pulled = harness().send_queue.PullOnePacket(packet);
+  ASSERT_EQ(pulled.status(), OkStatus());
+  ASSERT_GT(pulled.size(), 0U);
+
+  Vector<ParsedFrameView, 16> frames;
+  ParsePacketFrames(ConstByteSpan(packet.data(), pulled.size()), frames);
+  bool saw_end_stream_headers = false;
+  for (const ParsedFrameView& f : frames) {
+    if (f.type == kFrameTypeHeaders && f.stream_id == kStreamId &&
+        (f.flags & kFlagEndStream) != 0) {
+      saw_end_stream_headers = true;
+    }
+    EXPECT_NE(f.type, kFrameTypeData);
+  }
+  EXPECT_TRUE(saw_end_stream_headers);
+}
+
+TEST_F(ConnectionPullTest,
+       MidMessageSendResponseCompleteResetsStreamWithCancel) {
+  constexpr uint32_t kPartialWindow = 64;
+  StartConnection(kPartialWindow);
+  DrainControlPacket();
+
+  constexpr StreamId kStreamId = 1;
+  OpenStream(kStreamId);
+
+  static std::array<std::byte, kPartialWindow * 4> payload{};
+  const uint32_t before_write = harness().send_queue.notify_count();
+  ResponseWriter writer(harness().connection, kStreamId, payload);
+  harness().send_queue.WaitForNotifyCount(before_write + 1);
+
+  // Pull one packet to transmit kPartialWindow bytes (offset > 0) and exhaust
+  // the stream send window.
+  std::array<std::byte, kRfcommPacketSize> packet{};
+  const StatusWithSize first = harness().send_queue.PullOnePacket(packet);
+  ASSERT_EQ(first.status(), OkStatus());
+  ASSERT_GT(first.size(), 0U);
+
+  // Completing the RPC while a partially sent message is blocked must reset the
+  // stream with CANCEL instead of truncating the gRPC message or hanging.
+  ASSERT_EQ(
+      harness().connection.SendResponseComplete(kStreamId, Status::Internal()),
+      OkStatus());
+  EXPECT_EQ(writer.Join(), Status::Unavailable());
+
+  const StatusWithSize rst_pulled = harness().send_queue.PullOnePacket(packet);
+  ASSERT_EQ(rst_pulled.status(), OkStatus());
+  ASSERT_GT(rst_pulled.size(), 0U);
+
+  Vector<ParsedFrameView, 16> frames;
+  ParsePacketFrames(ConstByteSpan(packet.data(), rst_pulled.size()), frames);
+  ASSERT_EQ(frames.size(), 1U);
+  EXPECT_EQ(frames[0].type, kFrameTypeRstStream);
+  EXPECT_EQ(frames[0].stream_id, kStreamId);
+  ASSERT_EQ(frames[0].payload.size(), 4U);
+  EXPECT_EQ(bytes::ReadInOrder<uint32_t>(endian::big, frames[0].payload.data()),
+            kHttp2ErrorCancel);
+}
+
 }  // namespace
 }  // namespace pw::grpc

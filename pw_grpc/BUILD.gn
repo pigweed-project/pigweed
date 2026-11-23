@@ -39,6 +39,7 @@ pw_source_set("connection") {
     "$dir_pw_async_basic:dispatcher",
     "$dir_pw_bytes",
     "$dir_pw_containers:dynamic_queue",
+    "$dir_pw_containers:inline_deque",
     "$dir_pw_containers:intrusive_list",
     "$dir_pw_containers:vector",
     "$dir_pw_function",

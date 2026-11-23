@@ -25,6 +25,7 @@
 #include "pw_bytes/byte_builder.h"
 #include "pw_bytes/span.h"
 #include "pw_containers/dynamic_queue.h"
+#include "pw_containers/inline_deque.h"
 #include "pw_containers/intrusive_list.h"
 #include "pw_containers/vector.h"
 #include "pw_function/function.h"
@@ -32,6 +33,7 @@
 #include "pw_grpc/send_queue.h"
 #include "pw_result/result.h"
 #include "pw_status/status.h"
+#include "pw_status/status_with_size.h"
 #include "pw_stream/stream.h"
 #include "pw_string/string.h"
 #include "pw_sync/inline_borrowable.h"
@@ -52,13 +54,14 @@ inline constexpr uint32_t kMaxConcurrentStreams = 16;
 // RFC 9113 §4.2 and §6.5.2
 inline constexpr uint32_t kMaxFramePayloadSize = 16384;
 
-// Limits on grpc message sizes. The length prefix includes the compressed byte
-// and 32-bit length from Length-Prefixed-Message.
+// Limits on grpc message sizes. The 5-byte length prefix includes the 1-byte
+// compressed flag and 32-bit length from Length-Prefixed-Message.
 // See: https://github.com/grpc/grpc/blob/v1.60.x/doc/PROTOCOL-HTTP2.md.
+inline constexpr size_t kLengthPrefixedMessageHdrSize = 5;
 inline constexpr uint32_t kMaxGrpcMessageSizeWithLengthPrefix =
     kMaxFramePayloadSize;
 inline constexpr uint32_t kMaxGrpcMessageSize =
-    kMaxGrpcMessageSizeWithLengthPrefix - 5;
+    kMaxGrpcMessageSizeWithLengthPrefix - kLengthPrefixedMessageHdrSize;
 inline constexpr uint32_t kMaxGrpcMessageAssemblySize = 4 * 1024 * 1024;
 
 }  // namespace internal
@@ -167,7 +170,7 @@ class Connection {
   // Reads from stream and processes required connection preface frames. Should
   // be called before ProcessFrame(). Return OK if connection preface was found.
   Status ProcessConnectionPreface() {
-    RegisterSpaceAvailableCallback();
+    RegisterSendQueue();
     return HandleReadError(reader_.ProcessConnectionPreface());
   }
 
@@ -185,6 +188,10 @@ class Connection {
   // Sends a response message for an RPC. The `message` will not be accessed
   // after this method returns. Thread safe.
   //
+  // When the underlying SendQueue supports pull mode, this blocks until
+  // FillPacket() has copied the entire message into transport packets, or
+  // returns UNAVAILABLE if the stream or connection is reset first.
+  //
   // Errors are:
   //
   // * NOT_FOUND if stream_id does not reference an active stream, including
@@ -192,7 +199,7 @@ class Connection {
   //   RPC.
   // * RESOURCE_EXHAUSTED if the flow control window is not large enough to send
   //   this RPC immediately. In this case, no response will be send.
-  // * UNAVAILABLE if the connection is closed.
+  // * UNAVAILABLE if the stream or connection is reset or closed.
   Status SendResponseMessage(StreamId stream_id, pw::ConstByteSpan message) {
     return writer_.SendResponseMessage(stream_id, message);
   }
@@ -233,9 +240,23 @@ class Connection {
   static constexpr int32_t kTargetConnectionWindowSize =
       kDefaultInitialWindowSize;
   static constexpr int32_t kTargetStreamWindowSize = kDefaultInitialWindowSize;
+  // Deficit Round Robin (DRR) quantum in bytes for pull-mode DATA scheduling.
+  // FillPacket() visits active streams cyclically starting at drr_cursor_. When
+  // a stream with sendable bytes has a zero deficit, it receives one quantum of
+  // credit (`kDrrQuantumBytes`) and emits DATA payload up to the minimum of its
+  // deficit, flow-control windows, and remaining packet space. Once a stream
+  // exhausts its deficit (or window), drr_cursor_ advances to the next slot so
+  // bulk streams cannot starve smaller concurrent streams. When a stream drains
+  // all pending writes, its deficit resets to 0 so idle streams cannot
+  // accumulate credit across bursts.
+  static constexpr uint32_t kDrrQuantumBytes = 1024;
+  static constexpr size_t kMaxPendingPingAcks = 16;
+  static constexpr size_t kMaxPendingRstStreams =
+      internal::kMaxConcurrentStreams * 2;
 
   class DataFrame {
    public:
+    // Allocates [9B HTTP/2 DATA header][5B gRPC prefix][payload] for push mode.
     static Result<DataFrame> Create(Allocator& allocator,
                                     size_t message_payload_size);
 
@@ -247,12 +268,27 @@ class Connection {
     UniquePtr<std::byte[]> release() { return std::move(bytes_); }
 
    private:
-    DataFrame(Allocator& allocator, size_t message_payload_size);
+    explicit DataFrame(UniquePtr<std::byte[]>&& bytes)
+        : bytes_(std::move(bytes)) {}
     UniquePtr<std::byte[]> bytes_;
   };
 
   struct WindowWaiter : public IntrusiveList<WindowWaiter>::Item {
     pw::sync::ThreadNotification notification;
+  };
+
+  // Stack-allocated pending outbound message in pull mode. The writer stays
+  // blocked until FillPacket() finishes copying all bytes directly into the
+  // transport packet or the stream/connection resets.
+  struct PendingWrite : public IntrusiveList<PendingWrite>::Item {
+    std::array<std::byte, internal::kLengthPrefixedMessageHdrSize> prefix{};
+    ConstByteSpan message;
+    size_t offset = 0;
+    Status status = OkStatus();
+    pw::sync::ThreadNotification done;
+
+    size_t total_size() const { return prefix.size() + message.size(); }
+    size_t remaining() const { return total_size() - offset; }
   };
 
   // From RFC 9113 §5.1, we use only the following states:
@@ -274,8 +310,13 @@ class Connection {
     int32_t send_window = 0;
     int32_t recv_window = kTargetStreamWindowSize;
 
-    // Response DATA frames that are waiting for window to send.
+    // Outbound response frames queued for this stream (push mode).
     DynamicQueue<DataFrame> response_queue;
+    // Outbound messages waiting to be pulled directly into transport packets
+    // (pull mode). Each PendingWrite lives on the stack of its writer thread.
+    IntrusiveList<PendingWrite> pending_writes;
+    // Pull mode: deficit round robin credit in bytes.
+    uint32_t drr_deficit = 0;
 
     // Fragmented gRPC message assembly, nullptr if not assembling a message.
     UniquePtr<std::byte[]> assembly_buffer;
@@ -293,8 +334,8 @@ class Connection {
         uint32_t received;
       } message;
     } assembly{};
-    // Threads blocked in SendResponseMessage() waiting for send window. Each
-    // waiter lives on the stack of its thread.
+    // Threads blocked in SendResponseMessage() waiting for send window (push
+    // mode). Each waiter lives on the stack of its thread.
     IntrusiveList<WindowWaiter> window_waiters;
 
     // Wakes all waiters. Called with the state lock held. Each waiter is
@@ -308,6 +349,15 @@ class Connection {
       }
     }
 
+    void CancelPendingWrites() {
+      while (!pending_writes.empty()) {
+        PendingWrite& write = pending_writes.front();
+        pending_writes.pop_front();
+        write.status = Status::Unavailable();
+        write.done.release();
+      }
+    }
+
     void Reset() {
       id = 0;
       half_closed = false;
@@ -317,12 +367,25 @@ class Connection {
       send_window = 0;
       recv_window = kTargetStreamWindowSize;
       response_queue.clear();
+      drr_deficit = 0;
 
       assembly_buffer = nullptr;
       assembly = {};
 
       SignalWindowAvailable();
+      CancelPendingWrites();
     }
+  };
+
+  class PullFrameSource final : public FrameSource {
+   public:
+    explicit PullFrameSource(Connection& connection)
+        : connection_(connection) {}
+
+    StatusWithSize FillPacket(ByteSpan packet) override;
+
+   private:
+    Connection& connection_;
   };
 
   // Internal state is divided into what is needed for reading/writing/shared to
@@ -357,8 +420,36 @@ class Connection {
     void ForAllStreams(Function<void(Stream*)>&& callback);
 
     // Queue response buffer for sending on `id` stream. Will send right away if
-    // window is available.
+    // window is available (push mode).
     Status QueueStreamResponse(StreamId id, DataFrame&& data_frame);
+
+    // Pull mode: register a stack-allocated PendingWrite on `stream` and notify
+    // the transport.
+    void EnqueuePullWrite(Stream& stream, PendingWrite& write);
+
+    // Pull mode: latch END_STREAM trailers on `stream` and notify transport.
+    void LatchPullResponseComplete(Stream& stream, Status response_code);
+
+    // Pull mode: fills one transport packet in this priority order:
+    // 1. If the connection is closed, only the pending GOAWAY frame.
+    // 2. Control frames: server SETTINGS, SETTINGS ACKs, PING ACKs,
+    //    RST_STREAMs, and WINDOW_UPDATEs. These are not flow-control gated.
+    // 3. Trailers for finished streams that have no DATA left, so short RPCs
+    //    do not wait behind bulk DATA.
+    // 4. DATA frames, shared across streams with deficit round robin (DRR).
+    //    Streams are visited in slot order starting from `drr_cursor_`. A
+    //    stream with 0 credit receives `kDrrQuantumBytes` (1 KiB), then sends
+    //    up to the smallest of its credit, stream window, connection window,
+    //    and remaining packet space. The cursor advances when the stream runs
+    //    out of credit, window, or data. Idle streams drop leftover credit so
+    //    they cannot burst later.
+    //
+    // All streams have equal weight with no per-stream priority. There is no
+    // pacing: the transport pulls the next packet whenever it can send one.
+    StatusWithSize FillPacket(ByteSpan packet);
+
+    // Resets a stream, waking blocked writers.
+    void ResetStream(Stream& stream) { stream.Reset(); }
 
     // Write raw bytes directly to send queue.
     Status SendBytes(ConstByteSpan message);
@@ -378,15 +469,35 @@ class Connection {
     Status SendTrailers(Stream& stream, Status response_code);
     Status SendPingAck(uint64_t opaque_data);
 
+    void QueueServerSettings() {
+      pending_server_settings_ = true;
+      send_queue_.NotifyDataReady();
+    }
+
+    void QueueGoAway(StreamId last_stream_id, internal::Http2Error code) {
+      if (!pending_goaway_.has_value()) {
+        pending_goaway_ = PendingGoAway{last_stream_id, code};
+        send_queue_.NotifyDataReady();
+      }
+    }
+
     void DeferSettingsAck() {
       pending_settings_acks_++;
-      connection_.MarkDrainNeeded();
+      if (use_pull_) {
+        send_queue_.NotifyDataReady();
+      } else {
+        connection_.MarkDrainNeeded();
+      }
     }
 
     void DeferPingAck(uint64_t opaque_data) {
       if (!pending_ping_acks_.full()) {
         pending_ping_acks_.push_back(opaque_data);
-        connection_.MarkDrainNeeded();
+        if (use_pull_) {
+          send_queue_.NotifyDataReady();
+        } else {
+          connection_.MarkDrainNeeded();
+        }
       }
     }
 
@@ -398,14 +509,17 @@ class Connection {
     int32_t connection_send_window() const { return connection_send_window_; }
     StreamId last_stream_id() const { return last_stream_id_; }
     void set_last_stream_id(StreamId id) { last_stream_id_ = id; }
+    bool use_pull() const { return use_pull_; }
 
     void Close() {
       connection_closed_ = true;
       for (Stream& stream : streams_) {
-        stream.Reset();
+        ResetStream(stream);
       }
       pending_ping_acks_.clear();
+      pending_rst_streams_.clear();
       pending_settings_acks_ = 0;
+      pending_server_settings_ = false;
       owed_window_update_ = false;
       connection_.drain_needed_.store(false, std::memory_order_release);
     }
@@ -415,7 +529,18 @@ class Connection {
     Status DrainResponseQueues();
 
    private:
+    struct PendingRstStream {
+      StreamId stream_id;
+      internal::Http2Error code;
+    };
+
+    struct PendingGoAway {
+      StreamId last_stream_id;
+      internal::Http2Error code;
+    };
+
     bool HasPendingDrain() const;
+    bool HasPendingPullData() const;
 
     // Called whenever there is new data to send or a WINDOW_UPDATE message has
     // increased a send window. Should attempt to drain any queued data across
@@ -433,8 +558,14 @@ class Connection {
     int32_t connection_recv_window_ = kTargetConnectionWindowSize;
     bool connection_closed_ = false;
     bool owed_window_update_ = false;
-    pw::Vector<uint64_t, 4> pending_ping_acks_;
-    uint8_t pending_settings_acks_ = 0;
+    bool pending_server_settings_ = false;
+    InlineDeque<uint64_t, kMaxPendingPingAcks> pending_ping_acks_;
+    InlineDeque<PendingRstStream, kMaxPendingRstStreams> pending_rst_streams_;
+    std::optional<PendingGoAway> pending_goaway_;
+    uint32_t pending_settings_acks_ = 0;
+    // Next slot index in `streams_` to service in pull-mode FillPacket() DRR
+    // scheduling.
+    size_t drr_cursor_ = 0;
 
     // Allocator for fragmented grpc message reassembly
     Allocator* message_assembly_allocator_;
@@ -442,6 +573,7 @@ class Connection {
     // Allocator for creating send buffers to queue.
     Allocator& send_allocator_;
     SendQueue& send_queue_;
+    const bool use_pull_;
     Connection& connection_;
   };
 
@@ -545,6 +677,10 @@ class Connection {
   // Lock acquisition order:
   //   shared_state_ -> send_queue_ internal mutex -> drain_mutex_
   //   callback_mutex_ -> send_queue_ internal mutex -> drain_mutex_
+  //   callback_mutex_ -> frame_source_mutex_ -> send_mutex_ (SetFrameSource)
+  //   callback_mutex_ -> shared_state_ (SetFrameSource(nullptr) waits for an
+  //     in-flight FillPacket(), which locks shared_state_)
+  // callback_mutex_ must never be acquired while shared_state_ is held.
   // drain_mutex_ must never be held when locking shared_state_ or calling
   // into send_queue_. Registration on send_queue_ is deferred until
   // ProcessConnectionPreface() so Connection instances that are never run do
@@ -558,16 +694,19 @@ class Connection {
 
   pw::sync::Mutex callback_mutex_ PW_ACQUIRED_BEFORE(drain_mutex_);
   bool callback_registered_ PW_GUARDED_BY(callback_mutex_) = false;
+  bool frame_source_registered_ PW_GUARDED_BY(callback_mutex_) = false;
   bool callback_closed_ PW_GUARDED_BY(callback_mutex_) = false;
 
   void RunDrainTask(pw::Status status) PW_LOCKS_EXCLUDED(drain_mutex_);
   void ScheduleDrainTask() PW_LOCKS_EXCLUDED(drain_mutex_);
   void MarkDrainNeeded() PW_LOCKS_EXCLUDED(drain_mutex_);
-  void RegisterSpaceAvailableCallback() PW_LOCKS_EXCLUDED(callback_mutex_);
-  void UnregisterSpaceAvailableCallback() PW_LOCKS_EXCLUDED(callback_mutex_);
+  void RegisterSendQueue() PW_LOCKS_EXCLUDED(callback_mutex_);
+  void UnregisterSendQueue() PW_LOCKS_EXCLUDED(callback_mutex_);
+  void RunCloseConnectionCallback() PW_LOCKS_EXCLUDED(callback_mutex_);
   allocator::SynchronizedAllocator<pw::sync::Mutex>* read_allocator_ = nullptr;
   // Shared state that is thread-safe.
   sync::InlineBorrowable<SharedState> shared_state_;
+  PullFrameSource frame_source_;
   Reader reader_;
   Writer writer_;
   CloseConnectionCallback close_connection_callback_
