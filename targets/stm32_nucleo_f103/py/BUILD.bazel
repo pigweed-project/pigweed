@@ -1,0 +1,121 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@rules_platform//platform_data:defs.bzl", "platform_data")
+load("//pw_build:python.bzl", "pw_py_binary", "pw_py_library", "pw_py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+licenses(["notice"])
+
+pw_py_library(
+    name = "stm32_nucleo_f103_utils",
+    srcs = [
+        "stm32_nucleo_f103_utils/__init__.py",
+        "stm32_nucleo_f103_utils/device_detector.py",
+        "stm32_nucleo_f103_utils/flasher.py",
+        "stm32_nucleo_f103_utils/unit_test_client.py",
+        "stm32_nucleo_f103_utils/unit_test_runner.py",
+        "stm32_nucleo_f103_utils/unit_test_server.py",
+    ],
+    data = [
+        "stm32_nucleo_f103_utils/py.typed",
+    ],
+    imports = ["."],
+    tags = ["manual"],
+    deps = [
+        "//pw_cli/py:pw_cli",
+        "@pigweed_python_packages//pyserial",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+pw_py_test(
+    name = "stm32_nucleo_f103_utils_test",
+    srcs = [
+        "stm32_nucleo_f103_utils_test.py",
+    ],
+    deps = [
+        ":stm32_nucleo_f103_utils",
+    ],
+)
+
+pw_py_binary(
+    name = "flash",
+    srcs = [
+        "stm32_nucleo_f103_utils/flasher.py",
+    ],
+    data = [
+        "@probe_rs//:probe-rs",
+    ],
+    main = "stm32_nucleo_f103_utils/flasher.py",
+    tags = ["manual"],
+    deps = [
+        ":stm32_nucleo_f103_utils",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+pw_py_binary(
+    name = "unit_test_runner",
+    srcs = [
+        "stm32_nucleo_f103_utils/unit_test_runner.py",
+    ],
+    data = [
+        "@probe_rs//:probe-rs",
+    ],
+    main = "stm32_nucleo_f103_utils/unit_test_runner.py",
+    tags = ["manual"],
+    deps = [
+        ":stm32_nucleo_f103_utils",
+        "@pigweed_python_packages//pyserial",
+    ],
+)
+
+pw_py_binary(
+    name = "unit_test_server",
+    srcs = [
+        "stm32_nucleo_f103_utils/unit_test_server.py",
+    ],
+    data = [
+        ":unit_test_runner",
+        "//pw_target_runner/go/cmd:server",
+    ],
+    main = "stm32_nucleo_f103_utils/unit_test_server.py",
+    tags = ["manual"],
+    deps = [
+        ":stm32_nucleo_f103_utils",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+pw_py_binary(
+    name = "_unit_test_client",
+    srcs = [
+        "stm32_nucleo_f103_utils/unit_test_client.py",
+    ],
+    data = ["//pw_target_runner/go/cmd:client"],
+    main = "stm32_nucleo_f103_utils/unit_test_client.py",
+    tags = ["manual"],
+    deps = [
+        ":stm32_nucleo_f103_utils",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+platform_data(
+    name = "unit_test_client",
+    platform = "@bazel_tools//tools:host_platform",
+    target = ":_unit_test_client",
+)

@@ -168,6 +168,7 @@ pw_py_library(
         "pw_env_setup/cipd_setup/msrv_python.json",
         "pw_env_setup/cipd_setup/openjdk.json",
         "pw_env_setup/cipd_setup/pigweed.json",
+        "pw_env_setup/cipd_setup/probe_rs.json",
         "pw_env_setup/cipd_setup/python.json",
         "pw_env_setup/cipd_setup/python310.json",
         "pw_env_setup/cipd_setup/python311.json",
@@ -182,7 +183,7 @@ pw_py_library(
         "pw_env_setup/virtualenv_setup/constraint.list",
         "pw_env_setup/virtualenv_setup/constraint_hashes_linux.list",
         "pw_env_setup/virtualenv_setup/python_base_requirements.txt",
-        # LINT.ThenChange(pw_env_setup/py/BUILD.bazel,pw_env_setup/py/BUILD.gn,pw_env_setup/py/setup.cfg)
+        # LINT.ThenChange(//pw_env_setup/py/BUILD.bazel,//pw_env_setup/py/BUILD.gn,//pw_env_setup/py/setup.cfg)
         ":pigweed_json",
     ],
     imports = ["."],

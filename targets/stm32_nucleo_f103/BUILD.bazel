@@ -1,0 +1,179 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
+load("//pw_build:compatibility.bzl", "boolean_constraint_value", "incompatible_with_mcu")
+load("//pw_build:merge_flags.bzl", "flags_from_dict")
+load("//pw_build:pw_linker_script.bzl", "pw_linker_script")
+load("//targets/stm32_nucleo_f103:transition.bzl", "STM32_NUCLEO_F103_FLAGS")
+
+package(default_visibility = ["//visibility:public"])
+
+licenses(["notice"])
+
+boolean_constraint_value(name = "compatible")
+
+constraint_value(
+    name = "freertos_config_cv",
+    constraint_setting = "@freertos//:freertos_config_setting",
+)
+
+platform(
+    name = "stm32_nucleo_f103",
+    constraint_values = [
+        ":compatible",
+        ":freertos_config_cv",
+        "//pw_build/constraints/arm:cortex-m3",
+        "//pw_build/constraints/rtos:freertos",
+        "//pw_build/constraints/rust:no_std",
+        "//pw_interrupt_cortex_m:compatible",
+        "//pw_malloc:best_fit_backend",
+        "@freertos//:disable_task_statics",
+        "@freertos//:malloc_heap_4",
+        "@freertos//:port_ARM_CM3",
+        "@platforms//cpu:armv7-m",
+        "@platforms//os:none",
+    ],
+    flags = flags_from_dict(STM32_NUCLEO_F103_FLAGS),
+)
+
+cc_library(
+    name = "pigweed_module_config",
+    defines = [
+        "PW_ASSERT_BASIC_ACTION=PW_ASSERT_BASIC_ACTION_EXIT",
+        "PW_THREAD_FREERTOS_CONFIG_JOINING_ENABLED=1",
+        # 384 words (1,536 B) covers worker-thread bodies (~608 B) plus
+        # SimplePrintingEventHandler::WriteLine (~440 B, or ~1,136 B with float
+        # printf) while keeping sizeof(TestThreadContext) (~1,704 B) small
+        # enough for tests that stack-allocate two contexts on TestTask.
+        "PW_THREAD_FREERTOS_CONFIG_TEST_THREAD_STACK_SIZE_WORDS=384",
+        # 3,072 B fits TEST_F fixtures that embed a TestThreadContext (e.g.
+        # TrickleTest in rpc_log_drain_test at ~1,999 B).
+        "PW_UNIT_TEST_CONFIG_MEMORY_POOL_SIZE=3072",
+    ],
+)
+
+cc_library(
+    name = "freertos_config",
+    hdrs = [
+        "config/FreeRTOSConfig.h",
+    ],
+    strip_include_prefix = "config",
+    target_compatible_with = [":freertos_config_cv"],
+    deps = [
+        "//third_party/freertos:config_assert",
+    ],
+)
+
+cc_library(
+    name = "board_headers",
+    hdrs = [
+        "public/stm32_nucleo_f103/init.h",
+    ],
+    strip_include_prefix = "public",
+)
+
+cc_library(
+    name = "sys_io",
+    srcs = [
+        "sys_io.cc",
+    ],
+    implementation_deps = [
+        ":board_headers",
+        "//pw_span",
+        "//pw_status",
+        "//pw_sys_io:default_putget_bytes",
+    ],
+    target_compatible_with = [":compatible"],
+    deps = [
+        "//pw_sys_io:pw_sys_io.facade",
+    ],
+)
+
+pw_linker_script(
+    name = "linker_script",
+    defines = [
+        "PW_BOOT_VECTOR_TABLE_BEGIN=0x08000000",
+        "PW_BOOT_VECTOR_TABLE_SIZE=512",
+        "PW_BOOT_FLASH_BEGIN=0x08000200",
+        "PW_BOOT_FLASH_SIZE=130560",
+        "PW_BOOT_RAM_BEGIN=0x20000000",
+        "PW_BOOT_RAM_SIZE=20K",
+        "PW_BOOT_HEAP_SIZE=3K",
+        "PW_BOOT_MIN_STACK_SIZE=1K",
+    ],
+    linker_script = "//pw_boot_cortex_m:basic_cortex_m.ld",
+)
+
+cc_library(
+    name = "pre_init",
+    srcs = [
+        "boot.cc",
+        "vector_table.cc",
+    ],
+    defines = [
+        "PW_MALLOC_ACTIVE=1",
+    ],
+    implementation_deps = [
+        ":board_headers",
+        ":sys_io",
+        "//pw_boot",
+        "//pw_boot_cortex_m",
+        "//pw_malloc",
+        "//pw_memory:busy_wait_forever",
+        "//pw_preprocessor",
+    ],
+    target_compatible_with = [":compatible"],
+    deps = [
+        ":linker_script",
+    ],
+    alwayslink = 1,
+)
+
+cc_library(
+    name = "extra_platform_libs",
+    target_compatible_with = [":compatible"],
+    deps = [
+        ":pre_init",
+        "//pw_toolchain/arm_gcc:arm_none_eabi_gcc_support",
+        "//third_party/freertos:support",
+    ],
+)
+
+cc_library(
+    name = "unit_test_main",
+    testonly = True,
+    srcs = [
+        "unit_test_main.cc",
+    ],
+    target_compatible_with = [":compatible"],
+    deps = [
+        "//pw_boot",
+        "//pw_span",
+        "//pw_sys_io",
+        "//pw_unit_test",
+        "//pw_unit_test:simple_printing_event_handler",
+        "@freertos",
+    ],
+    alwayslink = 1,
+)
+
+sphinx_docs_library(
+    name = "docs",
+    srcs = [
+        "target_docs.rst",
+    ],
+    target_compatible_with = incompatible_with_mcu(),
+)

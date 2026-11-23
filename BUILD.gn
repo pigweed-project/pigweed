@@ -30,6 +30,7 @@ import("$dir_pw_toolchain/non_c_toolchain.gni")
 import("$dir_pw_trace/backend.gni")
 import("$dir_pw_unit_test/test.gni")
 import("$pw_external_ambiq/ambiq.gni")
+import("$pw_external_freertos/freertos.gni")
 import("$pw_external_mcuxpresso/mcuxpresso.gni")
 
 # Main build file for upstream Pigweed.
@@ -101,6 +102,7 @@ group("default") {
     ":python.lint",
     ":python.tests",
     ":static_analysis",
+    ":stm32_nucleo_f103",
     ":stm32f429i",
     ":warn_if_modules_out_of_date",
   ]
@@ -151,6 +153,11 @@ group("extended_default") {
   # Requires setting pw_third_party_mcuxpresso_SDK.
   if (pw_third_party_mcuxpresso_SDK != "") {
     deps += [ ":mimxrt595" ]
+  }
+
+  # Requires setting dir_pw_third_party_freertos.
+  if (dir_pw_third_party_freertos != "") {
+    deps += [ ":stm32_nucleo_f103_freertos" ]
   }
 }
 
@@ -290,6 +297,28 @@ if (dir_pw_third_party_ambiq_SDK != "") {
 
 _build_pigweed_default_at_all_optimization_levels("stm32f429i") {
   toolchain_prefix = "$dir_pigweed/targets/stm32f429i_disc1:stm32f429i_disc1_"
+}
+
+foreach(optimization, pw_C_OPTIMIZATION_LEVELS) {
+  group("stm32_nucleo_f103_$optimization") {
+    deps = [ "$dir_pigweed/targets/stm32_nucleo_f103:target_default($dir_pigweed/targets/stm32_nucleo_f103:stm32_nucleo_f103_$optimization)" ]
+  }
+}
+
+group("stm32_nucleo_f103") {
+  deps = [ "$dir_pigweed/targets/stm32_nucleo_f103:target_default($dir_pigweed/targets/stm32_nucleo_f103:stm32_nucleo_f103_size_optimized)" ]
+}
+
+if (dir_pw_third_party_freertos != "") {
+  foreach(optimization, pw_C_OPTIMIZATION_LEVELS) {
+    group("stm32_nucleo_f103_freertos_$optimization") {
+      deps = [ "$dir_pigweed/targets/stm32_nucleo_f103:target_default($dir_pigweed/targets/stm32_nucleo_f103:stm32_nucleo_f103_freertos_$optimization)" ]
+    }
+  }
+
+  group("stm32_nucleo_f103_freertos") {
+    deps = [ "$dir_pigweed/targets/stm32_nucleo_f103:target_default($dir_pigweed/targets/stm32_nucleo_f103:stm32_nucleo_f103_freertos_size_optimized)" ]
+  }
 }
 
 if (pw_arduino_build_CORE_PATH != "") {

@@ -1,0 +1,171 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+import("//build_overrides/pigweed.gni")
+
+import("$dir_pw_build/error.gni")
+import("$dir_pw_build/target_types.gni")
+import("$dir_pw_malloc/backend.gni")
+import("$dir_pw_toolchain/generate_toolchain.gni")
+import("$dir_pw_unit_test/test.gni")
+import("$pw_external_freertos/freertos.gni")
+import("target_toolchains.gni")
+
+generate_toolchains("target_toolchains") {
+  toolchains = pw_target_toolchain_stm32_nucleo_f103_list
+}
+
+config("public_include_path") {
+  include_dirs = [ "public" ]
+  visibility = [ ":*" ]
+}
+
+config("config_includes") {
+  include_dirs = [ "config" ]
+  visibility = [ ":*" ]
+}
+
+config("disable_freertos_warnings") {
+  cflags = [
+    "-Wno-cast-qual",
+    "-Wno-redundant-decls",
+    "-Wno-unused-parameter",
+  ]
+  visibility = [ ":*" ]
+}
+
+config("module_config_defines") {
+  defines = [
+    "PW_ASSERT_BASIC_ACTION=PW_ASSERT_BASIC_ACTION_EXIT",
+    "PW_THREAD_FREERTOS_CONFIG_JOINING_ENABLED=1",
+
+    # 384 words (1,536 B) covers worker-thread bodies (~608 B) plus
+    # SimplePrintingEventHandler::WriteLine (~440 B, or ~1,136 B with float
+    # printf) while keeping sizeof(TestThreadContext) (~1,704 B) small enough
+    # for tests that stack-allocate two contexts on TestTask.
+    "PW_THREAD_FREERTOS_CONFIG_TEST_THREAD_STACK_SIZE_WORDS=384",
+
+    # 3,072 B fits TEST_F fixtures that embed a TestThreadContext (e.g.
+    # TrickleTest in rpc_log_drain_test at ~1,999 B).
+    "PW_UNIT_TEST_CONFIG_MEMORY_POOL_SIZE=3072",
+  ]
+  visibility = [ ":*" ]
+}
+
+config("pw_malloc_active") {
+  if (pw_malloc_BACKEND != "") {
+    defines = [ "PW_MALLOC_ACTIVE=1" ]
+  }
+  visibility = [ ":*" ]
+}
+
+if (current_toolchain != default_toolchain) {
+  pw_source_set("pigweed_module_config") {
+    public_configs = [ ":module_config_defines" ]
+  }
+
+  pw_source_set("board_headers") {
+    public_configs = [ ":public_include_path" ]
+    public = [ "public/stm32_nucleo_f103/init.h" ]
+  }
+
+  pw_source_set("sys_io") {
+    deps = [
+      ":board_headers",
+      "$dir_pw_span",
+      "$dir_pw_status",
+      "$dir_pw_sys_io:default_putget_bytes",
+      "$dir_pw_sys_io:facade",
+    ]
+    sources = [ "sys_io.cc" ]
+  }
+
+  pw_source_set("pre_init") {
+    configs = [ ":pw_malloc_active" ]
+    deps = [
+      ":board_headers",
+      ":sys_io",
+      "$dir_pw_boot",
+      "$dir_pw_boot_cortex_m",
+      "$dir_pw_malloc",
+      "$dir_pw_memory:busy_wait_forever",
+      "$dir_pw_preprocessor",
+    ]
+    sources = [
+      "boot.cc",
+      "vector_table.cc",
+    ]
+  }
+
+  pw_source_set("freertos_config") {
+    public_configs = [ ":config_includes" ]
+    public_deps = [ "$pw_external_freertos:config_assert" ]
+    public = [ "config/FreeRTOSConfig.h" ]
+  }
+
+  if (dir_pw_third_party_freertos != "" && pw_third_party_freertos_PORT != "") {
+    pw_source_set("freertos_heap") {
+      remove_configs = [ "$dir_pw_build:extra_strict_warnings" ]
+      configs = [ ":disable_freertos_warnings" ]
+      deps = [ "$pw_external_freertos" ]
+      sources = [ "$dir_pw_third_party_freertos/portable/MemMang/heap_4.c" ]
+    }
+
+    pw_source_set("unit_test_main") {
+      testonly = pw_unit_test_TESTONLY
+      deps = [
+        "$dir_pw_boot",
+        "$dir_pw_span",
+        "$dir_pw_sys_io",
+        "$dir_pw_unit_test",
+        "$dir_pw_unit_test:simple_printing_event_handler",
+        "$pw_external_freertos",
+      ]
+      sources = [ "unit_test_main.cc" ]
+    }
+  } else if (pw_third_party_freertos_PORT != "") {
+    pw_error("freertos_heap") {
+      message_lines = [
+        "FreeRTOS is required by $current_toolchain, but dir_pw_third_party_freertos is not set.",
+        "Set dir_pw_third_party_freertos to a FreeRTOS checkout path in GN args.",
+      ]
+    }
+
+    pw_error("unit_test_main") {
+      message_lines = [
+        "FreeRTOS is required by $current_toolchain, but dir_pw_third_party_freertos is not set.",
+        "Set dir_pw_third_party_freertos to a FreeRTOS checkout path in GN args.",
+      ]
+    }
+  }
+
+  # Core unit tests that fit within the STM32F103RBT6's 128 KB Flash and 20 KB
+  # SRAM budget across all optimization levels.
+  pw_test_group("tests") {
+    group_deps = [
+      "$dir_pw_bytes:tests",
+      "$dir_pw_preprocessor:tests",
+      "$dir_pw_span:tests",
+      "$dir_pw_status:tests",
+    ]
+  }
+
+  group("target_default") {
+    if (pw_unit_test_AUTOMATIC_RUNNER == "") {
+      deps = [ ":tests" ]
+    } else {
+      deps = [ ":tests.run" ]
+    }
+  }
+}

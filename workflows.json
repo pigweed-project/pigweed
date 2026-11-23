@@ -392,6 +392,30 @@
       ]
     },
     {
+      "name": "build_stm32_nucleo_f103_tests",
+      "build_config": {
+        "name": "stm32_nucleo_f103_tests",
+        "description": "STM32 Nucleo-F103RB FreeRTOS build",
+        "build_type": "bazel",
+        "args": [
+          "--config=stm32_nucleo_f103"
+        ],
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "no_test": true
+        }
+      },
+      "targets": [
+        "//targets/stm32_nucleo_f103/...",
+        "//pw_bytes/...",
+        "//pw_preprocessor/...",
+        "//pw_span/...",
+        "//pw_status/...",
+        "//pw_thread:test_thread_context_facade_test",
+        "//pw_thread_freertos:dynamic_thread_backend_test"
+      ]
+    },
+    {
       "name": "jni",
       "build_config": {
         "name": "jni_config",
@@ -1063,6 +1087,7 @@
         "build_lm3s6965evb_cpp17_tests",
         "build_stm32f429i_baremetal_tests",
         "build_stm32f429i_freertos_tests",
+        "build_stm32_nucleo_f103_tests",
         "build_rp2040_tests",
         "build_rp2350_tests",
         "pw_rp2350_freertos",

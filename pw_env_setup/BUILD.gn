@@ -99,6 +99,7 @@ pw_python_group("pigweed_target_support_packages") {
   python_deps = [
     "$dir_pigweed/targets/lm3s6965evb_qemu/py",
     "$dir_pigweed/targets/rp2040/py",
+    "$dir_pigweed/targets/stm32_nucleo_f103/py",
     "$dir_pigweed/targets/stm32f429i_disc1/py",
   ]
 }

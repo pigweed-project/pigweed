@@ -3,6 +3,7 @@
     "arm.json",
     "buildifier.json",
     "pigweed.json",
+    "probe_rs.json",
     "clang.json",
     "python.json"
   ]

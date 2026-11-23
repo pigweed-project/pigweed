@@ -165,6 +165,8 @@ def _gn_host_build_check_targets() -> Sequence[str]:
 
 def _gn_stm_build_check_targets() -> Sequence[str]:
     return [
+        *_at_all_optimization_levels('stm32_nucleo_f103'),
+        *_at_all_optimization_levels('stm32_nucleo_f103_freertos'),
         *_at_all_optimization_levels('stm32f429i'),
     ]
 
@@ -241,11 +243,20 @@ gn_host_build_check = PigweedGnGenNinja(
     ninja_targets=_gn_host_build_check_targets(),
 )
 
+
+def _freertos_gn_arg(ctx: PresubmitContext) -> str:
+    return 'get_path_info("{}", "abspath")'.format(
+        (ctx.package_root / 'freertos').as_posix()
+    )
+
+
 gn_stm_build_check = PigweedGnGenNinja(
     name='gn_stm_build_check',
-    doc='Run most STM32F429I checks.',
+    doc='Run most STM32 checks.',
     path_filter=upstream_checks.BUILD_FILE_FILTER,
+    packages=('freertos',),
     gn_args=dict(
+        dir_pw_third_party_freertos=_freertos_gn_arg,
         pw_C_OPTIMIZATION_LEVELS=_OPTIMIZATION_LEVELS,
         pw_BUILD_BROKEN_GROUPS=True,  # Enable to fully test the GN build
     ),
@@ -256,7 +267,9 @@ gn_main_build_check = PigweedGnGenNinja(
     name='gn_main_build_check',
     doc='Run most host.',
     path_filter=upstream_checks.BUILD_FILE_FILTER,
+    packages=('freertos',),
     gn_args=dict(
+        dir_pw_third_party_freertos=_freertos_gn_arg,
         pw_C_OPTIMIZATION_LEVELS=_OPTIMIZATION_LEVELS,
         pw_BUILD_BROKEN_GROUPS=True,  # Enable to fully test the GN build
     ),
@@ -278,8 +291,9 @@ gn_combined_build_check = PigweedGnGenNinja(
     name='gn_combined_build_check',
     doc='Run most host and device (QEMU) tests.',
     path_filter=upstream_checks.BUILD_FILE_FILTER,
-    packages=('emboss',),
+    packages=('emboss', 'freertos'),
     gn_args=dict(
+        dir_pw_third_party_freertos=_freertos_gn_arg,
         pw_C_OPTIMIZATION_LEVELS=_OPTIMIZATION_LEVELS,
         pw_BUILD_BROKEN_GROUPS=True,  # Enable to fully test the GN build
     ),
@@ -346,7 +360,11 @@ coverage = PigweedGnGenNinja(
 @filter_paths(file_filter=upstream_checks.BUILD_FILE_FILTER)
 def gn_arm_build(ctx: PresubmitContext):
     build.gn_gen(ctx, pw_C_OPTIMIZATION_LEVELS=_OPTIMIZATION_LEVELS)
-    build.ninja(ctx, *_at_all_optimization_levels('stm32f429i'))
+    build.ninja(
+        ctx,
+        *_at_all_optimization_levels('stm32_nucleo_f103'),
+        *_at_all_optimization_levels('stm32f429i'),
+    )
     build.gn_check(ctx)
 
 
@@ -1023,6 +1041,21 @@ def bazel_build(ctx: PresubmitContext) -> None:
         'build',
         '--config=stm32f429i_baremetal',
         '//...',
+    )
+
+    # Build curated targets and tests for the STM32 Nucleo-F103RB FreeRTOS
+    # platform (matching the 128 KB Flash / 20 KB SRAM budget).
+    build_bazel(
+        ctx,
+        'build',
+        '--config=stm32_nucleo_f103',
+        '//targets/stm32_nucleo_f103/...',
+        '//pw_bytes/...',
+        '//pw_preprocessor/...',
+        '//pw_span/...',
+        '//pw_status/...',
+        '//pw_thread:test_thread_context_facade_test',
+        '//pw_thread_freertos:dynamic_thread_backend_test',
     )
 
     # Build the fuzztest example.

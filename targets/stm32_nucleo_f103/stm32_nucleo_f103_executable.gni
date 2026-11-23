@@ -1,0 +1,41 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+import("//build_overrides/pigweed.gni")
+
+import("$dir_pw_malloc/backend.gni")
+import("$pw_external_freertos/freertos.gni")
+
+# Executable wrapper that links STM32 Nucleo-F103RB startup code.
+template("stm32_nucleo_f103_executable") {
+  target("executable", target_name) {
+    forward_variables_from(invoker, "*")
+    if (!defined(deps)) {
+      deps = []
+    }
+    deps += [ "$dir_pigweed/targets/stm32_nucleo_f103:pre_init" ]
+    if (pw_third_party_freertos_PORT != "") {
+      deps += [ "$dir_pigweed/targets/stm32_nucleo_f103:freertos_heap" ]
+      if (dir_pw_third_party_freertos != "") {
+        deps += [ "$pw_external_freertos:support" ]
+      }
+    }
+    if (pw_malloc_BACKEND != "") {
+      if (!defined(configs)) {
+        configs = []
+      }
+      configs += [ "$dir_pw_malloc:pw_malloc_wrapper_config" ]
+    }
+  }
+}

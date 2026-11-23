@@ -378,4 +378,5 @@ The following table lists all modules related to STMicroelectronics STM32FXXX.
    :maxdepth: 1
    :hidden:
 
+   ../stm32_nucleo_f103/target_docs
    ../stm32f429i_disc1_stm32cube/target_docs
