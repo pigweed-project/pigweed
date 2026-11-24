@@ -663,7 +663,7 @@ class Call : public IntrusiveForwardList<Call>::Item, private rpc::Writer {
       static_assert(sizeof(UniquePtr) <= kMaxDynamicCallPointerSize,
                     "DynamicCallPtr supports smart pointers up to the size of "
                     "the pointer returned by PW_RPC_MAKE_UNIQUE_PTR");
-      base->deferred_deleter_ = [owned_call = std::move(call)]{};
+      base->deferred_deleter_ = [owned_call = std::move(call)] {};
     }
   }
 
