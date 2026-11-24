@@ -50,7 +50,7 @@
 //!
 //! let mut buffer = [0u8; 1024];
 //! let len = tokenize_core_fmt_to_buffer!(&mut buffer, "The answer is {}", 42 as i32)?;
-//! assert_eq!(len, 5);
+//! assert_eq!(len, 5);  // 4-byte token + 1-byte value
 //! # Ok::<(), pw_status::Error>(())
 //! ```
 #![cfg_attr(not(feature = "std"), no_std)]
@@ -431,7 +431,8 @@ pub trait MessageWriter {
 }
 
 #[cfg(test)]
-// Untyped prints code rely on as casts to annotate type information.
+// The formatting macros allow extra cast expressions so the macro can encode
+// type information in the format string.
 #[allow(clippy::unnecessary_cast)]
 #[allow(clippy::literal_string_with_formatting_args)]
 mod tests {
@@ -671,7 +672,7 @@ mod tests {
     }
 
     #[test]
-    fn test_untyped_format() {
+    fn test_dynamic_format_with_as_cast() {
         tokenize_test!(
             &[0x63, 0x58, 0x5f, 0x8f, 0x2], // expected buffer
             64,                             // buffer size

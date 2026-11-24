@@ -16,7 +16,7 @@
 use pw_format::{macros::FormatParams, Style};
 
 // Used to record calls into the test generator from `generator_test_macro!`.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TestGeneratorOps {
     Finalize,
     StringFragment(String),
@@ -28,18 +28,18 @@ pub enum TestGeneratorOps {
     },
     StringConversion(String),
     CharConversion(String),
-    UntypedConversion(String),
+    DynamicConversion(String),
 }
 
 // Used to record calls into the test generator from `printf_generator_test_macro!` and friends.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum PrintfTestGeneratorOps {
     Finalize,
     StringFragment(String),
     IntegerConversion { ty: String, arg: String },
     StringConversion(String),
     CharConversion(String),
-    UntypedConversion(String),
+    DynamicConversion(String),
 }
 
 #[cfg(test)]
@@ -82,7 +82,7 @@ mod tests {
                 TestGeneratorOps::StringFragment(" ".to_string()),
                 TestGeneratorOps::CharConversion("'c'".to_string()),
                 TestGeneratorOps::StringFragment(" ".to_string()),
-                TestGeneratorOps::UntypedConversion("1".to_string()),
+                TestGeneratorOps::DynamicConversion("1".to_string()),
                 TestGeneratorOps::Finalize
             ]
         );
@@ -121,9 +121,9 @@ mod tests {
                     PrintfTestGeneratorOps::StringFragment(" ".to_string()),
                     PrintfTestGeneratorOps::CharConversion("'c'".to_string()),
                     PrintfTestGeneratorOps::StringFragment(" ".to_string()),
-                    PrintfTestGeneratorOps::UntypedConversion("1 as i32".to_string()),
+                    PrintfTestGeneratorOps::DynamicConversion("1 as i32".to_string()),
                     PrintfTestGeneratorOps::StringFragment(" ".to_string()),
-                    PrintfTestGeneratorOps::UntypedConversion("\"string\" as & str".to_string()),
+                    PrintfTestGeneratorOps::DynamicConversion("\"string\" as & str".to_string()),
                     PrintfTestGeneratorOps::Finalize
                 ]
             )
@@ -302,7 +302,7 @@ mod tests {
                     PrintfTestGeneratorOps::StringFragment(" ".to_string()),
                     PrintfTestGeneratorOps::CharConversion("'c'".to_string()),
                     PrintfTestGeneratorOps::StringFragment(" ".to_string()),
-                    PrintfTestGeneratorOps::UntypedConversion("1".to_string()),
+                    PrintfTestGeneratorOps::DynamicConversion("1".to_string()),
                     PrintfTestGeneratorOps::Finalize
                 ]
             )

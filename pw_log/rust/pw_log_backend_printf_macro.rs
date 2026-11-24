@@ -15,8 +15,9 @@
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use pw_format::macros::{
-    generate_printf, Arg, CoreFmtFormatStringParser, FormatAndArgsFlavor, FormatStringParser,
-    PrintfFormatMacroGenerator, PrintfFormatStringFragment, PrintfFormatStringParser, Result,
+    generate_printf, Arg, CoreFmtFormatStringParser, Error, FormatAndArgsFlavor,
+    FormatStringParser, PrintfFormatMacroGenerator, PrintfFormatStringFragment,
+    PrintfFormatStringParser, Result,
 };
 use quote::{quote, ToTokens};
 use syn::parse::{Parse, ParseStream};
@@ -125,7 +126,7 @@ impl PrintfFormatMacroGenerator for LogfGenerator<'_> {
         Ok(None)
     }
 
-    fn untyped_conversion(&mut self, expression: Arg) -> Result<()> {
+    fn dynamic_conversion(&mut self, expression: Arg) -> Result<()> {
         match &expression {
             Arg::ExprCast(cast) => {
                 let ty = &cast.ty;
@@ -134,8 +135,8 @@ impl PrintfFormatMacroGenerator for LogfGenerator<'_> {
                 });
             }
             Arg::Expr(_) => {
-                return Err(pw_format::macros::Error::new(&format!(
-                    "Expected argument to untyped format (%v) to be a cast expression (e.g. x as i32), but found {}.",
+                return Err(Error::new(format!(
+                    "Expected argument to dynamic format (%v) to be a cast expression (e.g. x as i32), but found {}.",
                     expression.to_token_stream()
                 )));
             }

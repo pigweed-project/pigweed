@@ -33,7 +33,7 @@ fn std_fmt_examples_parse_correctly() {
                     min_field_width: MinFieldWidth::None,
                     precision: Precision::None,
                     length: None,
-                    primitive: Primitive::Untyped,
+                    primitive: Primitive::Dynamic,
                     style: Style::Debug,
                 }),
                 FormatFragment::Literal("!".to_string()),
@@ -52,7 +52,7 @@ fn std_fmt_examples_parse_correctly() {
                 min_field_width: MinFieldWidth::Fixed(4),
                 precision: Precision::None,
                 length: None,
-                primitive: Primitive::Untyped,
+                primitive: Primitive::Dynamic,
                 style: Style::None,
             })]
         })
@@ -69,7 +69,7 @@ fn std_fmt_examples_parse_correctly() {
                 min_field_width: MinFieldWidth::None,
                 precision: Precision::None,
                 length: None,
-                primitive: Primitive::Untyped,
+                primitive: Primitive::Dynamic,
                 style: Style::Debug,
             })]
         })
@@ -86,7 +86,7 @@ fn std_fmt_examples_parse_correctly() {
                 min_field_width: MinFieldWidth::None,
                 precision: Precision::None,
                 length: None,
-                primitive: Primitive::Untyped,
+                primitive: Primitive::Dynamic,
                 style: Style::None,
             })]
         })
@@ -103,7 +103,7 @@ fn std_fmt_examples_parse_correctly() {
                 min_field_width: MinFieldWidth::None,
                 precision: Precision::None,
                 length: None,
-                primitive: Primitive::Untyped,
+                primitive: Primitive::Dynamic,
                 style: Style::None,
             })]
         })
@@ -120,7 +120,7 @@ fn std_fmt_examples_parse_correctly() {
                 min_field_width: MinFieldWidth::None,
                 precision: Precision::None,
                 length: None,
-                primitive: Primitive::Untyped,
+                primitive: Primitive::Dynamic,
                 style: Style::None,
             })]
         })
@@ -137,7 +137,7 @@ fn std_fmt_examples_parse_correctly() {
                 min_field_width: MinFieldWidth::Fixed(5),
                 precision: Precision::None,
                 length: None,
-                primitive: Primitive::Untyped,
+                primitive: Primitive::Dynamic,
                 style: Style::None,
             })]
         })
@@ -154,7 +154,7 @@ fn std_fmt_examples_parse_correctly() {
                 min_field_width: MinFieldWidth::Fixed(5),
                 precision: Precision::None,
                 length: None,
-                primitive: Primitive::Untyped,
+                primitive: Primitive::Dynamic,
                 style: Style::None,
             })]
         })
@@ -171,7 +171,7 @@ fn std_fmt_examples_parse_correctly() {
                 min_field_width: MinFieldWidth::Fixed(5),
                 precision: Precision::None,
                 length: None,
-                primitive: Primitive::Untyped,
+                primitive: Primitive::Dynamic,
                 style: Style::None,
             })]
         })
@@ -188,7 +188,7 @@ fn std_fmt_examples_parse_correctly() {
                 min_field_width: MinFieldWidth::Fixed(5),
                 precision: Precision::None,
                 length: None,
-                primitive: Primitive::Untyped,
+                primitive: Primitive::Dynamic,
                 style: Style::None,
             })]
         })
@@ -205,7 +205,7 @@ fn std_fmt_examples_parse_correctly() {
                 min_field_width: MinFieldWidth::None,
                 precision: Precision::None,
                 length: None,
-                primitive: Primitive::Untyped,
+                primitive: Primitive::Dynamic,
                 style: Style::None,
             })]
         })
@@ -222,7 +222,7 @@ fn std_fmt_examples_parse_correctly() {
                 min_field_width: MinFieldWidth::None,
                 precision: Precision::None,
                 length: None,
-                primitive: Primitive::Untyped,
+                primitive: Primitive::Dynamic,
                 style: Style::Hex,
             })]
         })
@@ -241,7 +241,7 @@ fn std_fmt_examples_parse_correctly() {
                 min_field_width: MinFieldWidth::Fixed(10),
                 precision: Precision::None,
                 length: None,
-                primitive: Primitive::Untyped,
+                primitive: Primitive::Dynamic,
                 style: Style::Hex,
             })]
         })
@@ -258,7 +258,7 @@ fn std_fmt_examples_parse_correctly() {
                 min_field_width: MinFieldWidth::None,
                 precision: Precision::Fixed(5),
                 length: None,
-                primitive: Primitive::Untyped,
+                primitive: Primitive::Dynamic,
                 style: Style::None,
             })]
         })
@@ -275,7 +275,7 @@ fn std_fmt_examples_parse_correctly() {
                 min_field_width: MinFieldWidth::None,
                 precision: Precision::Variable,
                 length: None,
-                primitive: Primitive::Untyped,
+                primitive: Primitive::Dynamic,
                 style: Style::None,
             })]
         })
@@ -292,7 +292,7 @@ fn std_fmt_examples_parse_correctly() {
                 min_field_width: MinFieldWidth::None,
                 precision: Precision::Variable,
                 length: None,
-                primitive: Primitive::Untyped,
+                primitive: Primitive::Dynamic,
                 style: Style::None,
             })]
         })
@@ -309,7 +309,7 @@ fn std_fmt_examples_parse_correctly() {
                 min_field_width: MinFieldWidth::None,
                 precision: Precision::Variable,
                 length: None,
-                primitive: Primitive::Untyped,
+                primitive: Primitive::Dynamic,
                 style: Style::None,
             })]
         })
@@ -326,7 +326,7 @@ fn std_fmt_examples_parse_correctly() {
                 min_field_width: MinFieldWidth::Fixed(8),
                 precision: Precision::Variable,
                 length: None,
-                primitive: Primitive::Untyped,
+                primitive: Primitive::Dynamic,
                 style: Style::None,
             })]
         })
@@ -346,7 +346,7 @@ fn conversions_allow_trailing_whitespace() {
                 min_field_width: MinFieldWidth::Fixed(8),
                 precision: Precision::Variable,
                 length: None,
-                primitive: Primitive::Untyped,
+                primitive: Primitive::Dynamic,
                 style: Style::None,
             })]
         })
@@ -368,7 +368,7 @@ fn escaped_curly_braces_parse_correctly() {
                     min_field_width: MinFieldWidth::None,
                     precision: Precision::None,
                     length: None,
-                    primitive: Primitive::Untyped,
+                    primitive: Primitive::Dynamic,
                     style: Style::Debug,
                 }),
                 FormatFragment::Literal("}!".to_string()),

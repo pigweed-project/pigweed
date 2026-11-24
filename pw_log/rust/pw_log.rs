@@ -35,9 +35,10 @@
 //! [`core::fmt`]/`println!()` style strings partially supported
 //! ([b/311232607](https://issues.pigweed.dev/issues/311232607)).
 //!
-//! Currently, when using a `stable` toolchain, "untyped" arguments (i.e.
-//! `{}` style) need to be in the form of an as-cast.  Users with nightly
-//! toolchains can enable the `nightly_tait` feature to remove this restriction.
+//! Currently, when using a `stable` toolchain, dynamically typed arguments (i.e.
+//! `{}` style) without type-level format specifiers use `as` casts when needed.
+//! Users with nightly toolchains can enable the `nightly_tait` feature to
+//! remove this restriction.
 //!
 //! TODO: <pwbug.dev/311266298> - Document `pw_log`'s backend API.
 //!

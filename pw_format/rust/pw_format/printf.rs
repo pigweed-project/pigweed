@@ -47,7 +47,7 @@ fn map_specifier(value: char) -> Result<(Primitive, Style), String> {
         'c' => Ok((Primitive::Character, Style::None)),
         's' => Ok((Primitive::String, Style::None)),
         'p' => Ok((Primitive::Pointer, Style::Pointer)),
-        'v' => Ok((Primitive::Untyped, Style::None)),
+        'v' => Ok((Primitive::Dynamic, Style::None)),
         _ => Err(format!("Unsupported format specifier '{value}'")),
     }
 }
@@ -470,7 +470,7 @@ mod tests {
             specifier("p"),
             Ok(("", (Primitive::Pointer, Style::Pointer)))
         );
-        assert_eq!(specifier("v"), Ok(("", (Primitive::Untyped, Style::None))));
+        assert_eq!(specifier("v"), Ok(("", (Primitive::Dynamic, Style::None))));
 
         assert_eq!(
             specifier("z"),

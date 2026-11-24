@@ -17,8 +17,8 @@
 //! The contents of this crate are primarily used by code which is generated
 //! by macros using `pw_format`.
 
-/// Trait used to produce printf style format strings for untyped format
-/// specifiers.
+/// Trait used to produce printf style format strings for types determined at
+/// compile time.
 ///
 /// The const [`PrintfFormatter::FORMAT_ARG`] is used to provide the printf
 /// format specifier (i.e. the `d` in `%02d`) for a given type in Rust.  This
@@ -29,8 +29,8 @@ pub trait PrintfFormatter {
     const FORMAT_ARG: &'static str;
 }
 
-/// Trait used to produce printf style format strings for hex formatted untyped
-/// format specifiers.
+/// Trait used to produce printf style format strings for hex formatted types
+/// when determined at compile time.
 ///
 /// The const [`PrintfHexFormatter::FORMAT_ARG`] is used to provide the printf
 /// format specifier (i.e. the `x` in `%02x`) for a given type in Rust.  This
@@ -42,10 +42,10 @@ pub trait PrintfHexFormatter {
 }
 
 /// Trait used to produce printf style format strings for upper case hex
-/// formatted untyped format specifiers.
+/// formatted types when determined at compile time.
 ///
 /// The const [`PrintfUpperHexFormatter::FORMAT_ARG`] is used to provide the
-/// printf format specifier (i.e. the `x` in `%02x`) for a given type in Rust.
+/// printf format specifier (i.e. the `X` in `%02X`) for a given type in Rust.
 /// This must be const so that it can be used to build static const format
 /// strings at compile time.
 pub trait PrintfUpperHexFormatter {

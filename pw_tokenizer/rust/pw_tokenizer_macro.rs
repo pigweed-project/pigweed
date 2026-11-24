@@ -199,7 +199,7 @@ impl PrintfFormatMacroGenerator for TokenizeToBufferGenerator<'_> {
         Ok(None)
     }
 
-    fn untyped_conversion(&mut self, expression: Arg) -> Result<()> {
+    fn dynamic_conversion(&mut self, expression: Arg) -> Result<()> {
         self.encoding_fragments.push(quote! {
           Argument::from(#expression)
         });
@@ -311,14 +311,11 @@ impl PrintfFormatMacroGenerator for TokenizeToWriterGenerator<'_> {
         } else {
             Ok(quote! {
                 {
+                // The formatting macros allow extra cast expressions so the
+                // macro can encode type information in the format string.
                 #![allow(clippy::unnecessary_cast)]
                 use __pw_tokenizer_crate::internal::Argument;
                 let args = &[#(#encoding_fragments),*];
-                // A limitation of the tokenizer macro is that untyped formats
-                // are not supported, so instead of ("{}", x), the following
-                // ("{}", x as type) must be used  instead.  This
-                // can lead to clippy errors about unnecessary casts, so ensure
-                // it's disabled inside this macro.
                 __pw_tokenizer_crate::internal::tokenize_to_default_writer::<#writer_type>(
                 #token,
                 args
@@ -355,7 +352,7 @@ impl PrintfFormatMacroGenerator for TokenizeToWriterGenerator<'_> {
         Ok(None)
     }
 
-    fn untyped_conversion(&mut self, expression: Arg) -> Result<()> {
+    fn dynamic_conversion(&mut self, expression: Arg) -> Result<()> {
         self.encoding_fragments.push(quote! {
           Argument::from(#expression)
         });

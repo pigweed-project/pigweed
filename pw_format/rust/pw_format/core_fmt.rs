@@ -169,7 +169,7 @@ fn format_spec(input: &str) -> IResult<&str, ConversionSpec> {
             min_field_width: width.unwrap_or(MinFieldWidth::None),
             precision,
             length: None,
-            primitive: Primitive::Untyped, // All core::fmt primitives are untyped.
+            primitive: Primitive::Dynamic, // All core::fmt primitives are dynamically typed.
             style,
         },
     ))

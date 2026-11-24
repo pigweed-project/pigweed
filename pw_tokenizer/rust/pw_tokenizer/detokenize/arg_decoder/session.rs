@@ -340,7 +340,7 @@ impl<'sess, 'data, 'dec> DecodingSession<'sess, 'data, 'dec> {
             Primitive::String => decode_string(self.cursor).map(Arg::Str),
             Primitive::Character => decode_char(self.cursor).map(Arg::Char),
             Primitive::Pointer => decode_pointer(self.cursor).map(Arg::Ptr),
-            Primitive::Untyped => Err(TokenizerError::DecodeError),
+            Primitive::Dynamic => Err(TokenizerError::DecodeError),
         };
         self.record_decoded_arg(decoded);
     }

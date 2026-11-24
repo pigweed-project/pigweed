@@ -95,10 +95,10 @@ impl FormatMacroGenerator for TestGenerator {
         Ok(())
     }
 
-    fn untyped_conversion(&mut self, expression: Arg, _params: &FormatParams) -> Result<()> {
+    fn dynamic_conversion(&mut self, expression: Arg, _params: &FormatParams) -> Result<()> {
         let arg = arg_to_string(&expression);
         self.code_fragments.push(quote! {
-            ops.push(TestGeneratorOps::UntypedConversion(#arg.to_string()));
+            ops.push(TestGeneratorOps::DynamicConversion(#arg.to_string()));
         });
         Ok(())
     }
@@ -196,10 +196,10 @@ impl TestOpsRecorder {
         Ok(self.char_specifier_override.clone())
     }
 
-    fn untyped_conversion(&mut self, expression: Arg) -> Result<()> {
+    fn dynamic_conversion(&mut self, expression: Arg) -> Result<()> {
         let arg = arg_to_string(&expression);
         self.code_fragments.push(quote! {
-            ops.push(PrintfTestGeneratorOps::UntypedConversion(#arg.to_string()));
+            ops.push(PrintfTestGeneratorOps::DynamicConversion(#arg.to_string()));
         });
         Ok(())
     }
@@ -276,8 +276,8 @@ impl PrintfFormatMacroGenerator for PrintfTestGenerator {
         self.inner.char_conversion(expression)
     }
 
-    fn untyped_conversion(&mut self, expression: Arg) -> Result<()> {
-        self.inner.untyped_conversion(expression)
+    fn dynamic_conversion(&mut self, expression: Arg) -> Result<()> {
+        self.inner.dynamic_conversion(expression)
     }
 }
 
@@ -400,8 +400,8 @@ impl CoreFmtFormatMacroGenerator for CoreFmtTestGenerator {
         self.inner.char_conversion(expression)
     }
 
-    fn untyped_conversion(&mut self, expression: Arg) -> Result<()> {
-        self.inner.untyped_conversion(expression)
+    fn dynamic_conversion(&mut self, expression: Arg) -> Result<()> {
+        self.inner.dynamic_conversion(expression)
     }
 }
 
@@ -429,6 +429,7 @@ pub fn core_fmt_format_core_fmt_generator_test_macro(tokens: TokenStream) -> Tok
 pub fn integer_sub_printf_format_core_fmt_generator_test_macro(tokens: TokenStream) -> TokenStream {
     let format_and_args =
         parse_macro_input!(tokens as FormatAndArgsFlavor<PrintfFormatStringParser>);
+    // "{:?}" is a literal override specifier string, not an unformatted format! call.
     #[allow(clippy::literal_string_with_formatting_args)]
     let generator = CoreFmtTestGenerator::new().with_integer_specifier("{:?}");
     match generate_core_fmt(generator, format_and_args.into()) {
@@ -442,6 +443,7 @@ pub fn integer_sub_printf_format_core_fmt_generator_test_macro(tokens: TokenStre
 pub fn string_sub_printf_format_core_fmt_generator_test_macro(tokens: TokenStream) -> TokenStream {
     let format_and_args =
         parse_macro_input!(tokens as FormatAndArgsFlavor<PrintfFormatStringParser>);
+    // "{:?}" is a literal override specifier string, not an unformatted format! call.
     #[allow(clippy::literal_string_with_formatting_args)]
     let generator = CoreFmtTestGenerator::new().with_string_specifier("{:?}");
     match generate_core_fmt(generator, format_and_args.into()) {
@@ -455,6 +457,7 @@ pub fn string_sub_printf_format_core_fmt_generator_test_macro(tokens: TokenStrea
 pub fn char_sub_printf_format_core_fmt_generator_test_macro(tokens: TokenStream) -> TokenStream {
     let format_and_args =
         parse_macro_input!(tokens as FormatAndArgsFlavor<PrintfFormatStringParser>);
+    // "{:?}" is a literal override specifier string, not an unformatted format! call.
     #[allow(clippy::literal_string_with_formatting_args)]
     let generator = CoreFmtTestGenerator::new().with_char_specifier("{:?}");
     match generate_core_fmt(generator, format_and_args.into()) {

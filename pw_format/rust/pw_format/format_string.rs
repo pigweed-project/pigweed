@@ -44,7 +44,7 @@ use crate::{core_fmt, printf};
 pub const MAX_FIELD_LEN: u32 = 0x0001_0000;
 
 /// Primitive type of a conversion (integer, float, string, etc.)
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Primitive {
     /// Signed integer primitive.
     Integer,
@@ -64,12 +64,12 @@ pub enum Primitive {
     /// Pointer primitive.
     Pointer,
 
-    /// Untyped primitive.
-    Untyped,
+    /// Dynamically typed.
+    Dynamic,
 }
 
 /// The abstract formatting style for a conversion.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Style {
     /// No style specified, use defaults.
     None,
@@ -317,7 +317,7 @@ impl Default for ConversionSpec {
             min_field_width: MinFieldWidth::None,
             precision: Precision::None,
             length: None,
-            primitive: Primitive::Untyped,
+            primitive: Primitive::Dynamic,
             style: Style::None,
         }
     }
@@ -385,7 +385,7 @@ impl ConversionSpec {
             (Primitive::Character, _) => 'c',
             (Primitive::String, _) => 's',
             (Primitive::Pointer, _) => 'p',
-            (Primitive::Untyped, _) => 'v',
+            (Primitive::Dynamic, _) => 'v',
         };
         s.push(type_char);
         s
@@ -1028,13 +1028,13 @@ fn format_value<P: PlatformTypes>(
         (Primitive::Pointer, Arg::Int(v)) => {
             format_ptr(P::Pointer::ptr_from_u64(v.cast_unsigned()), spec, output)
         }
-        (Primitive::Untyped, _) => format_untyped::<P>(spec, arg, style, output)?,
+        (Primitive::Dynamic, _) => format_dynamic::<P>(spec, arg, style, output)?,
         _ => return Err(FormatValueError::MismatchedType),
     }
     Ok(())
 }
 
-fn format_untyped<P: PlatformTypes>(
+fn format_dynamic<P: PlatformTypes>(
     spec: &ConversionSpec,
     arg: &Arg,
     style: FormatStyle,

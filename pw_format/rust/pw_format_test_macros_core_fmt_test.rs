@@ -15,7 +15,7 @@
 use pw_format::macros::FormatParams;
 
 // Used to record calls into the test generator from `generator_test_macro!`.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TestGeneratorOps {
     Finalize,
     StringFragment(String),
@@ -27,18 +27,18 @@ pub enum TestGeneratorOps {
     },
     StringConversion(String),
     CharConversion(String),
-    UntypedConversion(String),
+    DynamicConversion(String),
 }
 
 // Used to record calls into the test generator from `printf_generator_test_macro!` and friends.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum PrintfTestGeneratorOps {
     Finalize,
     StringFragment(String),
     IntegerConversion { ty: String, arg: String },
     StringConversion(String),
     CharConversion(String),
-    UntypedConversion(String),
+    DynamicConversion(String),
 }
 
 #[cfg(test)]
@@ -59,7 +59,7 @@ mod tests {
             core_fmt_format_generator_test_macro!("test {}", 5),
             vec![
                 TestGeneratorOps::StringFragment("test ".to_string()),
-                TestGeneratorOps::UntypedConversion("5".to_string()),
+                TestGeneratorOps::DynamicConversion("5".to_string()),
                 TestGeneratorOps::Finalize
             ]
         );
@@ -87,11 +87,11 @@ mod tests {
                 "test %u %d",
                 vec![
                     PrintfTestGeneratorOps::StringFragment("test ".to_string()),
-                    PrintfTestGeneratorOps::UntypedConversion("5 as u32".to_string()),
+                    PrintfTestGeneratorOps::DynamicConversion("5 as u32".to_string()),
                     PrintfTestGeneratorOps::StringFragment(" ".to_string()),
                     // Note here how `-5 as i32` gets converted to `- 5 as i32`
                     // during the conversion to tokens and back.
-                    PrintfTestGeneratorOps::UntypedConversion("- 5 as i32".to_string()),
+                    PrintfTestGeneratorOps::DynamicConversion("- 5 as i32".to_string()),
                     PrintfTestGeneratorOps::Finalize
                 ]
             )
@@ -102,7 +102,7 @@ mod tests {
     fn generate_printf_translates_field_width_and_leading_zeros_correctly() {
         let expected_fragments = vec![
             PrintfTestGeneratorOps::StringFragment("Test ".to_string()),
-            PrintfTestGeneratorOps::UntypedConversion("0x42 as u32".to_string()),
+            PrintfTestGeneratorOps::DynamicConversion("0x42 as u32".to_string()),
             PrintfTestGeneratorOps::StringFragment(" test".to_string()),
             PrintfTestGeneratorOps::Finalize,
         ];
@@ -136,7 +136,7 @@ mod tests {
     fn generate_core_fmt_translates_field_width_and_leading_zeros_correctly() {
         let expected_fragments = vec![
             PrintfTestGeneratorOps::StringFragment("Test ".to_string()),
-            PrintfTestGeneratorOps::UntypedConversion("0x42 as u32".to_string()),
+            PrintfTestGeneratorOps::DynamicConversion("0x42 as u32".to_string()),
             PrintfTestGeneratorOps::StringFragment(" test".to_string()),
             PrintfTestGeneratorOps::Finalize,
         ];

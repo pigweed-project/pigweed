@@ -59,26 +59,32 @@ type TokenStream2 = proc_macro2::TokenStream;
 /// In order to stay as flexible as possible to implementors of
 /// [`FormatMacroGenerator`], the error is simply represented by a
 /// string.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Error {
     text: String,
 }
 
-impl Error {
-    /// Create a new proc macro evaluation error.
-    #[must_use]
-    pub fn new(text: &str) -> Self {
-        Self {
-            text: text.to_string(),
-        }
+impl core::fmt::Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(&self.text)
     }
 }
 
-/// An alias for a Result with an ``Error``
+impl core::error::Error for Error {}
+
+impl Error {
+    /// Create a new proc macro evaluation error.
+    #[must_use]
+    pub fn new(text: impl Into<String>) -> Self {
+        Self { text: text.into() }
+    }
+}
+
+/// An alias for a [`core::result::Result`] with an [`Error`].
 pub type Result<T> = core::result::Result<T, Error>;
 
-/// Formatting parameters passed to an untyped conversion.
-#[derive(Clone, Debug, PartialEq)]
+/// Formatting parameters for any type.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FormatParams {
     /// Style in which to print the corresponding argument.
     pub style: Style,
@@ -99,8 +105,8 @@ impl FormatParams {
             Style::None => Ok(format_ident!("PrintfFormatter")),
             Style::Hex => Ok(format_ident!("PrintfHexFormatter")),
             Style::UpperHex => Ok(format_ident!("PrintfUpperHexFormatter")),
-            _ => Err(Error::new(&format!(
-                "formatting untyped conversions with {:?} style is unsupported",
+            _ => Err(Error::new(format!(
+                "formatting with {:?} style is unsupported",
                 self.style
             ))),
         }
@@ -132,8 +138,8 @@ impl FormatParams {
             Style::Hex => "x",
             Style::UpperHex => "X",
             _ => {
-                return Err(Error::new(&format!(
-                    "formatting untyped conversions with {:?} style is unsupported",
+                return Err(Error::new(format!(
+                    "formatting with {:?} style is unsupported",
                     self.style
                 )));
             }
@@ -236,9 +242,9 @@ pub trait FormatMacroGenerator {
     /// Process a character conversion.
     fn char_conversion(&mut self, expression: Arg) -> Result<()>;
 
-    /// Process an untyped conversion.
-    fn untyped_conversion(&mut self, _expression: Arg, _params: &FormatParams) -> Result<()> {
-        Err(Error::new("untyped conversion (%v) not supported"))
+    /// Process a dynamically-typed conversion.
+    fn dynamic_conversion(&mut self, _expression: Arg, _params: &FormatParams) -> Result<()> {
+        Err(Error::new("dynamic conversion (%v) not supported"))
     }
 }
 
@@ -397,20 +403,20 @@ impl<T: FormatStringParser> Parse for FormatAndArgsFlavor<T> {
 // Grab the next argument returning a descriptive error if no more args are left.
 fn next_arg(spec: &ConversionSpec, args: &mut VecDeque<Arg>) -> Result<Arg> {
     args.pop_front()
-        .ok_or_else(|| Error::new(&format!("No argument given for {spec:?}")))
+        .ok_or_else(|| Error::new(format!("No argument given for {spec:?}")))
 }
 
 /// Returns an error if the conversion specifier uses variable width or precision.
 fn validate_no_variable_width_or_precision(spec: &ConversionSpec, type_name: &str) -> Result<()> {
     // TODO: b/281862660 - Support Width::Variable and Precision::Variable.
     if spec.min_field_width == MinFieldWidth::Variable {
-        return Err(Error::new(&format!(
+        return Err(Error::new(format!(
             "Variable width '*' {type_name} formats are not supported.",
         )));
     }
 
     if spec.precision == Precision::Variable {
-        return Err(Error::new(&format!(
+        return Err(Error::new(format!(
             "Variable precision '*' {type_name} formats are not supported.",
         )));
     }
@@ -465,12 +471,12 @@ fn handle_conversion(
             generator.char_conversion(arg)
         }
 
-        Primitive::Untyped => {
-            validate_no_variable_width_or_precision(spec, "untyped")?;
+        Primitive::Dynamic => {
+            validate_no_variable_width_or_precision(spec, "dynamic")?;
 
             let arg = next_arg(spec, args)?;
             let params = spec.try_into()?;
-            generator.untyped_conversion(arg, &params)
+            generator.dynamic_conversion(arg, &params)
         }
 
         Primitive::Float => {
@@ -508,7 +514,7 @@ fn split_variable_token_conversion(s: &str) -> Result<(&str, ConversionSpec)> {
             nested_token_conversion_spec(NESTED_TOKEN_HEX_WIDTH, Primitive::Unsigned, Style::Hex),
         ))
     } else {
-        Err(Error::new(&format!(
+        Err(Error::new(format!(
             "Unsupported variable nested token specifier in \"{s}\""
         )))
     }
@@ -520,12 +526,12 @@ fn find_variable_domain_end(raw: &str, prefix: char) -> Result<usize> {
     if raw[pos..].starts_with('{') {
         let inner_close = raw[pos..]
             .find('}')
-            .ok_or_else(|| Error::new(&format!("Unclosed inner domain brace in \"{raw}\"")))?;
+            .ok_or_else(|| Error::new(format!("Unclosed inner domain brace in \"{raw}\"")))?;
         pos += inner_close + '}'.len_utf8();
     }
     let outer_close = raw[pos..]
         .find('}')
-        .ok_or_else(|| Error::new(&format!("Unclosed outer domain brace in \"{raw}\"")))?;
+        .ok_or_else(|| Error::new(format!("Unclosed outer domain brace in \"{raw}\"")))?;
     Ok(pos + outer_close)
 }
 
@@ -663,9 +669,14 @@ pub trait PrintfFormatMacroGenerator {
     /// default.
     fn char_conversion(&mut self, expression: Arg) -> Result<Option<String>>;
 
-    /// Process an untyped conversion.
-    fn untyped_conversion(&mut self, _expression: Arg) -> Result<()> {
-        Err(Error::new("untyped conversion not supported"))
+    /// Process a dynamically-typed conversion.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] if dynamically-typed conversions are not supported by
+    /// this generator or if processing the argument fails.
+    fn dynamic_conversion(&mut self, _expression: Arg) -> Result<()> {
+        Err(Error::new("dynamic conversion not supported"))
     }
 }
 
@@ -719,8 +730,8 @@ impl PrintfFormatStringFragment {
             #[cfg(not(feature = "nightly_tait"))]
             Self::Expr { arg, format_trait } => {
                 let Arg::ExprCast(cast) = arg else {
-                    return Err(Error::new(&format!(
-                        "Expected argument to untyped format (%v/{{}}) to be a cast expression (e.g. x as i32), but found {}.",
+                    return Err(Error::new(format!(
+                        "Expected argument to dynamic format (%v/{{}}) to be a cast expression (e.g. x as i32), but found {}.",
                         arg.to_token_stream(),
                     )));
                 };
@@ -799,7 +810,7 @@ impl<GENERATOR: PrintfFormatMacroGenerator> FormatMacroGenerator for PrintfGener
             32 => "",
             64 => "ll",
             _ => {
-                return Err(Error::new(&format!(
+                return Err(Error::new(format!(
                     "printf backend does not support {type_width} bit field width"
                 )));
             }
@@ -817,7 +828,7 @@ impl<GENERATOR: PrintfFormatMacroGenerator> FormatMacroGenerator for PrintfGener
             Style::Hex => ("x", format_ident!("u{type_width}")),
             Style::UpperHex => ("X", format_ident!("u{type_width}")),
             _ => {
-                return Err(Error::new(&format!(
+                return Err(Error::new(format!(
                     "printf backend does not support formatting integers with {:?} style",
                     params.style
                 )));
@@ -850,8 +861,8 @@ impl<GENERATOR: PrintfFormatMacroGenerator> FormatMacroGenerator for PrintfGener
         Ok(())
     }
 
-    fn untyped_conversion(&mut self, expression: Arg, params: &FormatParams) -> Result<()> {
-        self.inner.untyped_conversion(expression.clone())?;
+    fn dynamic_conversion(&mut self, expression: Arg, params: &FormatParams) -> Result<()> {
+        self.inner.dynamic_conversion(expression.clone())?;
 
         self.append_format_string(&format!("%{}", params.field_params()));
         self.format_string_fragments
@@ -917,9 +928,14 @@ pub trait CoreFmtFormatMacroGenerator {
     /// Process a character conversion.
     fn char_conversion(&mut self, expression: Arg) -> Result<Option<String>>;
 
-    /// Process an untyped conversion.
-    fn untyped_conversion(&mut self, _expression: Arg) -> Result<()> {
-        Err(Error::new("untyped conversion ({}) not supported"))
+    /// Process a dynamically-typed conversion.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] if dynamically-typed conversions (`{}`) are not
+    /// supported by this generator or if processing the argument fails.
+    fn dynamic_conversion(&mut self, _expression: Arg) -> Result<()> {
+        Err(Error::new("dynamic conversion ({}) not supported"))
     }
 }
 
@@ -977,8 +993,8 @@ impl<GENERATOR: CoreFmtFormatMacroGenerator> FormatMacroGenerator for CoreFmtGen
         Ok(())
     }
 
-    fn untyped_conversion(&mut self, expression: Arg, params: &FormatParams) -> Result<()> {
-        self.inner.untyped_conversion(expression)?;
+    fn dynamic_conversion(&mut self, expression: Arg, params: &FormatParams) -> Result<()> {
+        self.inner.dynamic_conversion(expression)?;
         self.format_string.push_str(&params.core_fmt_specifier()?);
         Ok(())
     }
@@ -1032,7 +1048,7 @@ mod tests {
             Ok(())
         }
 
-        fn untyped_conversion(&mut self, _expression: Arg, _params: &FormatParams) -> Result<()> {
+        fn dynamic_conversion(&mut self, _expression: Arg, _params: &FormatParams) -> Result<()> {
             Ok(())
         }
     }
@@ -1060,13 +1076,13 @@ mod tests {
     }
 
     #[test]
-    fn rejects_variable_precision_untyped_format() {
+    fn rejects_variable_precision_dynamic_format() {
         let parsed: FormatAndArgsFlavor<PrintfFormatStringParser> =
             syn::parse_str("\"%.*v\", 4, 1").unwrap();
         let err = generate(NoOpGenerator, parsed.into()).unwrap_err();
         assert_eq!(
             err.to_string(),
-            "Variable precision '*' untyped formats are not supported."
+            "Variable precision '*' dynamic formats are not supported."
         );
     }
 }

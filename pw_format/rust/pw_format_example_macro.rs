@@ -125,7 +125,7 @@ impl FormatMacroGenerator for Generator {
         Ok(())
     }
 
-    fn untyped_conversion(&mut self, expression: Arg, _params: &FormatParams) -> Result<()> {
+    fn dynamic_conversion(&mut self, expression: Arg, _params: &FormatParams) -> Result<()> {
         self.push_format_arg(&expression);
         Ok(())
     }
