@@ -17,6 +17,7 @@ package pw_ghish
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,6 +29,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/spf13/cobra"
 )
 
 func TestRunList(t *testing.T) {
@@ -1442,5 +1445,262 @@ func TestRunList_ChangeScopedWorkflowFilterAndDefaultProject(t *testing.T) {
 	})
 	if _, err := executeCommand(RootCmd, "run", "list", "-w", "my-proj/ci/a", "-w", "my-proj/ci/b"); err == nil || !strings.Contains(err.Error(), "SearchBuilds failed for all 2 builders") {
 		t.Errorf("expected all-fail Batch error, got: %v", err)
+	}
+}
+
+func TestRunView_DirectBuildID_SingleAndBatch_JSONAndStdin(t *testing.T) {
+	server := NewMockGerritServer(t)
+
+	server.On("POST", "/prpc/buildbucket.v2.Builds/GetBuild", func(w http.ResponseWriter, r *http.Request) {
+		var req bbGetBuildRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode GetBuild: %v", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		for _, field := range []string{"input.gitiles_commit", "input.gerrit_changes", "create_time", "steps"} {
+			if !strings.Contains(req.Mask.Fields, field) {
+				t.Errorf("GetBuild mask missing %q in %q", field, req.Mask.Fields)
+			}
+		}
+		server.RespondJSON(w, http.StatusOK, map[string]any{
+			"id":         "87000000011",
+			"number":     42,
+			"builder":    map[string]any{"project": "pigweed", "bucket": "try", "builder": "linux-build"},
+			"status":     "FAILURE",
+			"createTime": "2026-11-09T10:00:00Z",
+			"startTime":  "2026-11-09T10:01:00Z",
+			"endTime":    "2026-11-09T10:02:00Z",
+			"input": map[string]any{
+				"gerritChanges": []map[string]any{
+					// ProtoJSON string change + numeric patchset verify FlexInt64 decoding.
+					{"host": "pigweed-review.googlesource.com", "project": "pigweed/pigweed", "change": "467905", "patchset": 12},
+				},
+			},
+			"steps": []LUCIStep{
+				FakeStep("setup", "SUCCESS"),
+				FakeStep("compile", "FAILURE", WithStepSummary("compile failed")),
+			},
+		})
+	})
+
+	server.OnBuildsBatch(func(sub bbBatchSubRequest) bbBatchSubResponse {
+		id := sub.GetBuild.ID
+		switch id {
+		case "87000000011":
+			det := FakeBuildDetails(id, "linux-build", "FAILURE", WithSteps(FakeStep("compile", "FAILURE")))
+			det.Number = 42
+			det.Builder.Bucket = "ci"
+			return BatchGetResp(det)
+		case "87000000012":
+			det := FakeBuildDetails(id, "mac-build", "SUCCESS", WithSteps(FakeStep("build", "SUCCESS")))
+			det.Number = 43
+			det.Builder.Bucket = "ci"
+			return BatchGetResp(det)
+		default:
+			return BatchErrorResp(5, "build not found")
+		}
+	})
+
+	// 1. Single positional Buildbucket ID returns object with Steps preserved even without -v.
+	singleOut, err := executeCommand(RootCmd, "run", "view", "87000000011", "--json")
+	if err != nil {
+		t.Fatalf("single direct run view --json failed: %v\nOutput: %s", err, singleOut)
+	}
+	var single LUCIBuildDetails
+	if err := json.Unmarshal([]byte(singleOut), &single); err != nil {
+		t.Fatalf("unmarshal single LUCIBuildDetails: %v\n%s", err, singleOut)
+	}
+	if single.Number != 42 || len(single.Steps) != 2 || single.Input == nil || len(single.Input.GerritChanges) != 1 || single.Input.GerritChanges[0].Change != 467905 || single.Input.GerritChanges[0].Patchset != 12 {
+		t.Errorf("unexpected single build JSON fields: %+v", single)
+	}
+	if strings.Contains(singleOut, "failedSteps") || strings.Contains(singleOut, "cleanedSummary") {
+		t.Errorf("unexpected derived fields in LUCIBuildDetails JSON:\n%s", singleOut)
+	}
+
+	// 2. Single build ID via '-' stdin still emits a JSON array ([]*LUCIBuildDetails) with steps preserved.
+	var stdinOut, stdinErr strings.Builder
+	err = executeCommandIO(RootCmd, strings.NewReader("87000000011\n"), &stdinOut, &stdinErr, "run", "view", "-", "--json")
+	if err != nil {
+		t.Fatalf("stdin single-ID run view --json failed: %v\nStderr: %s", err, stdinErr.String())
+	}
+	var stdinList []*LUCIBuildDetails
+	if err := json.Unmarshal([]byte(stdinOut.String()), &stdinList); err != nil {
+		t.Fatalf("expected []LUCIBuildDetails JSON array from stdin '-': %v\n%s", err, stdinOut.String())
+	}
+	if len(stdinList) != 1 || len(stdinList[0].Steps) != 2 {
+		t.Errorf("stdinList = %+v, want 1 item with 2 steps preserved", stdinList)
+	}
+
+	// 3. Multi-ID positional batches via Builds/Batch, warns on stderr for partial errors, keeps steps without -v.
+	var batchOut, batchErr strings.Builder
+	err = executeCommandIO(RootCmd, strings.NewReader(""), &batchOut, &batchErr, "run", "view", "87000000011", "87000000012", "87000000013", "--json")
+	if err != nil {
+		t.Fatalf("batch run view --json failed: %v\nStderr: %s", err, batchErr.String())
+	}
+	if gotGet, gotBatch := server.CallCount("POST", "/prpc/buildbucket.v2.Builds/GetBuild"), server.CallCount("POST", "/prpc/buildbucket.v2.Builds/Batch"); gotGet != 2 || gotBatch != 1 {
+		t.Errorf("RPC counts = (GetBuild=%d, Batch=%d), want (2, 1)", gotGet, gotBatch)
+	}
+	if !strings.Contains(batchErr.String(), "Warning: failed to get details for build 87000000013: build not found") {
+		t.Errorf("expected partial error warning on stderr, got: %q", batchErr.String())
+	}
+	var batchList []*LUCIBuildDetails
+	if err := json.Unmarshal([]byte(batchOut.String()), &batchList); err != nil {
+		t.Fatalf("unmarshal batch []*LUCIBuildDetails: %v\n%s", err, batchOut.String())
+	}
+	if len(batchList) != 3 || len(batchList[0].Steps) != 1 || batchList[1].Status != "SUCCESS" || batchList[2].Error != "build not found" {
+		t.Errorf("unexpected batchList: %+v", batchList)
+	}
+
+	// 4. Multi-ID text output renders step trees + Verdict:/Next: footer.
+	var textOut, textErr strings.Builder
+	if err := executeCommandIO(RootCmd, strings.NewReader(""), &textOut, &textErr, "run", "view", "87000000011", "87000000012"); err != nil {
+		t.Fatalf("batch text run view failed: %v\nStderr: %s", err, textErr.String())
+	}
+	if !strings.Contains(textOut.String(), "Steps for linux-build (Build 87000000011)") || !strings.Contains(textOut.String(), "Verdict: FAILED (1 of 2 builds failed)") {
+		t.Errorf("unexpected batch text output:\n%s", textOut.String())
+	}
+}
+
+func TestRunView_DirectBuildID_Batch_LogFailed_AndErrors(t *testing.T) {
+	server := NewMockGerritServer(t)
+	server.OnString("GET", "/logs/build1", http.StatusOK, "text/plain", "error: batch log line 1\n")
+	server.OnBuildsBatch(func(sub bbBatchSubRequest) bbBatchSubResponse {
+		id := sub.GetBuild.ID
+		switch id {
+		case "87000000021":
+			det := FakeBuildDetails(id, "linux-build", "FAILURE", WithSteps(
+				FakeStep("build", "FAILURE"),
+				FakeStep("build|canceled_sibling", "CANCELED"),
+				FakeStep("build|compile", "FAILURE", WithStepLogs(LUCILog{Name: "stdout", URL: server.URL + "/logs/build1"})),
+				FakeStep("build|compile|logs", "FAILURE"),
+				FakeStep("build|compile|easy rerun cmd", "FAILURE"),
+			))
+			det.Builder.Bucket = "ci"
+			return BatchGetResp(det)
+		case "87000000022":
+			det := FakeBuildDetails(id, "mac-build", "SUCCESS")
+			det.Builder.Bucket = "ci"
+			return BatchGetResp(det)
+		case "87000000023":
+			return BatchErrorResp(5, "not found")
+		default:
+			det := FakeBuildDetails(id, "linux-build", "SUCCESS")
+			det.Builder.Bucket = "ci"
+			return BatchGetResp(det)
+		}
+	})
+
+	// 1. Stdin batch with --log-failed --json selects leaf failing step (skipping |logs, |easy rerun cmd, CANCELED) and URL fallback.
+	var logOut, logErr strings.Builder
+	err := executeCommandIO(
+		RootCmd,
+		strings.NewReader("87000000021\n87000000022\n87000000023\n"),
+		&logOut, &logErr,
+		"run", "view", "-", "--log-failed", "--json",
+	)
+	if err != nil {
+		t.Fatalf("stdin batch --log-failed --json failed: %v\nStderr: %s", err, logErr.String())
+	}
+	var reports []FailureReport
+	if err := json.Unmarshal([]byte(logOut.String()), &reports); err != nil {
+		t.Fatalf("unmarshal []FailureReport: %v\n%s", err, logOut.String())
+	}
+	if len(reports) != 1 || reports[0].FailedStep != "build|compile" || reports[0].LogName != "stdout" || !strings.Contains(reports[0].LogSnippet, "error: batch log line 1") {
+		t.Errorf("unexpected failure reports: %+v", reports)
+	}
+
+	// 2. All-passing batch with --log-failed --json emits empty array [] (not null).
+	server.OnGetBuild(FakeBuildDetails("87000000022", "mac-build", "SUCCESS"))
+	var emptyOut, emptyErr strings.Builder
+	if err := executeCommandIO(RootCmd, strings.NewReader("87000000022\n"), &emptyOut, &emptyErr, "run", "view", "-", "--log-failed", "--json"); err != nil {
+		t.Fatalf("all-passing stdin --log-failed --json failed: %v\nStderr: %s", err, emptyErr.String())
+	}
+	if strings.TrimSpace(emptyOut.String()) != "[]" {
+		t.Errorf("empty batch --log-failed --json = %q, want []", emptyOut.String())
+	}
+
+	// 3. Invalid stdin, mixed positional args, Busytown batch, and -j + batch fail cleanly.
+	var tmpOut, tmpErr strings.Builder
+	if err := executeCommandIO(RootCmd, strings.NewReader("not-an-id\n"), &tmpOut, &tmpErr, "run", "view", "-"); err == nil || !strings.Contains(err.Error(), "invalid Buildbucket build ID") {
+		t.Errorf("expected invalid stdin ID error, got: %v", err)
+	}
+	if err := executeCommandIO(RootCmd, strings.NewReader("\n"), &tmpOut, &tmpErr, "run", "view", "-"); err == nil || !strings.Contains(err.Error(), "no Buildbucket build IDs provided") {
+		t.Errorf("expected empty stdin error, got: %v", err)
+	}
+	if _, err := executeCommand(RootCmd, "run", "view", "P99164207", "87000000021"); err == nil || !strings.Contains(err.Error(), "Buildbucket build IDs only") {
+		t.Errorf("expected Busytown batch rejection, got: %v", err)
+	}
+	if _, err := executeCommand(RootCmd, "run", "view", "87000000021", "not-a-build-id"); err == nil || !strings.Contains(err.Error(), "invalid Buildbucket build ID") {
+		t.Errorf("expected mixed positional arg error, got: %v", err)
+	}
+	if _, err := executeCommand(RootCmd, "run", "view", "87000000021", "87000000022", "-j", "linux"); err == nil || !strings.Contains(err.Error(), "--job (-j) and --target cannot be combined") {
+		t.Errorf("expected -j batch rejection, got: %v", err)
+	}
+	if _, err := executeCommand(RootCmd, "run", "view", "-", "87000000021"); err == nil || !strings.Contains(err.Error(), "cannot be combined with positional arguments") {
+		t.Errorf("expected '-' + positional arg rejection, got: %v", err)
+	}
+	if _, err := executeCommand(RootCmd, "run", "view", "87000000021", "-j", "compile"); err == nil || !strings.Contains(err.Error(), "--job (-j) and --target cannot be combined") {
+		t.Errorf("expected single positional build ID + -j rejection, got: %v", err)
+	}
+
+	// 4. Chunking >8 build IDs splits across multiple Builds/Batch RPCs, canceled context fails fast, and all-fail fails closed.
+	tenIDs := make([]string, 10)
+	for i := range tenIDs {
+		tenIDs[i] = fmt.Sprintf("870000001%02d", i)
+	}
+	client := NewLUCIClient(server.URL, server.Server.Client())
+	chunked, err := client.GetBuildDetailsBatch(t.Context(), tenIDs)
+	if err != nil || len(chunked) != 10 {
+		t.Fatalf("GetBuildDetailsBatch(10) = (%d items, %v), want 10 items", len(chunked), err)
+	}
+
+	server.OnBuildsBatch(func(bbBatchSubRequest) bbBatchSubResponse {
+		return BatchErrorResp(5, "not found")
+	})
+	if _, err := client.GetBuildDetailsBatch(t.Context(), []string{"87000000091", "87000000092"}); err == nil || !strings.Contains(err.Error(), "GetBuild failed for all 2 builds") {
+		t.Errorf("expected all-fail GetBuildDetailsBatch error, got: %v", err)
+	}
+
+	canceledCtx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	server.On("GET", "/logs/cancel-me", func(w http.ResponseWriter, r *http.Request) {
+		cancel()
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("error: interrupted\n"))
+	})
+	server.OnGetBuild(FakeBuildDetails("87000000099", "linux-build", "FAILURE",
+		WithSteps(FakeStep("compile", "FAILURE", WithStepLogs(FakeLog("stdout", server.URL+"/logs/cancel-me")))),
+	))
+	cancelCmd := &cobra.Command{}
+	cancelCmd.SetContext(canceledCtx)
+	cancelCmd.SetOut(io.Discard)
+	cancelCmd.SetErr(io.Discard)
+	prevLogFailed := runViewLogFailed
+	runViewLogFailed = true
+	defer func() { runViewLogFailed = prevLogFailed }()
+	if err := runDirectBuildbucketView(cancelCmd, &ProjectConfig{}, client, []string{"87000000099"}, false, true); !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled from runDirectBuildbucketView --log-failed, got: %v", err)
+	}
+}
+
+func TestRunView_SharedLeafFailingSteps(t *testing.T) {
+	NewMockGit(t)
+	logSrv := newLogServer(t, http.StatusOK, "error: compile failure\n")
+	build := FakeBuildDetails("87000000031", "linux-build", "FAILURE", WithSteps(
+		FakeStep("build", "FAILURE"),
+		FakeStep("build|canceled_sub", "CANCELED"),
+		FakeStep("build|compile", "FAILURE", WithStepSummary("ninja failed"), WithStepLogs(FakeLog("stdout", logSrv.URL+"/stdout"))),
+		FakeStep("build|compile|logs", "FAILURE"),
+		FakeStep("build|compile|easy rerun cmd", "FAILURE"),
+	))
+
+	stepsText := FormatBuildStepsVerbose(build, false)
+	if !strings.Contains(stepsText, "compile") || strings.Contains(stepsText, "easy rerun cmd") || strings.Contains(stepsText, "|logs") || strings.Contains(stepsText, "canceled_sub") {
+		t.Errorf("FormatBuildStepsVerbose did not isolate leaf failing step cleanly:\n%s", stepsText)
+	}
+	rep := NewLUCIClient("", logSrv.Client()).ExtractFailureReportWithOptions(t.Context(), build, 50, nil, true)
+	if rep == nil || rep.FailedStep != "build|compile" {
+		t.Errorf("ExtractFailureReportWithOptions FailedStep = %+v, want build|compile", rep)
 	}
 }

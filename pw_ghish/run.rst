@@ -354,8 +354,18 @@ Fetch failure summaries and raw step log snippets in the terminal:
    # Output JSON report:
    $ ./gh run view --log-failed --json
 
+   # Batch-inspect multiple Buildbucket build IDs (positional or '-' stdin):
+   $ ./gh run view 8671182706745774001 8671182706745774002 --json
+   $ printf '8671182706745774001\n8671182706745774002\n' | ./gh run view - --log-failed --json
+
    # Open build in web browser:
    $ ./gh run view -j pigweed-lintformat --web
+
+``run view [<build-id>...]`` batches Buildbucket ``Builds/Batch``
+``GetBuild`` requests for multiple numeric build IDs (or ``-`` via ``stdin``),
+returning a ``[]LUCIBuildDetails`` JSON array in batch mode (or a single
+``LUCIBuildDetails`` object for one positional build ID) with ``steps``,
+``input``, and timestamps preserved.
 
 On **LUCI Buildbucket** builds, ``run view --log-failed`` prioritizes curated
 ``failure summary`` (or ``failure_summary``) streams before falling back to

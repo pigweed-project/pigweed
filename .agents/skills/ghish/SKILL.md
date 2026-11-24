@@ -152,11 +152,12 @@ Commands:
   - *Gerrit UI Check Count Note*: `./gh pr checks` returns top-level Buildbucket
     builders (e.g. ~72), whereas the Gerrit UI "Checks" tab (~132) also counts
     individual `pw_presubmit` sub-steps and static analyzers (AyeAye, SLSA).
-- **`./gh run view [<id>] [-j|--job <builder|id>] [--target <target>] [--log-failed] [--log] [--all] [-v] [--json]`**:
+- **`./gh run view [<id>... | <id> | -] [-j|--job <builder|id>] [--target <target>] [--log-failed] [--log] [--all] [-v] [--json]`**:
   Inspect failed builders, LogDog or Busytown `build.log` / AnTS failure
-  snippets (`--log-failed`), or the hierarchical step tree
-  (`-j [<project>/][<bucket>/]<builder>`). For direct Busytown build inspection,
-  pass `P<bid>/<target>` or `P<bid> --target <target>`.
+  snippets (`--log-failed`), batch Buildbucket build IDs (multiple IDs or `-`
+  from `stdin`, emitting a JSON array under `--json` with `steps` preserved), or
+  the hierarchical step tree (`-j [<project>/][<bucket>/]<builder>`). For direct
+  Busytown build inspection, pass `P<bid>/<target>` or `P<bid> --target <target>`.
 - **`./gh run rerun [<id>] [--failed | -j <builder>] [--dry-run]`**: Rerun all
   failed builders or a specific builder via `bb add` on Buildbucket (using each
   build's recorded `<project>/<bucket>/<builder>` and skipping child subbuilds

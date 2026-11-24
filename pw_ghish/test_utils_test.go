@@ -1607,6 +1607,11 @@ func BatchSearchResp(builds ...bbBuild) bbBatchSubResponse {
 	return bbBatchSubResponse{SearchBuilds: &bbSearchBuildsResponse{Builds: builds}}
 }
 
+// BatchGetResp wraps a LUCIBuildDetails fixture into a Builds/Batch getBuild response.
+func BatchGetResp(det *LUCIBuildDetails) bbBatchSubResponse {
+	return bbBatchSubResponse{GetBuild: det}
+}
+
 // BatchErrorResp builds an error entry inside a Builds/Batch response.
 func BatchErrorResp(code int, message string) bbBatchSubResponse {
 	return bbBatchSubResponse{Error: &bbRPCStatus{Code: code, Message: message}}

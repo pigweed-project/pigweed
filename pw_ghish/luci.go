@@ -50,15 +50,68 @@ type LUCIStatusDetails struct {
 	Timeout            *struct{} `json:"timeout,omitempty"`
 }
 
+// LUCIGitilesCommit describes the Gitiles commit trigger on a Buildbucket build.
+type LUCIGitilesCommit struct {
+	Host    string `json:"host,omitempty"`
+	Project string `json:"project,omitempty"`
+	ID      string `json:"id,omitempty"`
+	Ref     string `json:"ref,omitempty"`
+}
+
+// LUCIGerritChange describes a Gerrit patchset trigger on a Buildbucket build.
+// Buildbucket's ProtoJSON wire format encodes int64 change and patchset numbers
+// as JSON strings ("467905"), while outgoing SearchBuilds requests and CLI
+// --json output represent them as integers.
+type LUCIGerritChange struct {
+	Host     string `json:"host"`
+	Project  string `json:"project"`
+	Change   int    `json:"change"`
+	Patchset int    `json:"patchset"`
+}
+
+// UnmarshalJSON decodes both ProtoJSON string int64s and numeric JSON values.
+func (g *LUCIGerritChange) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Host     string    `json:"host"`
+		Project  string    `json:"project"`
+		Change   FlexInt64 `json:"change"`
+		Patchset FlexInt64 `json:"patchset"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	g.Host = raw.Host
+	g.Project = raw.Project
+	g.Change = int(raw.Change)
+	g.Patchset = int(raw.Patchset)
+	return nil
+}
+
+type bbGerritChange = LUCIGerritChange
+type bbInput = LUCIBuildInput
+
+// LUCIBuildInput holds trigger and experiment inputs on a Buildbucket build.
+type LUCIBuildInput struct {
+	GitilesCommit *LUCIGitilesCommit `json:"gitilesCommit,omitempty"`
+	GerritChanges []LUCIGerritChange `json:"gerritChanges,omitempty"`
+	Experiments   []string           `json:"experiments,omitempty"`
+}
+
 // LUCIBuildDetails holds detailed build information including steps and logs.
 type LUCIBuildDetails struct {
 	ID                   string             `json:"id"`
+	Number               int                `json:"number,omitempty"`
 	Builder              bbBuilder          `json:"builder"`
 	Status               string             `json:"status"`
+	CreateTime           string             `json:"createTime,omitempty"`
+	StartTime            string             `json:"startTime,omitempty"`
+	EndTime              string             `json:"endTime,omitempty"`
 	SummaryMarkdown      string             `json:"summaryMarkdown,omitempty"`
 	CancellationMarkdown string             `json:"cancellationMarkdown,omitempty"`
 	StatusDetails        *LUCIStatusDetails `json:"statusDetails,omitempty"`
+	Input                *LUCIBuildInput    `json:"input,omitempty"`
 	Steps                []LUCIStep         `json:"steps,omitempty"`
+	Error                string             `json:"error,omitempty"`
 	Provider             string             `json:"provider,omitempty"`
 	ViewURL              string             `json:"viewUrl,omitempty"`
 	Target               string             `json:"target,omitempty"`
@@ -98,10 +151,6 @@ type bbBuilder struct {
 type bbTag struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
-}
-
-type bbInput struct {
-	Experiments []string `json:"experiments"`
 }
 
 type bbBuild struct {
@@ -274,13 +323,6 @@ type bbPredicate struct {
 	GerritChanges []bbGerritChange `json:"gerritChanges,omitempty"`
 	Builder       *bbBuilder       `json:"builder,omitempty"`
 	Status        string           `json:"status,omitempty"`
-}
-
-type bbGerritChange struct {
-	Host     string `json:"host"`
-	Project  string `json:"project"`
-	Change   int    `json:"change"`
-	Patchset int    `json:"patchset"`
 }
 
 type bbSearchBuildsResponse struct {
@@ -504,6 +546,8 @@ func (c *LUCIClient) SearchBuildsByPatchset(ctx context.Context, gerritHost, pro
 	return nil, fmt.Errorf("patchset %d: %w", patchsets[failed], errs[failed])
 }
 
+const getBuildDetailsFieldsMask = "id,number,builder,status,create_time,start_time,end_time,summary_markdown,cancellation_markdown,status_details,input.gitiles_commit,input.gerrit_changes,steps"
+
 // GetBuildDetails fetches step-level details for a build from Buildbucket.
 func (c *LUCIClient) GetBuildDetails(ctx context.Context, buildID string) (*LUCIBuildDetails, error) {
 	if c == nil {
@@ -516,14 +560,16 @@ func (c *LUCIClient) GetBuildDetails(ctx context.Context, buildID string) (*LUCI
 	reqPayload := bbGetBuildRequest{
 		ID: buildID,
 		Mask: bbBuildMask{
-			Fields: "id,builder,status,summary_markdown,cancellation_markdown,status_details,steps",
+			Fields: getBuildDetailsFieldsMask,
 		},
 	}
 
 	var details LUCIBuildDetails
-	if err := c.CallPRPC(ctx, "buildbucket.v2.Builds", "GetBuild", reqPayload, &details); err != nil {
+	if err := c.callPRPCWithMaxBytes(ctx, "buildbucket.v2.Builds", "GetBuild", reqPayload, &details, maxBatchHTTPBodyBytes); err != nil {
 		return nil, err
 	}
+	details.ID = cmp.Or(details.ID, buildID)
+	details.Provider = cmp.Or(details.Provider, "buildbucket")
 
 	return &details, nil
 }
@@ -610,7 +656,7 @@ func selectPreferredLogWithRank(logs []LUCILog, preferred ...string) (*LUCILog, 
 	for rank, pref := range preferred {
 		normPref := normalizeLogStreamName(pref)
 		for i := range logs {
-			if logs[i].ViewURL == "" {
+			if cmp.Or(logs[i].ViewURL, logs[i].URL) == "" {
 				continue
 			}
 			if normalizeLogStreamName(logs[i].Name) == normPref {
@@ -619,11 +665,89 @@ func selectPreferredLogWithRank(logs []LUCILog, preferred ...string) (*LUCILog, 
 		}
 	}
 	for i := range logs {
-		if logs[i].ViewURL != "" && !strings.HasPrefix(logs[i].Name, "$") {
+		if cmp.Or(logs[i].ViewURL, logs[i].URL) != "" && !strings.HasPrefix(logs[i].Name, "$") {
 			return &logs[i], len(preferred)
 		}
 	}
 	return nil, len(preferred) + 1
+}
+
+func isRecipePlumbingChild(childSuffix string) bool {
+	return childSuffix == "logs" || strings.HasPrefix(childSuffix, "logs|") || strings.HasPrefix(childSuffix, "easy rerun cmd")
+}
+
+func isRecipePlumbingStep(stepName string) bool {
+	for rest := stepName; ; {
+		_, after, ok := strings.Cut(rest, "|")
+		if !ok {
+			return false
+		}
+		if isRecipePlumbingChild(after) {
+			return true
+		}
+		rest = after
+	}
+}
+
+func isFailingStepStatus(status string) bool {
+	return status != "" && status != "SUCCESS" && status != "SCHEDULED" && status != "STARTED"
+}
+
+// selectLeafFailingSteps returns leaf failing steps from steps, preferring active
+// failures (FAILURE/INFRA_FAILURE) over CANCELED steps, filtering out recipe
+// plumbing containers (|logs, |easy rerun cmd), and dropping parent containers
+// that have deeper failing descendants.
+func selectLeafFailingSteps(steps []LUCIStep) []*LUCIStep {
+	var candidates []*LUCIStep
+	for i := range steps {
+		if steps[i].Name != "" && isFailingStepStatus(steps[i].Status) {
+			candidates = append(candidates, &steps[i])
+		}
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	if slices.ContainsFunc(candidates, func(s *LUCIStep) bool { return s.Status != "CANCELED" }) {
+		candidates = slices.DeleteFunc(candidates, func(s *LUCIStep) bool { return s.Status == "CANCELED" })
+	}
+	if slices.ContainsFunc(candidates, func(s *LUCIStep) bool { return !isRecipePlumbingStep(s.Name) }) {
+		candidates = slices.DeleteFunc(candidates, func(s *LUCIStep) bool { return isRecipePlumbingStep(s.Name) })
+	}
+	var leaves []*LUCIStep
+	for _, s := range candidates {
+		prefix := s.Name + "|"
+		if !slices.ContainsFunc(candidates, func(other *LUCIStep) bool { return strings.HasPrefix(other.Name, prefix) }) {
+			leaves = append(leaves, s)
+		}
+	}
+	if len(leaves) == 0 {
+		return candidates
+	}
+	return leaves
+}
+
+// selectPrimaryFailedStep picks the leaf failing step with the highest-priority
+// preferred log stream, falling back to the earliest leaf failing step.
+func selectPrimaryFailedStep(steps []LUCIStep, preferredLogs []string) (*LUCIStep, *LUCILog) {
+	leafSteps := selectLeafFailingSteps(steps)
+	if len(leafSteps) == 0 {
+		return nil, nil
+	}
+	bestRank := len(defaultPreferredLogs) + 2
+	if len(preferredLogs) > 0 {
+		bestRank = len(preferredLogs) + 2
+	}
+	failedStep := leafSteps[0]
+	var targetLog *LUCILog
+	for _, step := range leafSteps {
+		candLog, rank := selectPreferredLogWithRank(step.Logs, preferredLogs...)
+		if candLog != nil && rank <= bestRank {
+			failedStep = step
+			targetLog = candLog
+			bestRank = rank
+		}
+	}
+	return failedStep, targetLog
 }
 
 // ExtractFailureReportWithOptions analyzes steps in a failing build using custom preferred log
@@ -646,32 +770,7 @@ func (c *LUCIClient) ExtractFailureReportWithOptions(ctx context.Context, b *LUC
 		BuildURL: BuildDetailsURL(b),
 	}
 
-	// Find the failing step, prioritizing steps that have preferred logs ("failure summary", "stdout", "stderr", etc.)
-	var failedStep *LUCIStep
-	var targetLog *LUCILog
-	bestRank := len(defaultPreferredLogs) + 2
-	if len(preferredLogs) > 0 {
-		bestRank = len(preferredLogs) + 2
-	}
-
-	for i := range b.Steps {
-		step := &b.Steps[i]
-		if step.Status != "FAILURE" && step.Status != "INFRA_FAILURE" {
-			continue
-		}
-		if failedStep == nil {
-			failedStep = step
-		} else if targetLog == nil && strings.HasPrefix(step.Name, failedStep.Name+"|") && !strings.HasSuffix(step.Name, "|logs") {
-			failedStep = step
-		}
-
-		candLog, rank := selectPreferredLogWithRank(step.Logs, preferredLogs...)
-		if candLog != nil && rank <= bestRank {
-			failedStep = step
-			targetLog = candLog
-			bestRank = rank
-		}
-	}
+	failedStep, targetLog := selectPrimaryFailedStep(b.Steps, preferredLogs)
 
 	if failedStep == nil {
 		if b.SummaryMarkdown != "" && includeSummaryMarkdown {
@@ -703,15 +802,17 @@ func (c *LUCIClient) ExtractFailureReportWithOptions(ctx context.Context, b *LUC
 		}
 	}
 
-	if targetLog != nil && targetLog.ViewURL != "" {
-		report.LogName = targetLog.Name
-		report.FullLogURL = targetLog.ViewURL
-		snippet, totalLines, err := c.fetchLogStreamTail(ctx, targetLog.ViewURL, maxLogLines)
-		if err != nil {
-			report.LogSnippet = fmt.Sprintf("[Error fetching log stream from %s: %v]", targetLog.ViewURL, err)
-		} else {
-			report.LogSnippet = strings.TrimSpace(snippet)
-			report.LogTotalLines = totalLines
+	if targetLog != nil {
+		if logURL := cmp.Or(targetLog.ViewURL, targetLog.URL); logURL != "" {
+			report.LogName = targetLog.Name
+			report.FullLogURL = logURL
+			snippet, totalLines, err := c.fetchLogStreamTail(ctx, logURL, maxLogLines)
+			if err != nil {
+				report.LogSnippet = fmt.Sprintf("[Error fetching log stream from %s: %v]", logURL, err)
+			} else {
+				report.LogSnippet = strings.TrimSpace(snippet)
+				report.LogTotalLines = totalLines
+			}
 		}
 	}
 
@@ -798,6 +899,7 @@ func FormatBuildStepsVerbose(b *LUCIBuildDetails, verbose bool) string {
 			passingTopLevelCount++
 		}
 	}
+	leafFailingSteps := selectLeafFailingSteps(b.Steps)
 	collapsePassingSteps := passingTopLevelCount > maxExpandedPassingSteps
 
 	for _, s := range b.Steps {
@@ -816,34 +918,19 @@ func FormatBuildStepsVerbose(b *LUCIBuildDetails, verbose bool) string {
 			fmt.Fprintf(&sb, "  %s  %s\n", symbol, s.Name)
 		}
 
-		// If this top-level step failed, highlight failing child steps
+		// If this top-level step failed, highlight failing leaf child steps
 		if s.Status == "FAILURE" || s.Status == "INFRA_FAILURE" {
 			prefix := s.Name + "|"
-			var failingChildren []LUCIStep
-			for _, child := range b.Steps {
-				if strings.HasPrefix(child.Name, prefix) && (child.Status == "FAILURE" || child.Status == "INFRA_FAILURE") {
-					failingChildren = append(failingChildren, child)
+			var failingChildren []*LUCIStep
+			for _, leaf := range leafFailingSteps {
+				if strings.HasPrefix(leaf.Name, prefix) {
+					failingChildren = append(failingChildren, leaf)
 				}
 			}
 			for _, child := range failingChildren {
 				childName := child.Name[len(prefix):]
-				// Skip recipe log collection containers and rerun helpers
-				if childName == "logs" || strings.HasPrefix(childName, "easy rerun cmd") || strings.HasPrefix(childName, "logs|") {
-					continue
-				}
 				// Skip exact duplicate child name if more specific failing children exist
 				if childName == s.Name && len(failingChildren) > 1 {
-					continue
-				}
-				// Skip intermediate containers if there is a deeper failing descendant
-				hasFailingChild := false
-				for _, other := range failingChildren {
-					if other.Name != child.Name && strings.HasPrefix(other.Name, child.Name+"|") {
-						hasFailingChild = true
-						break
-					}
-				}
-				if hasFailingChild {
 					continue
 				}
 				childSym := getStatusSymbol(child.Status)
@@ -996,6 +1083,9 @@ const (
 	// maxBuildbucketBatchSize caps the number of SearchBuilds sub-requests per
 	// Buildbucket Builds/Batch pRPC call.
 	maxBuildbucketBatchSize = 50
+	// maxGetBuildBatchSize caps GetBuild sub-requests per Builds/Batch call so
+	// step-heavy build responses fit comfortably within maxBatchHTTPBodyBytes.
+	maxGetBuildBatchSize = 8
 	// maxBatchHTTPBodyBytes bounds Builds/Batch HTTP responses (64 MiB).
 	maxBatchHTTPBodyBytes = 64 * 1024 * 1024
 	// defaultBuilderRunLimit is the default per-builder page size for
@@ -1071,6 +1161,7 @@ type BuilderSearchResult struct {
 
 type bbBatchSubRequest struct {
 	SearchBuilds *bbSearchBuildsRequest `json:"searchBuilds,omitempty"`
+	GetBuild     *bbGetBuildRequest     `json:"getBuild,omitempty"`
 }
 
 type bbBatchRequest struct {
@@ -1084,6 +1175,7 @@ type bbRPCStatus struct {
 
 type bbBatchSubResponse struct {
 	SearchBuilds *bbSearchBuildsResponse `json:"searchBuilds,omitempty"`
+	GetBuild     *LUCIBuildDetails       `json:"getBuild,omitempty"`
 	Error        *bbRPCStatus            `json:"error,omitempty"`
 }
 
@@ -1359,4 +1451,61 @@ func firstNonCanceledError(errs []error) error {
 		return errs[idx]
 	}
 	return nil
+}
+
+// GetBuildDetailsBatch fetches step-level details for one or more Buildbucket
+// build IDs, batching multi-ID requests via buildbucket.v2.Builds/Batch.
+func (c *LUCIClient) GetBuildDetailsBatch(ctx context.Context, buildIDs []string) ([]*LUCIBuildDetails, error) {
+	if c == nil {
+		return nil, fmt.Errorf("LUCIClient is nil")
+	}
+	if len(buildIDs) == 0 {
+		return nil, fmt.Errorf("buildIDs cannot be empty")
+	}
+	if len(buildIDs) == 1 {
+		det, err := c.GetBuildDetails(ctx, buildIDs[0])
+		if err != nil {
+			return nil, err
+		}
+		return []*LUCIBuildDetails{det}, nil
+	}
+
+	results := make([]*LUCIBuildDetails, len(buildIDs))
+	err := c.executeBuildsBatch(
+		ctx,
+		len(buildIDs),
+		maxGetBuildBatchSize,
+		func(idx int) bbBatchSubRequest {
+			return bbBatchSubRequest{
+				GetBuild: &bbGetBuildRequest{
+					ID:   buildIDs[idx],
+					Mask: bbBuildMask{Fields: getBuildDetailsFieldsMask},
+				},
+			}
+		},
+		func(idx int, sub bbBatchSubResponse) {
+			id := buildIDs[idx]
+			if sub.Error != nil {
+				results[idx] = &LUCIBuildDetails{ID: id, Error: formatBatchSubError(sub.Error)}
+				return
+			}
+			if sub.GetBuild == nil {
+				results[idx] = &LUCIBuildDetails{ID: id, Error: "missing getBuild payload in BatchResponse"}
+				return
+			}
+			det := sub.GetBuild
+			det.ID = cmp.Or(det.ID, id)
+			det.Provider = cmp.Or(det.Provider, "buildbucket")
+			results[idx] = det
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if !slices.ContainsFunc(results, func(d *LUCIBuildDetails) bool { return d != nil && d.Error == "" }) {
+		return nil, fmt.Errorf("Buildbucket GetBuild failed for all %d builds (first: %s: %s)",
+			len(results), results[0].ID, SanitizeUntrustedText(results[0].Error))
+	}
+	return results, nil
 }

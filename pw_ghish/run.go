@@ -16,6 +16,7 @@ package pw_ghish
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -585,18 +586,223 @@ func writeCIVerdictFooter(out io.Writer, changeNum int, v ciVerdict) {
 	}
 }
 
-var runViewCmd = &cobra.Command{
-	Use:          "view [<id> | <builder>] [flags]",
-	Annotations:  map[string]string{KindAnnotation: KindView},
-	Short:        "View details, step trees, or logs for a CI/CD build",
-	SilenceUsage: true,
-	Args:         cobra.MaximumNArgs(2),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		rawID, targetBuilder, directBuildID, err := parseRunTargetArgs(cmd, args, runViewJob, true)
+func parseBatchDirectBuildIDs(cmd *cobra.Command, args []string) ([]string, bool, error) {
+	if len(args) > 1 && slices.ContainsFunc(args, func(a string) bool { return strings.TrimSpace(a) == "-" }) {
+		return nil, true, fmt.Errorf("'-' (read build IDs from stdin) cannot be combined with positional arguments")
+	}
+	if len(args) == 1 && strings.TrimSpace(args[0]) == "-" {
+		lines, err := readStdinLines(cmd.InOrStdin(), "build IDs")
+		if err != nil {
+			return nil, true, err
+		}
+		var ids []string
+		for _, ln := range lines {
+			for _, tok := range strings.Fields(ln) {
+				if !isBuildbucketID(tok) {
+					return nil, true, fmt.Errorf("invalid Buildbucket build ID %q on stdin: expected a 64-bit numeric Buildbucket build ID (or run 'gh run view <change-id>')", tok)
+				}
+				ids = append(ids, tok)
+			}
+		}
+		ids = dedup(ids)
+		if len(ids) == 0 {
+			return nil, true, fmt.Errorf("no Buildbucket build IDs provided on stdin")
+		}
+		return ids, true, nil
+	}
+	if len(args) >= 2 {
+		if idx := slices.IndexFunc(args, func(a string) bool { return IsBusytownBuildID(strings.TrimSpace(a)) }); idx >= 0 {
+			return nil, true, fmt.Errorf("batch 'gh run view' supports Buildbucket build IDs only (got Busytown ID %q); inspect one at a time via 'gh run view %s'",
+				args[idx], strings.TrimSpace(args[idx]))
+		}
+		badIdx := slices.IndexFunc(args, func(a string) bool { return !isBuildbucketID(strings.TrimSpace(a)) })
+		if badIdx < 0 {
+			ids := make([]string, len(args))
+			for i, a := range args {
+				ids[i] = strings.TrimSpace(a)
+			}
+			return dedup(ids), true, nil
+		}
+		if isBuildbucketID(strings.TrimSpace(args[0])) {
+			return nil, true, fmt.Errorf("invalid Buildbucket build ID %q: all arguments after %s must be 64-bit numeric Buildbucket IDs (or run 'gh run view [<change-id>] [<builder>]')",
+				args[badIdx], strings.TrimSpace(args[0]))
+		}
+		if len(args) > 2 {
+			return nil, false, fmt.Errorf("too many arguments (%d): pass 'gh run view [<change-id>] [<builder>]' or Buildbucket IDs 'gh run view <build-id>...'", len(args))
+		}
+	}
+	return nil, false, nil
+}
+
+func availableBuilderNames(builds []bbBuild) []string {
+	var available []string
+	for _, b := range builds {
+		if b.Builder.Builder != "" {
+			available = append(available, b.Builder.Builder)
+		}
+	}
+	return dedup(available)
+}
+
+func formatMissingChangeBuilderError(noun, targetBuilder, rawID string, res *CIContext) error {
+	available := availableBuilderNames(deduplicateLatestBuilds(res.Builds))
+	listMsg := ""
+	if len(available) > 0 {
+		listMsg = fmt.Sprintf("\n\nAvailable checks on Change %d (Patchset %d):\n  - %s", res.Change.Number, res.PatchsetNum, strings.Join(available, "\n  - "))
+	}
+	return fmt.Errorf("%s %q not found on change %s%s", noun, targetBuilder, rawID, listMsg)
+}
+
+func fetchFailureReportsBounded(ctx context.Context, count int, fn func(idx int) (*FailureReport, error)) ([]FailureReport, []error, error) {
+	fetched := make([]*FailureReport, count)
+	fetchErrs := make([]error, count)
+	sem := make(chan struct{}, 8)
+	var wg sync.WaitGroup
+	for i := range count {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				return
+			}
+			if ctx.Err() == nil {
+				fetched[idx], fetchErrs[idx] = fn(idx)
+			}
+		}(i)
+	}
+	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	reports := make([]FailureReport, 0, count)
+	for _, rep := range fetched {
+		if rep != nil {
+			reports = append(reports, *rep)
+		}
+	}
+	return reports, fetchErrs, nil
+}
+
+func writeNonFailedCheckStatus(out io.Writer, name, note, status, startTime, endTime, buildURL, monitorCmd string) {
+	if status == "STARTED" || status == "SCHEDULED" {
+		fmt.Fprintf(out, "Check %q%s is currently running (status: %s).\nTo monitor progress, run:\n  %s\n", name, note, status, monitorCmd)
+		return
+	}
+	fmt.Fprintf(out, "Check %q%s has status %s (%s).\nBuild details: %s\n", name, note, status, formatDuration(startTime, endTime), buildURL)
+}
+
+func runDirectBuildbucketView(cmd *cobra.Command, projCfg *ProjectConfig, luciClient *LUCIClient, buildIDs []string, batchOutput, hasPositionalArgs bool) error {
+	ctx := cmd.Context()
+	if strings.TrimSpace(runViewTarget) != "" || (strings.TrimSpace(runViewJob) != "" && (batchOutput || hasPositionalArgs || len(buildIDs) != 1 || strings.TrimSpace(runViewJob) != buildIDs[0])) {
+		return fmt.Errorf("--job (-j) and --target cannot be combined with direct Buildbucket build IDs")
+	}
+	if runViewWeb {
+		if len(buildIDs) > 1 {
+			return fmt.Errorf("--web cannot open %d builds at once; pass a single build ID", len(buildIDs))
+		}
+		targetURL := fmt.Sprintf("https://ci.chromium.org/b/%s", buildIDs[0])
+		fmt.Fprintf(cmd.OutOrStdout(), "Opening %s in your browser.\n", targetURL)
+		return OpenBrowserFn(targetURL)
+	}
+
+	detailsList, err := luciClient.GetBuildDetailsBatch(ctx, buildIDs)
+	if err != nil {
+		if !batchOutput {
+			verb := "steps"
+			if runViewLogFailed || runViewLog {
+				verb = "build"
+			}
+			return fmt.Errorf("failed to fetch %s for build %s: %w", verb, buildIDs[0], err)
+		}
+		return err
+	}
+	fetchErrCount := 0
+	for _, det := range detailsList {
+		if det != nil && det.Error != "" {
+			fetchErrCount++
+			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to get details for build %s: %s\n",
+				det.ID, SanitizeUntrustedText(det.Error))
+		}
+	}
+
+	if runViewLogFailed || runViewLog {
+		maxLines := 100
+		if runViewLog {
+			maxLines = 0
+		}
+		reports, _, err := fetchFailureReportsBounded(ctx, len(detailsList), func(idx int) (*FailureReport, error) {
+			det := detailsList[idx]
+			if det == nil || det.Error != "" || (det.Status != "FAILURE" && det.Status != "INFRA_FAILURE") {
+				return nil, nil
+			}
+			return luciClient.ExtractFailureReportWithOptions(ctx, det, maxLines, projCfg.PreferredLogs(), projCfg.IncludeSummaryMarkdown()), nil
+		})
 		if err != nil {
 			return err
 		}
+		if runViewJSON {
+			return writeIndentedJSON(cmd.OutOrStdout(), reports)
+		}
+		if len(reports) == 0 {
+			if !batchOutput && len(detailsList) == 1 && detailsList[0] != nil {
+				d := detailsList[0]
+				writeNonFailedCheckStatus(
+					cmd.OutOrStdout(),
+					cmp.Or(d.Builder.Builder, d.ID),
+					"",
+					d.Status,
+					d.StartTime,
+					d.EndTime,
+					cmp.Or(d.ViewURL, fmt.Sprintf("https://ci.chromium.org/b/%s", d.ID)),
+					fmt.Sprintf("gh run view %s -v", d.ID),
+				)
+				return nil
+			}
+			if fetchErrCount > 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "No failed builds found among %d fetched build(s) (%d failed to load; see warnings on stderr).\n",
+					len(detailsList)-fetchErrCount, fetchErrCount)
+				return nil
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "No failed builds found in requested build IDs.")
+			return nil
+		}
+		fmt.Fprint(cmd.OutOrStdout(), FormatFailureReports(reports))
+		return nil
+	}
 
+	if runViewJSON {
+		if !batchOutput {
+			return writeIndentedJSON(cmd.OutOrStdout(), detailsList[0])
+		}
+		return writeIndentedJSON(cmd.OutOrStdout(), detailsList)
+	}
+
+	var validBuilds []bbBuild
+	for _, det := range detailsList {
+		if det == nil || det.Error != "" {
+			continue
+		}
+		if len(validBuilds) > 0 {
+			fmt.Fprintln(cmd.OutOrStdout())
+		}
+		fmt.Fprint(cmd.OutOrStdout(), FormatBuildStepsVerbose(det, runViewVerbose))
+		validBuilds = append(validBuilds, bbBuild{ID: det.ID, Status: det.Status})
+	}
+	if batchOutput && len(validBuilds) > 0 {
+		writeDirectBuildsVerdictFooter(cmd.OutOrStdout(), validBuilds, fmt.Sprintf("gh run view %s -v", validBuilds[0].ID), " -v")
+	}
+	return nil
+}
+
+var runViewCmd = &cobra.Command{
+	Use:          "view [<id>... | <builder>] [flags]",
+	Annotations:  map[string]string{KindAnnotation: KindView},
+	Short:        "View details, step trees, or logs for CI/CD builds",
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		projCfg, err := LoadCommandProjectConfig(cmd)
 		if err != nil {
@@ -607,6 +813,22 @@ var runViewCmd = &cobra.Command{
 			return err
 		}
 		luciClient := NewLUCIClient(bbHost, getLUCIHTTPClient())
+
+		batchBuildIDs, isBatchMode, err := parseBatchDirectBuildIDs(cmd, args)
+		if err != nil {
+			return err
+		}
+		if isBatchMode {
+			return runDirectBuildbucketView(cmd, projCfg, luciClient, batchBuildIDs, true, len(args) > 0)
+		}
+
+		rawID, targetBuilder, directBuildID, err := parseRunTargetArgs(cmd, args, runViewJob, true)
+		if err != nil {
+			return err
+		}
+		if directBuildID != "" && !IsBusytownBuildID(directBuildID) && strings.TrimSpace(runViewTarget) == "" {
+			return runDirectBuildbucketView(cmd, projCfg, luciClient, []string{directBuildID}, false, len(args) > 0)
+		}
 
 		var res *CIContext
 		if directBuildID == "" {
@@ -621,11 +843,8 @@ var runViewCmd = &cobra.Command{
 		if runViewWeb {
 			targetURL := ""
 			if directBuildID != "" {
-				if bid, target, ok := ParseBusytownBuildTarget(directBuildID, runViewTarget); ok && (IsBusytownBuildID(directBuildID) || runViewTarget != "") {
-					targetURL = BusytownBuildURL(bid, target)
-				} else {
-					targetURL = fmt.Sprintf("https://ci.chromium.org/b/%s", directBuildID)
-				}
+				bid, target, _ := ParseBusytownBuildTarget(directBuildID, runViewTarget)
+				targetURL = BusytownBuildURL(bid, target)
 			} else if targetBuilder != "" {
 				for _, b := range deduplicateLatestBuilds(res.Builds) {
 					if buildMatchesJob(b, targetBuilder) {
@@ -648,37 +867,21 @@ var runViewCmd = &cobra.Command{
 			var targetBuilds []bbBuild
 			var directProvider CIProvider
 			if directBuildID != "" {
-				if bid, target, ok := ParseBusytownBuildTarget(directBuildID, runViewTarget); ok && (IsBusytownBuildID(directBuildID) || runViewTarget != "") {
-					directProvider = NewBusytownProvider()
-					builderName := target
-					if builderName == "" {
-						builderName = bid
-					}
-					targetBuilds = append(targetBuilds, bbBuild{
-						ID:       bid,
-						Provider: "busytown",
-						Target:   target,
-						Status:   "FAILURE",
-						ViewURL:  BusytownBuildURL(bid, target),
-						Builder: bbBuilder{
-							Project: "android-build",
-							Bucket:  "presubmit",
-							Builder: builderName,
-						},
-					})
-				} else {
-					details, err := luciClient.GetBuildDetails(ctx, directBuildID)
-					if err != nil {
-						return fmt.Errorf("failed to fetch build %s: %w", directBuildID, err)
-					}
-					directProvider = &BuildbucketProvider{LUCIClient: luciClient}
-					targetBuilds = append(targetBuilds, bbBuild{
-						ID:       details.ID,
-						Provider: "buildbucket",
-						Builder:  details.Builder,
-						Status:   details.Status,
-					})
-				}
+				bid, target, _ := ParseBusytownBuildTarget(directBuildID, runViewTarget)
+				directProvider = NewBusytownProvider()
+				builderName := cmp.Or(target, bid)
+				targetBuilds = append(targetBuilds, bbBuild{
+					ID:       bid,
+					Provider: "busytown",
+					Target:   target,
+					Status:   "FAILURE",
+					ViewURL:  BusytownBuildURL(bid, target),
+					Builder: bbBuilder{
+						Project: "android-build",
+						Bucket:  "presubmit",
+						Builder: builderName,
+					},
+				})
 			} else if targetBuilder != "" {
 				// Report on the newest build of the builder, the same build
 				// `gh pr checks` reports. res.Builds can span several
@@ -708,14 +911,7 @@ var runViewCmd = &cobra.Command{
 
 			if len(targetBuilds) == 0 {
 				if targetBuilder != "" {
-					var available []string
-					for _, b := range res.Builds {
-						if b.Builder.Builder != "" {
-							available = append(available, b.Builder.Builder)
-						}
-					}
-					available = dedup(available)
-					if len(available) > 0 {
+					if available := availableBuilderNames(res.Builds); len(available) > 0 {
 						return fmt.Errorf("no check found matching builder %q on change %s.\n\nAvailable builders on this change:\n  - %s\n\nRun 'gh run list %d' to view all checks",
 							targetBuilder, rawID, strings.Join(available, "\n  - "), res.Change.Number)
 					}
@@ -748,55 +944,36 @@ var runViewCmd = &cobra.Command{
 				activeProvider = &BuildbucketProvider{LUCIClient: luciClient}
 			}
 
-			fetched := make([]*FailureReport, len(targetBuilds))
-			fetchErrs := make([]error, len(targetBuilds))
-			sem := make(chan struct{}, 8)
-			var wg sync.WaitGroup
-			for i, b := range targetBuilds {
-				if b.Status != "FAILURE" && b.Status != "INFRA_FAILURE" {
-					continue
+			reports, fetchErrs, err := fetchFailureReportsBounded(ctx, len(targetBuilds), func(idx int) (*FailureReport, error) {
+				build := targetBuilds[idx]
+				if build.Status != "FAILURE" && build.Status != "INFRA_FAILURE" {
+					return nil, nil
 				}
-				wg.Add(1)
-				go func(idx int, build bbBuild) {
-					defer wg.Done()
-					sem <- struct{}{}
-					defer func() { <-sem }()
-
-					rep, err := activeProvider.FetchFailureReportWithOptions(ctx, build, FailureReportOptions{
-						MaxLogLines:            maxLines,
-						PreferredLogs:          projCfg.PreferredLogs(),
-						IncludeSummaryMarkdown: projCfg.IncludeSummaryMarkdown(),
-						Target:                 runViewTarget,
-					})
-					if err != nil {
-						fetchErrs[idx] = err
-						return
-					}
-					if rep != nil {
-						if res != nil && build.Patchset > 0 && build.Patchset != res.PatchsetNum {
-							rep.Patchset = build.Patchset
-						}
-						fetched[idx] = rep
-					}
-				}(i, b)
+				rep, fetchErr := activeProvider.FetchFailureReportWithOptions(ctx, build, FailureReportOptions{
+					MaxLogLines:            maxLines,
+					PreferredLogs:          projCfg.PreferredLogs(),
+					IncludeSummaryMarkdown: projCfg.IncludeSummaryMarkdown(),
+					Target:                 runViewTarget,
+				})
+				if fetchErr != nil {
+					return nil, fetchErr
+				}
+				if rep != nil && res != nil && build.Patchset > 0 && build.Patchset != res.PatchsetNum {
+					rep.Patchset = build.Patchset
+				}
+				return rep, nil
+			})
+			if err != nil {
+				return err
 			}
-			wg.Wait()
-
-			var reports []FailureReport
 			for i, b := range targetBuilds {
 				if fetchErrs[i] != nil {
 					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to get details for build %s: %v\n", b.ID, fetchErrs[i])
-					continue
-				}
-				if fetched[i] != nil {
-					reports = append(reports, *fetched[i])
 				}
 			}
 
 			if runViewJSON {
-				data, _ := json.MarshalIndent(reports, "", "  ")
-				fmt.Fprintln(cmd.OutOrStdout(), string(data))
-				return nil
+				return writeIndentedJSON(cmd.OutOrStdout(), reports)
 			}
 
 			if len(reports) == 0 {
@@ -805,16 +982,11 @@ var runViewCmd = &cobra.Command{
 					if res != nil {
 						note = patchsetNote(b.Patchset, res.PatchsetNum)
 					}
-					if b.Status == "STARTED" || b.Status == "SCHEDULED" {
-						viewCmd := fmt.Sprintf("gh run view -j %s -v", b.Builder.Builder)
-						if res != nil && res.Change != nil && res.Change.Number > 0 {
-							viewCmd = fmt.Sprintf("gh run view %d -j %s -v", res.Change.Number, b.Builder.Builder)
-						}
-						fmt.Fprintf(cmd.OutOrStdout(), "Check %q%s is currently running (status: %s).\nTo monitor progress, run:\n  %s\n", b.Builder.Builder, note, b.Status, viewCmd)
-						continue
+					viewCmd := fmt.Sprintf("gh run view -j %s -v", b.Builder.Builder)
+					if res != nil && res.Change != nil && res.Change.Number > 0 {
+						viewCmd = fmt.Sprintf("gh run view %d -j %s -v", res.Change.Number, b.Builder.Builder)
 					}
-					dur := formatDuration(b.StartTime, b.EndTime)
-					fmt.Fprintf(cmd.OutOrStdout(), "Check %q%s has status %s (%s).\nBuild details: %s\n", b.Builder.Builder, note, b.Status, dur, BuildURL(b))
+					writeNonFailedCheckStatus(cmd.OutOrStdout(), b.Builder.Builder, note, b.Status, b.StartTime, b.EndTime, BuildURL(b), viewCmd)
 				}
 				return nil
 			}
@@ -842,17 +1014,7 @@ var runViewCmd = &cobra.Command{
 					}
 				}
 				if bID == "" {
-					var available []string
-					for _, b := range deduplicateLatestBuilds(res.Builds) {
-						if b.Builder.Builder != "" {
-							available = append(available, b.Builder.Builder)
-						}
-					}
-					sortMsg := ""
-					if len(available) > 0 {
-						sortMsg = fmt.Sprintf("\n\nAvailable checks on Change %d (Patchset %d):\n  - %s", res.Change.Number, res.PatchsetNum, strings.Join(available, "\n  - "))
-					}
-					return fmt.Errorf("check %q not found on change %s%s", targetBuilder, rawID, sortMsg)
+					return formatMissingChangeBuilderError("check", targetBuilder, rawID, res)
 				}
 			} else {
 				// Pick the first failed build, or else the first build, among
@@ -896,12 +1058,7 @@ var runViewCmd = &cobra.Command{
 				bName = details.Builder.Builder
 			}
 			if runViewJSON {
-				data, err := json.MarshalIndent(details, "", "  ")
-				if err != nil {
-					return fmt.Errorf("failed to marshal steps JSON: %w", err)
-				}
-				fmt.Fprintln(cmd.OutOrStdout(), string(data))
-				return nil
+				return writeIndentedJSON(cmd.OutOrStdout(), details)
 			}
 			fmt.Fprint(cmd.OutOrStdout(), FormatBuildStepsVerbose(details, runViewVerbose))
 			return nil
@@ -949,7 +1106,7 @@ var runViewCmd = &cobra.Command{
 
 		if runViewJSON {
 			checkItems := BuildCheckItems(relevant)
-			summary := map[string]any{
+			return writeIndentedJSON(cmd.OutOrStdout(), map[string]any{
 				"change":              res.Change.Number,
 				"patchset":            res.PatchsetNum,
 				"equivalentPatchsets": res.EquivalentPatchsets,
@@ -961,13 +1118,7 @@ var runViewCmd = &cobra.Command{
 				"passed":              passedCount,
 				"failed":              failedCount,
 				"jobs":                checkItems,
-			}
-			data, err := json.MarshalIndent(summary, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal run summary JSON: %w", err)
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), string(data))
-			return nil
+			})
 		}
 
 		fmt.Fprintf(cmd.OutOrStdout(), "%s Change %d (Patchset %d) • %s\n", overallSymbol, res.Change.Number, res.PatchsetNum, res.Change.Subject)
@@ -1057,17 +1208,7 @@ var runRerunCmd = &cobra.Command{
 				}
 			}
 			if !found {
-				var available []string
-				for _, b := range deduplicateLatestBuilds(res.Builds) {
-					if b.Builder.Builder != "" {
-						available = append(available, b.Builder.Builder)
-					}
-				}
-				sortMsg := ""
-				if len(available) > 0 {
-					sortMsg = fmt.Sprintf("\n\nAvailable checks on Change %d (Patchset %d):\n  - %s", res.Change.Number, res.PatchsetNum, strings.Join(available, "\n  - "))
-				}
-				return fmt.Errorf("builder %q not found on change %s%s", targetBuilder, rawID, sortMsg)
+				return formatMissingChangeBuilderError("builder", targetBuilder, rawID, res)
 			}
 		} else if runRerunFailed {
 			buildsToRerun = collectFailedBuilds(res.Builds, runRerunExperimental, skipRetryFilters...)
