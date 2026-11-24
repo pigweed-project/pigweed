@@ -85,4 +85,9 @@ WarningsAsErrors: >
     -clang-diagnostic-unused-command-line-argument
 HeaderFilterRegex: '.*'
 ExcludeHeaderFilterRegex: 'external/.*'
+CheckOptions:
+  # Do not require std::nullptr_t in place of decltype(nullptr). The vendored
+  # Fuchsia fit headers use decltype(nullptr), and the diagnostic also fires on
+  # macro arguments such as PW_TOKENIZER_ARG_TYPES(nullptr).
+  modernize-use-nullptr.UseNullptrT: false
 ...
