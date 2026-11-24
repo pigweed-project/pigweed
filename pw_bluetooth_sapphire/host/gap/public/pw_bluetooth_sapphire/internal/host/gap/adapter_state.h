@@ -82,7 +82,7 @@ struct AdapterState final {
   }
 
   // HCI version supported by the controller.
-  pw::bluetooth::emboss::CoreSpecificationVersion hci_version;
+  pw::bluetooth::emboss::CoreSpecificationVersion hci_version{};
 
   // The Features that are supported by this adapter.
   hci_spec::LMPFeatureSet features;

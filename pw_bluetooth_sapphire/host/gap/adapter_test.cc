@@ -14,6 +14,10 @@
 
 #include "pw_bluetooth_sapphire/internal/host/gap/adapter.h"
 
+#include <lib/fit/defer.h>
+
+#include <algorithm>
+#include <iterator>
 #include <memory>
 
 #include "pw_bluetooth_sapphire/internal/host/gap/bredr_discovery_manager.h"
@@ -62,13 +66,17 @@ class AdapterTest : public TestingBase {
   void SetUp() override { SetUp(kDefaultFeaturesBits); }
 
   void SetUp(FeaturesBits features,
-             Adapter::Config config = {.legacy_pairing_enabled = false}) {
+             Adapter::Config config = {.legacy_pairing_enabled = false},
+             bool use_fake_l2cap = true) {
     // Don't initialize Transport yet because Adapter initializes Transport.
     TestingBase::SetUp(features, /*initialize_transport=*/false);
 
     transport_closed_called_ = false;
 
-    auto l2cap = std::make_unique<l2cap::testing::FakeL2cap>(dispatcher());
+    std::unique_ptr<l2cap::ChannelManager> l2cap;
+    if (use_fake_l2cap) {
+      l2cap = std::make_unique<l2cap::testing::FakeL2cap>(dispatcher());
+    }
     gatt_ = std::make_unique<gatt::testing::FakeLayer>(dispatcher());
     adapter_ = Adapter::Create(dispatcher(),
                                transport()->GetWeakPtr(),
@@ -80,7 +88,7 @@ class AdapterTest : public TestingBase {
   }
 
   void TearDown() override {
-    if (adapter_->IsInitialized()) {
+    if (adapter_ && adapter_->IsInitialized()) {
       adapter_->ShutDown();
     }
 
@@ -112,6 +120,12 @@ class AdapterTest : public TestingBase {
 
   Adapter* adapter() const { return adapter_.get(); }
 
+  void DestroyAdapter() { adapter_ = nullptr; }
+
+  pw::bluetooth_sapphire::testing::FakeLeaseProvider& lease_provider() {
+    return lease_provider_;
+  }
+
  private:
   bool transport_closed_called_;
   pw::bluetooth_sapphire::testing::FakeLeaseProvider lease_provider_;
@@ -124,6 +138,78 @@ class AdapterTest : public TestingBase {
 class AdapterScoAndIsoDisabledTest : public AdapterTest {
  public:
   void SetUp() override { AdapterTest::SetUp(FeaturesBits{0}); }
+};
+
+void ExpectAdapterShutDown(Adapter* adapter) {
+  EXPECT_FALSE(adapter->IsInitializing());
+  EXPECT_FALSE(adapter->IsInitialized());
+  EXPECT_EQ(nullptr, adapter->le());
+  EXPECT_EQ(nullptr, adapter->bredr());
+  EXPECT_FALSE(adapter->IsDiscoverable());
+  EXPECT_FALSE(adapter->IsDiscovering());
+  EXPECT_TRUE(adapter->local_name().empty());
+  EXPECT_NE(nullptr, adapter->peer_cache());
+
+  const AdapterState& state = adapter->state();
+  EXPECT_EQ(pw::bluetooth::emboss::CoreSpecificationVersion{},
+            state.hci_version);
+  // Note: AdapterState::IsBREDRSupported() only checks that the
+  // kBREDRNotSupported bit is unset on page 0, so it evaluates to true when no
+  // feature pages are populated. Verify directly that all feature pages are
+  // cleared.
+  EXPECT_FALSE(state.features.HasPage(0));
+  EXPECT_FALSE(state.features.HasPage(1));
+  EXPECT_FALSE(state.features.HasPage(2));
+  EXPECT_FALSE(state.IsLowEnergySupported());
+  EXPECT_EQ(FeaturesBits{0}, state.controller_features);
+  EXPECT_TRUE(std::all_of(std::begin(state.supported_commands),
+                          std::end(state.supported_commands),
+                          [](uint8_t byte) { return byte == 0; }));
+  EXPECT_EQ(DeviceAddressBytes(), state.controller_address);
+  EXPECT_EQ(hci::DataBufferInfo(), state.bredr_data_buffer_info);
+  EXPECT_EQ(hci::DataBufferInfo(), state.sco_buffer_info);
+  EXPECT_EQ(hci::DataBufferInfo(),
+            state.low_energy_state.acl_data_buffer_info());
+  EXPECT_EQ(hci::DataBufferInfo(),
+            state.low_energy_state.iso_data_buffer_info());
+  EXPECT_EQ(0u, state.low_energy_state.supported_features());
+  EXPECT_EQ(0u, state.low_energy_state.max_advertising_data_length());
+  EXPECT_FALSE(state.android_vendor_capabilities.has_value());
+  EXPECT_FALSE(state.android_batch_scan_enabled);
+  EXPECT_TRUE(state.local_name.empty());
+}
+
+class DeferredInitController final : public testing::ControllerTestDoubleBase {
+ public:
+  explicit DeferredInitController(pw::async::Dispatcher& pw_dispatcher)
+      : ControllerTestDoubleBase(pw_dispatcher) {}
+
+  void Initialize(PwStatusCallback complete_callback,
+                  PwStatusCallback error_callback) override {
+    complete_cb_ = std::move(complete_callback);
+    deferred_error_cb_ = std::move(error_callback);
+  }
+
+  void SendCommand(pw::span<const std::byte> /*command*/) override {}
+  void SendAclData(pw::span<const std::byte> /*data*/) override {}
+  void SendScoData(pw::span<const std::byte> /*data*/) override {}
+  void SendIsoData(pw::span<const std::byte> /*data*/) override {}
+
+  void CompleteInitialize(pw::Status status) {
+    ASSERT_TRUE(complete_cb_);
+    auto cb = std::move(complete_cb_);
+    cb(status);
+  }
+
+  void TriggerError(pw::Status status) {
+    if (deferred_error_cb_) {
+      deferred_error_cb_(status);
+    }
+  }
+
+ private:
+  PwStatusCallback complete_cb_;
+  PwStatusCallback deferred_error_cb_;
 };
 
 TEST_F(AdapterTest, InitializeFailureNoFeaturesSupported) {
@@ -345,6 +431,7 @@ TEST_F(AdapterTest, InitializeFailureTransportErrorDuringWriteLocalName) {
   EXPECT_FALSE(*success);
   EXPECT_EQ(1, init_cb_count);
   EXPECT_FALSE(transport_closed_called());
+  ExpectAdapterShutDown(adapter());
 }
 
 TEST_F(AdapterTest, TransportClosedCallback) {
@@ -372,11 +459,290 @@ TEST_F(AdapterTest, TransportClosedCallback) {
   EXPECT_EQ(1, init_cb_count);
 }
 
-// TODO(fxbug.dev/42088281): Add a unit test for Adapter::ShutDown() and update
-// ShutDownDuringInitialize() with the same expectations.
+TEST_F(AdapterTest, ShutDownBeforeInitialize) {
+  const AdapterId id = adapter()->identifier();
+  ExpectAdapterShutDown(adapter());
+
+  adapter()->ShutDown();
+  RunUntilIdle();
+
+  EXPECT_EQ(id, adapter()->identifier());
+  ExpectAdapterShutDown(adapter());
+  EXPECT_FALSE(transport_closed_called());
+}
+
+TEST_F(AdapterTest, ShutDown) {
+  TearDown();
+  SetUp(kDefaultFeaturesBits | FeaturesBits::kAndroidVendorExtensions,
+        {.legacy_pairing_enabled = false, .le_batched_scanning_enabled = true});
+
+  FakeController::Settings settings;
+  settings.ApplyDualModeDefaults();
+  settings.ApplyAndroidVendorExtensionDefaults();
+  settings.hci_version = pw::bluetooth::emboss::CoreSpecificationVersion::V5_2;
+  settings.bd_addr = kTestAddrBrEdr;
+  settings.lmp_features_page0 |=
+      static_cast<uint64_t>(hci_spec::LMPFeature::kExtendedFeatures);
+  settings.lmp_features_page1 |= static_cast<uint64_t>(
+      hci_spec::LMPFeature::kSecureConnectionsHostSupport);
+  settings.lmp_features_page2 |= static_cast<uint64_t>(
+      hci_spec::LMPFeature::kSecureConnectionsControllerSupport);
+  settings.le_features |= static_cast<uint64_t>(
+      hci_spec::LESupportedFeature::kConnectedIsochronousStreamPeripheral);
+  settings.synchronous_data_packet_length = 6;
+  settings.total_num_synchronous_data_packets = 2;
+  settings.SupportedCommandsView()
+      .write_synchronous_flow_control_enable()
+      .Write(true);
+  test_device()->set_settings(settings);
+
+  const AdapterId id = adapter()->identifier();
+  ASSERT_TRUE(EnsureInitialized());
+
+  // Set an auto-connect callback and verify it is released on ShutDown().
+  bool auto_conn_cb_destroyed = false;
+  adapter()->set_auto_connect_callback(
+      [cleanup = fit::defer([&] { auto_conn_cb_destroyed = true; })](auto) {});
+
+  // Set a custom local name to confirm both state_.local_name and local_name()
+  // are populated prior to shutdown.
+  const std::string kLocalName = "Sapphire Test";
+  hci::Result<> name_result = ToResult(HostError::kFailed);
+  adapter()->SetLocalName(kLocalName,
+                          [&](const auto& status) { name_result = status; });
+  RunUntilIdle();
+  EXPECT_EQ(fit::ok(), name_result);
+
+  // Confirm Adapter and AdapterState are populated before ShutDown().
+  EXPECT_FALSE(adapter()->IsInitializing());
+  EXPECT_TRUE(adapter()->IsInitialized());
+  EXPECT_NE(nullptr, adapter()->le());
+  EXPECT_NE(nullptr, adapter()->bredr());
+  EXPECT_EQ(kLocalName, adapter()->local_name());
+  EXPECT_EQ(kLocalName, adapter()->state().local_name);
+  EXPECT_EQ(pw::bluetooth::emboss::CoreSpecificationVersion::V5_2,
+            adapter()->state().hci_version);
+  EXPECT_TRUE(adapter()->state().features.HasPage(0));
+  EXPECT_TRUE(adapter()->state().features.HasPage(1));
+  EXPECT_TRUE(adapter()->state().features.HasPage(2));
+  EXPECT_TRUE(adapter()->state().IsLowEnergySupported());
+  EXPECT_TRUE(adapter()->state().IsBREDRSupported());
+  EXPECT_NE(FeaturesBits{0}, adapter()->state().controller_features);
+  EXPECT_EQ(kTestAddrBrEdr.value(), adapter()->state().controller_address);
+  EXPECT_TRUE(adapter()->state().bredr_data_buffer_info.IsAvailable());
+  EXPECT_TRUE(adapter()->state().sco_buffer_info.IsAvailable());
+  EXPECT_TRUE(
+      adapter()->state().low_energy_state.acl_data_buffer_info().IsAvailable());
+  EXPECT_TRUE(
+      adapter()->state().low_energy_state.iso_data_buffer_info().IsAvailable());
+  EXPECT_NE(0u, adapter()->state().low_energy_state.supported_features());
+  EXPECT_NE(0u,
+            adapter()->state().low_energy_state.max_advertising_data_length());
+  EXPECT_TRUE(adapter()->state().android_vendor_capabilities.has_value());
+  EXPECT_TRUE(adapter()->state().android_batch_scan_enabled);
+  EXPECT_FALSE(auto_conn_cb_destroyed);
+
+  adapter()->ShutDown();
+
+  EXPECT_EQ(id, adapter()->identifier());
+  EXPECT_TRUE(auto_conn_cb_destroyed);
+  ExpectAdapterShutDown(adapter());
+
+  // Calling ShutDown() a second time is idempotent.
+  adapter()->ShutDown();
+  RunUntilIdle();
+  ExpectAdapterShutDown(adapter());
+
+  // Transport errors after ShutDown() must not invoke the error callback.
+  test_device()->SignalError(pw::Status::Aborted());
+  RunUntilIdle();
+  EXPECT_FALSE(transport_closed_called());
+}
+
+TEST_F(AdapterTest, ShutDownLowEnergyOnly) {
+  FakeController::Settings settings;
+  settings.ApplyLEOnlyDefaults();
+  settings.bd_addr = kTestAddr;
+  test_device()->set_settings(settings);
+
+  ASSERT_TRUE(EnsureInitialized());
+  EXPECT_TRUE(adapter()->IsInitialized());
+  EXPECT_NE(nullptr, adapter()->le());
+  EXPECT_EQ(nullptr, adapter()->bredr());
+  EXPECT_TRUE(adapter()->local_name().empty());
+  EXPECT_EQ(kTestAddr.value(), adapter()->state().controller_address);
+
+  adapter()->ShutDown();
+  RunUntilIdle();
+  ExpectAdapterShutDown(adapter());
+
+  // Repeat ShutDown() and subsequent transport errors are ignored.
+  adapter()->ShutDown();
+  test_device()->SignalError(pw::Status::Aborted());
+  RunUntilIdle();
+  EXPECT_FALSE(transport_closed_called());
+}
+
+// Exercises ShutDown() with a real l2cap::ChannelManager and active LE,
+// periodic advertising, and BR/EDR sessions/connections to verify teardown
+// order and safe handle/session release after shutdown.
+TEST_F(AdapterTest, ShutDownWithActiveProcedures) {
+  TearDown();
+  SetUp(kDefaultFeaturesBits,
+        {.legacy_pairing_enabled = false},
+        /*use_fake_l2cap=*/false);
+
+  FakeController::Settings settings;
+  settings.ApplyDualModeDefaults();
+  settings.le_features |= static_cast<uint64_t>(
+      hci_spec::LESupportedFeature::kSynchronizedReceiver);
+  test_device()->set_settings(settings);
+
+  ASSERT_TRUE(EnsureInitialized());
+
+  // Establish an active BR/EDR connection before starting discovery so
+  // interrogation's RemoteNameRequest is not blocked behind HCI_Inquiry.
+  test_device()->AddPeer(
+      std::make_unique<FakePeer>(kTestAddrBrEdr, dispatcher()));
+  Peer* bredr_peer =
+      adapter()->peer_cache()->NewPeer(kTestAddrBrEdr, /*connectable=*/true);
+  bool bredr_connected = false;
+  ASSERT_TRUE(adapter()->bredr()->Connect(
+      bredr_peer->identifier(),
+      [&](hci::Result<> status, BrEdrConnection* conn) {
+        ASSERT_EQ(fit::ok(), status);
+        ASSERT_NE(nullptr, conn);
+        bredr_connected = true;
+      }));
+  RunUntilIdle();
+  ASSERT_TRUE(bredr_connected);
+
+  // Start an in-flight BR/EDR pairing procedure so `BrEdrConnectionManager`
+  // holds an `l2cap::AutosniffSuppressInterface` token referencing `l2cap_`
+  // during `ShutDown()`. Own the result via shared_ptr so early test returns
+  // cannot leave a dangling stack reference in the pending pairing callback.
+  auto pair_result = std::make_shared<std::optional<hci::Result<>>>();
+  test_device()->pause_responses_for_opcode(hci_spec::kAuthenticationRequested,
+                                            [](fit::closure) {});
+  adapter()->bredr()->Pair(
+      bredr_peer->identifier(),
+      BrEdrSecurityRequirements{.authentication = false,
+                                .secure_connections = false},
+      [pair_result](hci::Result<> status) { *pair_result = status; });
+
+  // Start LE advertising.
+  AdvertisementInstance adv_instance;
+  adapter()->le()->StartAdvertising(
+      AdvertisingData(),
+      AdvertisingData(),
+      AdvertisingInterval::FAST1,
+      /*extended_pdu=*/false,
+      /*anonymous=*/false,
+      /*include_tx_power_level=*/false,
+      /*connectable=*/std::nullopt,
+      /*address_type=*/std::nullopt,
+      [&](AdvertisementInstance instance, hci::Result<> status) {
+        ASSERT_EQ(fit::ok(), status);
+        adv_instance = std::move(instance);
+      });
+
+  // Start LE discovery.
+  LowEnergyDiscoverySessionPtr le_discovery;
+  adapter()->le()->StartDiscovery(
+      /*active=*/true, {}, [&](LowEnergyDiscoverySessionPtr session) {
+        le_discovery = std::move(session);
+      });
+
+  // Start BR/EDR discovery and discoverable sessions.
+  std::unique_ptr<BrEdrDiscoverySession> bredr_discovery;
+  adapter()->bredr()->RequestDiscovery(
+      [&](hci::Result<> status, std::unique_ptr<BrEdrDiscoverySession> s) {
+        ASSERT_EQ(fit::ok(), status);
+        bredr_discovery = std::move(s);
+      });
+  std::unique_ptr<BrEdrDiscoverableSession> bredr_discoverable;
+  adapter()->bredr()->RequestDiscoverable(
+      [&](hci::Result<> status, std::unique_ptr<BrEdrDiscoverableSession> s) {
+        ASSERT_EQ(fit::ok(), status);
+        bredr_discoverable = std::move(s);
+      });
+
+  // Establish an active LE connection.
+  test_device()->AddPeer(std::make_unique<FakePeer>(kTestAddr, dispatcher()));
+  Peer* le_peer =
+      adapter()->peer_cache()->NewPeer(kTestAddr, /*connectable=*/true);
+  std::unique_ptr<LowEnergyConnectionHandle> le_conn;
+  adapter()->le()->Connect(
+      le_peer->identifier(),
+      [&](Adapter::LowEnergy::ConnectionResult result) {
+        ASSERT_EQ(fit::ok(), result);
+        le_conn = std::move(result).value();
+      },
+      LowEnergyConnectionOptions());
+
+  // Create a pending periodic advertising sync.
+  struct TestSyncDelegate final
+      : public Adapter::LowEnergy::PeriodicAdvertisingSyncDelegate {
+    void OnSyncEstablished(
+        hci::SyncId, PeriodicAdvertisingSyncManager::SyncParameters) override {}
+    void OnSyncLost(hci::SyncId, hci::Error error) override {
+      sync_lost_errors.push_back(error);
+    }
+    void OnAdvertisingReport(hci::SyncId,
+                             const PeriodicAdvertisingReport&) override {}
+    void OnBigInfoReport(
+        hci::SyncId, const hci_spec::BroadcastIsochronousGroupInfo&) override {}
+
+    std::vector<hci::Error> sync_lost_errors;
+  };
+  TestSyncDelegate sync_delegate;
+  hci::Result<PeriodicAdvertisingSyncHandle> sync_handle =
+      adapter()->le()->SyncToPeriodicAdvertisement(le_peer->identifier(),
+                                                   /*advertising_sid=*/8,
+                                                   {.filter_duplicates = true},
+                                                   sync_delegate);
+  EXPECT_TRUE(sync_handle.is_ok());
+
+  RunUntilIdle();
+  EXPECT_TRUE(adv_instance.id() != kInvalidAdvertisementId);
+  EXPECT_TRUE(le_discovery);
+  EXPECT_TRUE(bredr_discovery);
+  EXPECT_TRUE(bredr_discoverable);
+  EXPECT_TRUE(le_conn);
+  EXPECT_TRUE(bredr_connected);
+  EXPECT_TRUE(adapter()->IsDiscoverable());
+  EXPECT_TRUE(adapter()->IsDiscovering());
+  EXPECT_FALSE(pair_result->has_value());
+
+  // Tear down while all handles/sessions are still held.
+  adapter()->ShutDown();
+  ExpectAdapterShutDown(adapter());
+  // ~PeriodicAdvertisingSyncManager() drains syncs silently without firing
+  // OnSyncLost during teardown.
+  EXPECT_TRUE(sync_delegate.sync_lost_errors.empty());
+  ASSERT_TRUE(pair_result->has_value());
+  EXPECT_TRUE((*pair_result)->is_error());
+
+  // Drop all handles/sessions after ShutDown() to ensure none dereference dead
+  // adapter sub-objects.
+  sync_handle = fit::error(Error(HostError::kCanceled));
+  le_conn.reset();
+  adv_instance = {};
+  le_discovery.reset();
+  bredr_discovery.reset();
+  bredr_discoverable.reset();
+
+  // Subsequent controller events/errors should not crash or fire error cb.
+  test_device()->SignalError(pw::Status::Aborted());
+  RunUntilIdle();
+  EXPECT_TRUE(sync_delegate.sync_lost_errors.empty());
+  EXPECT_TRUE(test_device()->periodic_advertising_syncs().empty());
+  EXPECT_FALSE(transport_closed_called());
+  ExpectAdapterShutDown(adapter());
+}
 
 TEST_F(AdapterTest, ShutDownDuringInitialize) {
-  bool success;
+  bool success = true;
   int init_cb_count = 0;
   auto init_cb = [&](bool result) {
     success = result;
@@ -387,18 +753,327 @@ TEST_F(AdapterTest, ShutDownDuringInitialize) {
   settings.ApplyLEOnlyDefaults();
   test_device()->set_settings(settings);
 
-  adapter()->Initialize(std::move(init_cb), [] {});
+  bool transport_error_called = false;
+  adapter()->Initialize(std::move(init_cb),
+                        [&] { transport_error_called = true; });
   EXPECT_TRUE(adapter()->IsInitializing());
   adapter()->ShutDown();
 
   EXPECT_EQ(1, init_cb_count);
   EXPECT_FALSE(success);
-  EXPECT_FALSE(adapter()->IsInitializing());
-  EXPECT_FALSE(adapter()->IsInitialized());
+  ExpectAdapterShutDown(adapter());
 
-  // Further calls to ShutDown() should have no effect.
+  // Further calls to ShutDown() and subsequent transport errors should have no
+  // effect.
   adapter()->ShutDown();
+  test_device()->SignalError(pw::Status::Aborted());
   RunUntilIdle();
+  EXPECT_EQ(1, init_cb_count);
+  EXPECT_FALSE(transport_error_called);
+  ExpectAdapterShutDown(adapter());
+}
+
+TEST_F(AdapterTest, ShutDownDuringInitializeDestroysAdapter) {
+  std::optional<bool> success;
+  int init_cb_count = 0;
+
+  FakeController::Settings settings;
+  settings.ApplyLEOnlyDefaults();
+  test_device()->set_settings(settings);
+
+  adapter()->Initialize(
+      [&](bool result) {
+        success = result;
+        init_cb_count++;
+        DestroyAdapter();
+      },
+      [] {});
+  ASSERT_TRUE(adapter()->IsInitializing());
+
+  adapter()->ShutDown();
+  ASSERT_TRUE(success.has_value());
+  EXPECT_FALSE(*success);
+  EXPECT_EQ(1, init_cb_count);
+  RunUntilIdle();
+}
+
+TEST_F(AdapterTest, ShutDownDuringInitializeWriteLocalName) {
+  std::optional<bool> success;
+  int init_cb_count = 0;
+  bool transport_error_called = false;
+
+  FakeController::Settings settings;
+  settings.ApplyDualModeDefaults();
+  test_device()->set_settings(settings);
+  fit::closure resume_write_local_name_cb;
+  test_device()->pause_responses_for_opcode(
+      hci_spec::kWriteLocalName, [&](fit::closure resume) {
+        resume_write_local_name_cb = std::move(resume);
+      });
+
+  adapter()->Initialize(
+      [&](bool result) {
+        success = result;
+        init_cb_count++;
+      },
+      [&] { transport_error_called = true; });
+  RunUntilIdle();
+  ASSERT_TRUE(resume_write_local_name_cb);
+  EXPECT_TRUE(adapter()->IsInitializing());
+  EXPECT_EQ(0, init_cb_count);
+
+  adapter()->ShutDown();
+  ASSERT_TRUE(success.has_value());
+  EXPECT_FALSE(*success);
+  EXPECT_EQ(1, init_cb_count);
+  ExpectAdapterShutDown(adapter());
+
+  // Completing the paused command after ShutDown() must not crash or
+  // re-invoke the init callback.
+  resume_write_local_name_cb();
+  RunUntilIdle();
+  EXPECT_EQ(1, init_cb_count);
+  EXPECT_FALSE(transport_error_called);
+  ExpectAdapterShutDown(adapter());
+}
+
+TEST_F(AdapterTest, ShutDownDuringInitializeWriteClassOfDevice) {
+  std::optional<bool> success;
+  int init_cb_count = 0;
+  bool transport_error_called = false;
+
+  FakeController::Settings settings;
+  settings.ApplyDualModeDefaults();
+  test_device()->set_settings(settings);
+  fit::closure resume_write_cod_cb;
+  test_device()->pause_responses_for_opcode(
+      hci_spec::kWriteClassOfDevice,
+      [&](fit::closure resume) { resume_write_cod_cb = std::move(resume); });
+
+  adapter()->Initialize(
+      [&](bool result) {
+        success = result;
+        init_cb_count++;
+      },
+      [&] { transport_error_called = true; });
+  RunUntilIdle();
+  ASSERT_TRUE(resume_write_cod_cb);
+  EXPECT_TRUE(adapter()->IsInitializing());
+  EXPECT_EQ(0, init_cb_count);
+
+  adapter()->ShutDown();
+  ASSERT_TRUE(success.has_value());
+  EXPECT_FALSE(*success);
+  EXPECT_EQ(1, init_cb_count);
+  ExpectAdapterShutDown(adapter());
+
+  // Completing the paused command after ShutDown() must not crash or mark the
+  // adapter initialized.
+  resume_write_cod_cb();
+  RunUntilIdle();
+  EXPECT_EQ(1, init_cb_count);
+  EXPECT_FALSE(transport_error_called);
+  ExpectAdapterShutDown(adapter());
+}
+
+TEST_F(AdapterTest, ShutDownDuringTransportInitialize) {
+  auto controller = std::make_unique<DeferredInitController>(dispatcher());
+  DeferredInitController* controller_ptr = controller.get();
+
+  auto local_gatt = std::make_unique<gatt::testing::FakeLayer>(dispatcher());
+  auto hci = std::make_unique<hci::Transport>(
+      std::move(controller), dispatcher(), lease_provider());
+  auto deferred_adapter = Adapter::Create(dispatcher(),
+                                          hci->GetWeakPtr(),
+                                          local_gatt->GetWeakPtr(),
+                                          {.legacy_pairing_enabled = false},
+                                          lease_provider(),
+                                          std::nullopt,
+                                          /*l2cap=*/nullptr);
+
+  std::optional<bool> success;
+  int init_cb_count = 0;
+  bool transport_error_called = false;
+  ASSERT_TRUE(deferred_adapter->Initialize(
+      [&](bool result) {
+        success = result;
+        init_cb_count++;
+      },
+      [&] { transport_error_called = true; }));
+  EXPECT_TRUE(deferred_adapter->IsInitializing());
+  EXPECT_EQ(0, init_cb_count);
+
+  // Shut down before hci::Transport finishes initializing (while
+  // init_seq_runner_ is still null).
+  deferred_adapter->ShutDown();
+  ASSERT_TRUE(success.has_value());
+  EXPECT_FALSE(*success);
+  EXPECT_EQ(1, init_cb_count);
+  ExpectAdapterShutDown(deferred_adapter.get());
+
+  // Completing Transport::Initialize() afterwards must be ignored safely.
+  controller_ptr->CompleteInitialize(PW_STATUS_OK);
+  RunUntilIdle();
+  EXPECT_EQ(1, init_cb_count);
+  EXPECT_FALSE(transport_error_called);
+  ExpectAdapterShutDown(deferred_adapter.get());
+
+  // Transport errors signaled afterwards must also be suppressed.
+  controller_ptr->TriggerError(pw::Status::Aborted());
+  RunUntilIdle();
+  EXPECT_EQ(1, init_cb_count);
+  EXPECT_FALSE(transport_error_called);
+  ExpectAdapterShutDown(deferred_adapter.get());
+
+  deferred_adapter.reset();
+  hci.reset();
+}
+
+TEST_F(AdapterTest, DestroyDuringTransportInitialize) {
+  auto controller = std::make_unique<DeferredInitController>(dispatcher());
+  DeferredInitController* controller_ptr = controller.get();
+
+  auto local_gatt = std::make_unique<gatt::testing::FakeLayer>(dispatcher());
+  auto hci = std::make_unique<hci::Transport>(
+      std::move(controller), dispatcher(), lease_provider());
+  auto deferred_adapter = Adapter::Create(dispatcher(),
+                                          hci->GetWeakPtr(),
+                                          local_gatt->GetWeakPtr(),
+                                          {.legacy_pairing_enabled = false},
+                                          lease_provider(),
+                                          std::nullopt,
+                                          /*l2cap=*/nullptr);
+
+  int init_cb_count = 0;
+  bool transport_error_called = false;
+  ASSERT_TRUE(deferred_adapter->Initialize(
+      [&](bool) { init_cb_count++; }, [&] { transport_error_called = true; }));
+  ASSERT_TRUE(deferred_adapter->IsInitializing());
+
+  // Destroy the Adapter without calling ShutDown() while Transport::Initialize
+  // is still pending, then verify late controller callbacks ignore it safely.
+  deferred_adapter.reset();
+  controller_ptr->CompleteInitialize(PW_STATUS_OK);
+  controller_ptr->TriggerError(pw::Status::Aborted());
+  RunUntilIdle();
+  EXPECT_EQ(0, init_cb_count);
+  EXPECT_FALSE(transport_error_called);
+
+  hci.reset();
+}
+
+TEST_F(AdapterTest, DestroyDuringInitializeWriteLocalName) {
+  int init_cb_count = 0;
+  bool transport_error_called = false;
+
+  FakeController::Settings settings;
+  settings.ApplyDualModeDefaults();
+  test_device()->set_settings(settings);
+  fit::closure resume_write_local_name_cb;
+  test_device()->pause_responses_for_opcode(
+      hci_spec::kWriteLocalName, [&](fit::closure resume) {
+        resume_write_local_name_cb = std::move(resume);
+      });
+
+  adapter()->Initialize([&](bool) { init_cb_count++; },
+                        [&] { transport_error_called = true; });
+  RunUntilIdle();
+  ASSERT_TRUE(resume_write_local_name_cb);
+  ASSERT_TRUE(adapter()->IsInitializing());
+
+  // Destroy the Adapter mid-step-4 without ShutDown(), then complete the
+  // pending command.
+  DestroyAdapter();
+  resume_write_local_name_cb();
+  RunUntilIdle();
+  EXPECT_EQ(0, init_cb_count);
+  EXPECT_FALSE(transport_error_called);
+}
+
+TEST_F(AdapterTest, DestroyDuringInitializeWriteClassOfDevice) {
+  int init_cb_count = 0;
+  bool transport_error_called = false;
+
+  FakeController::Settings settings;
+  settings.ApplyDualModeDefaults();
+  test_device()->set_settings(settings);
+  fit::closure resume_write_cod_cb;
+  test_device()->pause_responses_for_opcode(
+      hci_spec::kWriteClassOfDevice,
+      [&](fit::closure resume) { resume_write_cod_cb = std::move(resume); });
+
+  adapter()->Initialize([&](bool) { init_cb_count++; },
+                        [&] { transport_error_called = true; });
+  RunUntilIdle();
+  ASSERT_TRUE(resume_write_cod_cb);
+  ASSERT_TRUE(adapter()->IsInitializing());
+
+  // Destroy the Adapter mid-step-4 without ShutDown(), then complete the
+  // pending WriteClassOfDevice command.
+  DestroyAdapter();
+  resume_write_cod_cb();
+  RunUntilIdle();
+  EXPECT_EQ(0, init_cb_count);
+  EXPECT_FALSE(transport_error_called);
+}
+
+TEST_F(AdapterTest, DestroyDuringSetLocalName) {
+  FakeController::Settings settings;
+  settings.ApplyDualModeDefaults();
+  test_device()->set_settings(settings);
+  ASSERT_TRUE(EnsureInitialized());
+
+  fit::closure resume_write_local_name_cb;
+  test_device()->pause_responses_for_opcode(
+      hci_spec::kWriteLocalName, [&](fit::closure resume) {
+        resume_write_local_name_cb = std::move(resume);
+      });
+
+  int name_cb_count = 0;
+  adapter()->SetLocalName("Late Name", [&](const auto&) { name_cb_count++; });
+  RunUntilIdle();
+  ASSERT_TRUE(resume_write_local_name_cb);
+
+  DestroyAdapter();
+  resume_write_local_name_cb();
+  RunUntilIdle();
+  EXPECT_EQ(0, name_cb_count);
+}
+
+TEST_F(AdapterTest, TransportErrorCallbackShutsDownAndDestroysAdapter) {
+  FakeController::Settings settings;
+  settings.ApplyDualModeDefaults();
+  test_device()->set_settings(settings);
+
+  std::optional<bool> init_success;
+  int error_cb_calls = 0;
+  int captured_value_after_destroy = 0;
+  auto owned_state = std::make_unique<int>(42);
+
+  ASSERT_TRUE(
+      adapter()->Initialize([&](bool success) { init_success = success; },
+                            [this,
+                             &error_cb_calls,
+                             &captured_value_after_destroy,
+                             state = std::move(owned_state)]() {
+                              error_cb_calls++;
+                              // Call ShutDown() and destroy the Adapter
+                              // mid-callback, then read our owned lambda
+                              // capture to verify OnTransportError() moved the
+                              // callback out to a stack local before invoking
+                              // it.
+                              adapter()->ShutDown();
+                              DestroyAdapter();
+                              captured_value_after_destroy = *state;
+                            }));
+  RunUntilIdle();
+  ASSERT_TRUE(init_success.has_value());
+  ASSERT_TRUE(*init_success);
+
+  test_device()->SignalError(pw::Status::Aborted());
+  RunUntilIdle();
+  EXPECT_EQ(1, error_cb_calls);
+  EXPECT_EQ(42, captured_value_after_destroy);
 }
 
 // Tests that receiving a command complete packet after shutdown doesn't

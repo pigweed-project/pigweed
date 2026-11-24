@@ -413,7 +413,8 @@ class AdapterImpl final : public Adapter {
   void SetLocalName(std::string name, hci::ResultFunction<> callback) override;
 
   std::string local_name() const override {
-    return bredr_discovery_manager_->local_name();
+    return bredr_discovery_manager_ ? bredr_discovery_manager_->local_name()
+                                    : "";
   }
 
   void SetDeviceClass(DeviceClass dev_class,
@@ -689,8 +690,9 @@ class AdapterImpl final : public Adapter {
   // devices.
   PeerCache peer_cache_;
 
-  // L2CAP layer used by GAP. This must be destroyed after the following
-  // members because they raw pointers to this member.
+  // L2CAP layer used by GAP. C++ destroys class members in reverse order of
+  // declaration, so this field must remain declared before the following
+  // members because they hold raw pointers to it.
   std::unique_ptr<l2cap::ChannelManager> l2cap_;
 
   // The GATT profile. We use this reference to add and remove data bearers
@@ -700,6 +702,11 @@ class AdapterImpl final : public Adapter {
   // Contains feature flags based on the product's configuration
   Config config_;
 
+  // Local LE address manager. C++ destroys class members in reverse order of
+  // declaration, so this field must remain declared before the HCI and GAP
+  // objects below because they hold raw pointers to it.
+  std::unique_ptr<LowEnergyAddressManager> le_address_manager_;
+
   // Objects that abstract the controller for connection and advertising
   // procedures.
   std::unique_ptr<hci::LowEnergyAdvertiser> hci_le_advertiser_;
@@ -707,12 +714,11 @@ class AdapterImpl final : public Adapter {
   std::unique_ptr<hci::LowEnergyScanner> hci_le_scanner_;
 
   // Objects that perform LE procedures.
-  std::unique_ptr<LowEnergyAddressManager> le_address_manager_;
   std::unique_ptr<LowEnergyDiscoveryManager> le_discovery_manager_;
-  std::optional<PeriodicAdvertisingSyncManager>
-      periodic_advertising_sync_manager_;
   std::unique_ptr<LowEnergyConnectionManager> le_connection_manager_;
   std::unique_ptr<LowEnergyAdvertisingManager> le_advertising_manager_;
+  std::optional<PeriodicAdvertisingSyncManager>
+      periodic_advertising_sync_manager_;
   std::unique_ptr<LowEnergyImpl> low_energy_;
 
   // Objects that perform BR/EDR procedures.
@@ -829,16 +835,19 @@ bool AdapterImpl::Initialize(InitializeCallback callback,
   init_cb_ = std::move(callback);
   transport_error_cb_ = std::move(transport_error_cb);
 
-  hci_->Initialize([this](bool success) {
-    if (!success) {
-      bt_log(ERROR, "gap", "Failed to initialize Transport");
-      CompleteInitialization(/*success=*/false);
+  hci_->Initialize([self = weak_self_.GetWeakPtr()](bool success) {
+    if (!self.is_alive() || !self->IsInitializing()) {
       return;
     }
-    init_seq_runner_ = std::make_unique<hci::SequentialCommandRunner>(
-        hci_->command_channel()->AsWeakPtr());
+    if (!success) {
+      bt_log(ERROR, "gap", "Failed to initialize Transport");
+      self->CompleteInitialization(/*success=*/false);
+      return;
+    }
+    self->init_seq_runner_ = std::make_unique<hci::SequentialCommandRunner>(
+        self->hci_->command_channel()->AsWeakPtr());
 
-    InitializeStep1();
+    self->InitializeStep1();
   });
 
   return true;
@@ -847,12 +856,22 @@ bool AdapterImpl::Initialize(InitializeCallback callback,
 void AdapterImpl::ShutDown() {
   bt_log(DEBUG, "gap", "adapter shutting down");
 
-  if (IsInitializing()) {
-    PW_DCHECK(!init_seq_runner_->IsReady());
-    init_seq_runner_->Cancel();
+  if (!IsInitializing()) {
+    CleanUp();
+    return;
   }
 
-  CleanUp();
+  if (init_seq_runner_ && !init_seq_runner_->IsReady()) {
+    // |init_seq_runner_->Cancel()| invokes CompleteInitialization(false),
+    // which calls CleanUp() and notifies |init_cb_|. |this| may be destroyed
+    // inside |init_cb_|, so return immediately.
+    init_seq_runner_->Cancel();
+    return;
+  }
+
+  if (!CompleteInitialization(/*success=*/false)) {
+    CleanUp();
+  }
 }
 
 bool AdapterImpl::AddBondedPeer(BondingData bonding_data) {
@@ -897,10 +916,15 @@ void AdapterImpl::SetLocalName(std::string name,
   std::string name_copy(name);
   bredr_discovery_manager_->UpdateLocalName(
       std::move(name),
-      [this, cb = std::move(callback), local_name = std::move(name_copy)](
-          auto status) {
-        if (!bt_is_error(status, WARN, "gap", "set local name failed")) {
-          state_.local_name = local_name;
+      [self = weak_self_.GetWeakPtr(),
+       cb = std::move(callback),
+       local_name = std::move(name_copy)](auto status) {
+        if (!self.is_alive()) {
+          return;
+        }
+        if (!bt_is_error(status, WARN, "gap", "set local name failed") &&
+            (self->IsInitializing() || self->IsInitialized())) {
+          self->state_.local_name = local_name;
         }
         cb(status);
       });
@@ -1919,11 +1943,17 @@ void AdapterImpl::InitializeStep4() {
   // Assign a default name and device class before notifying completion.
   auto self = weak_self_.GetWeakPtr();
   SetLocalName(kDefaultLocalName, [self](auto) mutable {
+    if (!self.is_alive() || !self->IsInitializing()) {
+      return;
+    }
     // Set the default device class - a computer with audio.
     // TODO(fxbug.dev/42074312): set this from a platform configuration file
     DeviceClass dev_class(DeviceClass::MajorClass::kComputer);
     dev_class.SetServiceClasses({DeviceClass::ServiceClass::kAudio});
     self->SetDeviceClass(dev_class, [self](const auto&) {
+      if (!self.is_alive() || !self->IsInitializing()) {
+        return;
+      }
       self->CompleteInitialization(/*success=*/true);
     });
   });
@@ -1934,13 +1964,14 @@ bool AdapterImpl::CompleteInitialization(bool success) {
     return false;
   }
 
+  InitializeCallback init_cb = std::move(init_cb_);
   if (success) {
     init_state_ = State::kInitialized;
   } else {
     CleanUp();
   }
 
-  init_cb_(success);
+  init_cb(success);
   return true;
 }
 
@@ -2052,27 +2083,32 @@ void AdapterImpl::CleanUp() {
 
   init_state_ = State::kNotInitialized;
   state_ = AdapterState();
+  max_lmp_feature_page_index_.reset();
+  init_cb_ = nullptr;
   transport_error_cb_ = nullptr;
+  auto_conn_cb_ = nullptr;
 
   // Destroy objects in reverse order of construction.
-  low_energy_ = nullptr;
   bredr_ = nullptr;
   sdp_server_ = nullptr;
   bredr_discovery_manager_ = nullptr;
+  bredr_connection_manager_ = nullptr;
+
+  low_energy_ = nullptr;
+  periodic_advertising_sync_manager_.reset();
   le_advertising_manager_ = nullptr;
   le_connection_manager_ = nullptr;
-  periodic_advertising_sync_manager_.reset();
   le_discovery_manager_ = nullptr;
 
+  hci_le_scanner_ = nullptr;
   hci_le_connector_ = nullptr;
   hci_le_advertiser_ = nullptr;
-  hci_le_scanner_ = nullptr;
 
   le_address_manager_ = nullptr;
 
   l2cap_ = nullptr;
-  bredr_connection_manager_ = nullptr;
 
+  init_seq_runner_ = nullptr;
   hci_.reset();
 }
 
@@ -2082,7 +2118,10 @@ void AdapterImpl::OnTransportError() {
     return;
   }
   if (transport_error_cb_) {
-    transport_error_cb_();
+    // Move the callback out before invoking it so captures remain valid if
+    // the callback calls ShutDown() or destroys this Adapter.
+    fit::closure transport_error_cb = std::move(transport_error_cb_);
+    transport_error_cb();
   }
 }
 
