@@ -1582,6 +1582,36 @@ func (s *MockGerritServer) OnGetBuild(details any) *MockGerritServer {
 	}
 }
 
+// OnBuildsBatch registers a Buildbucket Builds/Batch mock dispatching each sub-request to fn.
+func (s *MockGerritServer) OnBuildsBatch(fn func(sub bbBatchSubRequest) bbBatchSubResponse) *MockGerritServer {
+	return s.On("POST", "/prpc/buildbucket.v2.Builds/Batch", func(w http.ResponseWriter, r *http.Request) {
+		var req bbBatchRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			s.t.Errorf("OnBuildsBatch: failed to decode request body: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		resps := make([]bbBatchSubResponse, len(req.Requests))
+		for i, sub := range req.Requests {
+			resps[i] = fn(sub)
+		}
+		s.RespondJSON(w, http.StatusOK, bbBatchResponse{Responses: resps})
+	})
+}
+
+// BatchSearchResp wraps FakeBuild results into a Builds/Batch searchBuilds response.
+func BatchSearchResp(builds ...bbBuild) bbBatchSubResponse {
+	if builds == nil {
+		builds = []bbBuild{}
+	}
+	return bbBatchSubResponse{SearchBuilds: &bbSearchBuildsResponse{Builds: builds}}
+}
+
+// BatchErrorResp builds an error entry inside a Builds/Batch response.
+func BatchErrorResp(code int, message string) bbBatchSubResponse {
+	return bbBatchSubResponse{Error: &bbRPCStatus{Code: code, Message: message}}
+}
+
 // MockIssueTrackerServer provides an in-memory Google Issue Tracker v1 REST server for testing.
 type MockIssueTrackerServer struct {
 	Server          *httptest.Server

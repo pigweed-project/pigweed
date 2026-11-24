@@ -15,9 +15,11 @@
 package pw_ghish
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 	"text/tabwriter"
@@ -26,7 +28,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type runListOptions struct {
+	workflows []string
+	limit     int
+	status    string
+}
+
 var (
+	runListOpts          runListOptions
 	runListJSON          bool
 	runListExperimental  bool
 	runListAll           bool
@@ -45,6 +54,8 @@ var (
 	runRerunExperimental bool
 )
 
+const maxStdinTargetBytes = 1 << 20
+
 func isBuildbucketHostFlagChanged(cmd *cobra.Command) bool {
 	return cmd != nil && cmd.Flags().Changed("buildbucket-host")
 }
@@ -55,6 +66,101 @@ func effectiveBuildbucketHost(cmd *cobra.Command, projCfg *ProjectConfig) (strin
 		cfgHost = projCfg.CI.BuildbucketHost
 	}
 	return ResolveEffectiveBuildbucketHost(buildbucketHost, isBuildbucketHostFlagChanged(cmd), cfgHost)
+}
+
+func writeIndentedJSON(out io.Writer, v any) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+	fmt.Fprintln(out, string(data))
+	return nil
+}
+
+func resolveDefaultLUCIProject(cmd *cobra.Command, projCfg *ProjectConfig) string {
+	if projCfg != nil {
+		for _, tb := range projCfg.CI.TryBuckets {
+			if proj, _, ok := strings.Cut(strings.TrimSpace(tb), "/"); ok && proj != "" {
+				return proj
+			}
+		}
+	}
+	if cfg := GetConfig(cmd); cfg != nil {
+		if prof := cfg.GetProfile(cmd.Context()); prof != nil {
+			return prof.BuildbucketProject()
+		}
+	}
+	return ""
+}
+
+func readStdinLines(in io.Reader, what string) ([]string, error) {
+	if in == nil {
+		return nil, fmt.Errorf("cannot read %s from '-': stdin is nil", what)
+	}
+	raw, err := io.ReadAll(io.LimitReader(in, maxStdinTargetBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %s from stdin: %w", what, err)
+	}
+	if len(raw) > maxStdinTargetBytes {
+		return nil, fmt.Errorf("stdin for %s exceeds %d bytes", what, maxStdinTargetBytes)
+	}
+	var out []string
+	for _, line := range strings.Split(string(raw), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		out = append(out, trimmed)
+	}
+	return out, nil
+}
+
+func expandBuilderSpecs(cmd *cobra.Command, workflows []string) ([]string, error) {
+	if len(workflows) == 0 {
+		return nil, nil
+	}
+	var raw []string
+	readStdinOnce := false
+	for _, spec := range workflows {
+		item := strings.TrimSpace(spec)
+		if item == "" {
+			continue
+		}
+		if item == "-" {
+			if readStdinOnce {
+				continue
+			}
+			readStdinOnce = true
+			lines, err := readStdinLines(cmd.InOrStdin(), "builder selectors")
+			if err != nil {
+				return nil, err
+			}
+			raw = append(raw, lines...)
+			continue
+		}
+		raw = append(raw, item)
+	}
+	expanded := dedup(raw)
+	if len(expanded) == 0 {
+		return nil, fmt.Errorf("no LUCI builders provided via -w / --workflow")
+	}
+	return expanded, nil
+}
+
+func matchBuildStatusFilter(buildStatus, bbFilter string) bool {
+	switch bbFilter {
+	case "":
+		return true
+	case "ENDED_MASK":
+		switch buildStatus {
+		case "SUCCESS", "FAILURE", "INFRA_FAILURE", "CANCELED":
+			return true
+		default:
+			return false
+		}
+	default:
+		return strings.EqualFold(buildStatus, bbFilter)
+	}
 }
 
 func isBuildbucketID(s string) bool {
@@ -119,8 +225,8 @@ func parseRunTargetArgs(cmd *cobra.Command, args []string, jobFlag string, allow
 }
 
 // buildMatchesJob checks whether a Buildbucket or Busytown build matches a user-supplied
-// job selector, which may be "<builder>", "<bucket>/<builder>", or
-// "<project>/<bucket>/<builder>" (case-insensitive).
+// job selector, which may be "<builder>", "<bucket>/<builder>",
+// "<project>/<bucket>/<builder>", or "luci.<project>.<bucket>/<builder>" (case-insensitive).
 func buildMatchesJob(b bbBuild, job string) bool {
 	if strings.EqualFold(b.Builder.Builder, job) || (b.Target != "" && strings.EqualFold(b.Target, job)) {
 		return true
@@ -130,6 +236,11 @@ func buildMatchesJob(b bbBuild, job string) bool {
 	}
 	if b.Builder.Project != "" && b.Builder.Bucket != "" && strings.EqualFold(b.Builder.Project+"/"+b.Builder.Bucket+"/"+b.Builder.Builder, job) {
 		return true
+	}
+	if parsed, err := ParseBuilderSelector(job, ""); err == nil {
+		return strings.EqualFold(b.Builder.Project, parsed.Project) &&
+			strings.EqualFold(b.Builder.Bucket, parsed.Bucket) &&
+			strings.EqualFold(b.Builder.Builder, parsed.Builder)
 	}
 	return false
 }
@@ -174,23 +285,127 @@ var RunCmd = &cobra.Command{
 	Long: `View and manage CI/CD workflow runs and tryjob builds executed on Buildbucket.
 
 Commands:
-  list    List recent builds for a change
+  list    List recent builds for a change or LUCI builder
   view    View build details, step trees (-v), and failure logs (--log-failed)
   rerun   Rerun failed checks (--failed) or specific builders (-j <builder>)
   watch   Watch checks until completion`,
 }
 
+func runBuilderListMode(cmd *cobra.Command, projCfg *ProjectConfig, specs []string) error {
+	ctx := cmd.Context()
+	defaultProj := ""
+	defaultProjResolved := false
+	parsed := make([]bbBuilder, 0, len(specs))
+	for _, spec := range specs {
+		trimmed := strings.TrimPrefix(strings.TrimSpace(spec), "buildbucket/")
+		if strings.Count(trimmed, "/") == 1 && !strings.HasPrefix(trimmed, "luci.") && !defaultProjResolved {
+			defaultProj = resolveDefaultLUCIProject(cmd, projCfg)
+			defaultProjResolved = true
+		}
+		b, err := ParseBuilderSelector(spec, defaultProj)
+		if err != nil {
+			return err
+		}
+		parsed = append(parsed, b)
+	}
+
+	bbHost, err := effectiveBuildbucketHost(cmd, projCfg)
+	if err != nil {
+		return err
+	}
+	luciClient := NewLUCIClient(bbHost, getLUCIHTTPClient())
+	results, err := luciClient.SearchBuilderBuildsBatch(ctx, parsed, runListOpts.limit, runListOpts.status)
+	if err != nil {
+		return err
+	}
+
+	var flat []bbBuild
+	for _, r := range results {
+		if r.Error != "" {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s/%s/%s: %s\n",
+				r.Project, r.Bucket, r.Builder, SanitizeUntrustedText(r.Error))
+		}
+		flat = append(flat, r.Builds...)
+	}
+
+	if runListJSON {
+		return writeIndentedJSON(cmd.OutOrStdout(), BuildCheckItems(flat))
+	}
+
+	if len(flat) == 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "No builds found for %s.\n\nVerdict: NO CHECKS\nNext:    gh run list -w <project>/<bucket>/<builder>\n",
+			countNoun(len(results), "builder"))
+		return nil
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Showing %d build(s) across %s\n\n", len(flat), countNoun(len(results), "builder"))
+	writeRunListTable(cmd.OutOrStdout(), flat, 0, runListAll || VerboseFlag || len(results) == 1)
+	pendingCmd := fmt.Sprintf("gh run list -w %s/%s/%s", results[0].Project, results[0].Bucket, results[0].Builder)
+	writeDirectBuildsVerdictFooter(cmd.OutOrStdout(), flat, pendingCmd, "")
+	return nil
+}
+
+func writeDirectBuildsVerdictFooter(out io.Writer, builds []bbBuild, pendingNext, viewSuffix string) {
+	var failed, canceled, running, passed int
+	firstFailedID := ""
+	for _, b := range builds {
+		switch classifyCheckStatus(b.Status) {
+		case checkFailed:
+			failed++
+			if firstFailedID == "" {
+				firstFailedID = b.ID
+			}
+		case checkCanceled:
+			canceled++
+		case checkPending:
+			running++
+		case checkPassed:
+			passed++
+		}
+	}
+	fmt.Fprintln(out)
+	switch {
+	case failed > 0:
+		fmt.Fprintf(out, "Verdict: FAILED (%d of %d builds failed)\nNext:    gh run view %s --log-failed\n",
+			failed, len(builds), cmp.Or(firstFailedID, builds[0].ID))
+	case running > 0:
+		fmt.Fprintf(out, "Verdict: PENDING (%d running, %d passed)\nNext:    %s\n", running, passed, pendingNext)
+	case canceled > 0:
+		fmt.Fprintf(out, "Verdict: CANCELED (%d of %d builds canceled)\nNext:    gh run view %s%s\n",
+			canceled, len(builds), builds[0].ID, viewSuffix)
+	default:
+		fmt.Fprintf(out, "Verdict: PASSED (%s passed)\nNext:    gh run view %s%s\n",
+			countNoun(passed, "build"), builds[0].ID, viewSuffix)
+	}
+}
+
 var runListCmd = &cobra.Command{
 	Use:          "list [<id>[/<patchset>]]",
 	Annotations:  map[string]string{KindAnnotation: KindList},
-	Short:        "List recent CI/CD workflow runs for a change",
+	Short:        "List recent CI/CD workflow runs for a change or LUCI builder",
 	SilenceUsage: true,
 	Args:         cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
+		bbStatusFilter, err := ParseRunStatusFilter(runListOpts.status)
+		if err != nil {
+			return err
+		}
+		if cmd.Flags().Changed("limit") && (runListOpts.limit <= 0 || runListOpts.limit > maxBuilderRunLimit) {
+			return fmt.Errorf("invalid --limit %d: must be between 1 and %d", runListOpts.limit, maxBuilderRunLimit)
+		}
+
 		projCfg, err := LoadCommandProjectConfig(cmd)
 		if err != nil {
 			return err
+		}
+
+		specs, err := expandBuilderSpecs(cmd, runListOpts.workflows)
+		if err != nil {
+			return err
+		}
+		if len(args) == 0 && len(specs) > 0 {
+			return runBuilderListMode(cmd, projCfg, specs)
 		}
 
 		rawID, err := ResolveTargetChangeID(ctx, cmd, args)
@@ -208,20 +423,47 @@ var runListCmd = &cobra.Command{
 		}
 		filteredBuilds, hiddenCount := FilterBuildsByTags(deduplicateLatestBuilds(res.Builds), hideFilters)
 		relevant, omittedExp := FilterExperimentalBuilds(filteredBuilds, runListExperimental)
+		patchsetBuilds := relevant
+		if len(specs) > 0 {
+			var matched []bbBuild
+			for _, b := range relevant {
+				if slices.ContainsFunc(specs, func(sel string) bool { return buildMatchesJob(b, sel) }) {
+					matched = append(matched, b)
+				}
+			}
+			relevant = matched
+		}
+		if bbStatusFilter != "" {
+			var statusMatched []bbBuild
+			for _, b := range relevant {
+				if matchBuildStatusFilter(b.Status, bbStatusFilter) {
+					statusMatched = append(statusMatched, b)
+				}
+			}
+			relevant = statusMatched
+		}
+		if runListOpts.limit > 0 && len(relevant) > runListOpts.limit {
+			failed, passing := PartitionAndOrderBuilds(relevant)
+			ordered := slices.Concat(failed, passing)
+			relevant = ordered[:runListOpts.limit]
+		}
 
 		if len(relevant) == 0 {
+			if runListJSON {
+				fmt.Fprintln(cmd.OutOrStdout(), "[]")
+				return nil
+			}
+			if len(patchsetBuilds) > 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "No matching checks found for Change %d (Patchset %d).\n", res.Change.Number, res.PatchsetNum)
+				writeRunVerdictFooter(cmd.OutOrStdout(), res.Change.Number, patchsetBuilds)
+				return nil
+			}
 			fmt.Fprintf(cmd.OutOrStdout(), "No checks scheduled for Change %d (Patchset %d).\n", res.Change.Number, res.PatchsetNum)
 			return nil
 		}
 
 		if runListJSON {
-			items := BuildCheckItems(relevant)
-			data, err := json.MarshalIndent(items, "", "  ")
-			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), string(data))
-			return nil
+			return writeIndentedJSON(cmd.OutOrStdout(), BuildCheckItems(relevant))
 		}
 
 		fmt.Fprintf(cmd.OutOrStdout(), "Showing %d checks for Change %d (Patchset %d) • %s\n\n", len(relevant), res.Change.Number, res.PatchsetNum, res.Change.Subject)
@@ -234,7 +476,7 @@ var runListCmd = &cobra.Command{
 		if notice := FormatHiddenByConfigNotice(hiddenCount, projCfg.CI.HideTagFilters); notice != "" {
 			fmt.Fprintf(cmd.OutOrStdout(), "\n%s\n", notice)
 		}
-		writeRunVerdictFooter(cmd.OutOrStdout(), res.Change.Number, relevant)
+		writeRunVerdictFooter(cmd.OutOrStdout(), res.Change.Number, patchsetBuilds)
 		return nil
 	},
 }
@@ -364,7 +606,6 @@ var runViewCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-
 		luciClient := NewLUCIClient(bbHost, getLUCIHTTPClient())
 
 		var res *CIContext
@@ -900,10 +1141,16 @@ var runWatchCmd = &cobra.Command{
 }
 
 func init() {
+	//ghish:flag mode=divergent gh="run list --workflow" doc="ghDivergenceHelp"
+	runListCmd.Flags().StringSliceVarP(&runListOpts.workflows, "workflow", "w", nil, "Query or filter runs by LUCI builder (<project>/<bucket>/<builder>, repeatable, or '-' for stdin)")
+	//ghish:flag mode=upstream gh="run list --limit"
+	runListCmd.Flags().IntVarP(&runListOpts.limit, "limit", "L", 0, "Maximum number of builds to fetch (default 10 for -w/--workflow)")
+	//ghish:flag mode=upstream gh="run list --status"
+	runListCmd.Flags().StringVarP(&runListOpts.status, "status", "s", "", "Filter builds by status (completed, in_progress, queued, success, failure, infra_failure, canceled)")
 	runListCmd.Flags().BoolVar(&runListJSON, "json", false, "Output JSON with specified fields")
 	runListCmd.Flags().BoolVarP(&runListExperimental, "experimental", "e", false, "Include non-blocking experimental checks")
 	//ghish:flag mode=extension reason="Show all individual passing checks without collapsing"
-	runListCmd.Flags().BoolVar(&runListAll, "all", false, "Include builds hidden by .ghish.toml hide_tag_filters (ghish-only)")
+	runListCmd.Flags().BoolVar(&runListAll, "all", false, "Show all passing checks without collapsing and include hidden builds (ghish-only)")
 	runListCmd.Flags().StringVar(&buildbucketHost, "buildbucket-host", "cr-buildbucket.appspot.com", "Buildbucket host to query")
 	runListCmd.Flags().MarkHidden("buildbucket-host")
 

@@ -388,6 +388,7 @@ flag is spelled as it is in 'gh' but the Gerrit concept underneath differs.
 
   pr list -a/--assignee   gh filters by assignee -> here Gerrit 'reviewer:' (Gerrit dropped assignees in 3.8)
   pr list -l/--label      gh an issue label      -> here a Gerrit vote predicate, e.g. Code-Review+2
+  run list -w/--workflow  gh workflow name/file  -> here a LUCI builder '<project>/<bucket>/<builder>' (or '-' on stdin)
   run list/view --json    gh a field list        -> here a boolean ('pr view --json' does take fields)
   --json state            gh OPEN/CLOSED/MERGED  -> here Gerrit's NEW/MERGED/ABANDONED
   pr review --request-changes  gh blocks the PR  -> here Code-Review-1, advisory; -2 is the veto

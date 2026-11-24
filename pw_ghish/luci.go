@@ -15,6 +15,7 @@
 package pw_ghish
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -105,6 +106,7 @@ type bbInput struct {
 
 type bbBuild struct {
 	ID              string    `json:"id"`
+	Number          int       `json:"number,omitempty"`
 	Builder         bbBuilder `json:"builder"`
 	Status          string    `json:"status"`
 	SummaryMarkdown string    `json:"summaryMarkdown"`
@@ -269,7 +271,9 @@ type bbSearchBuildsRequest struct {
 }
 
 type bbPredicate struct {
-	GerritChanges []bbGerritChange `json:"gerritChanges"`
+	GerritChanges []bbGerritChange `json:"gerritChanges,omitempty"`
+	Builder       *bbBuilder       `json:"builder,omitempty"`
+	Status        string           `json:"status,omitempty"`
 }
 
 type bbGerritChange struct {
@@ -317,6 +321,10 @@ func NewLUCIClient(host string, httpClient *http.Client) *LUCIClient {
 // It handles JSON marshaling, setting headers, stripping the ')]}\'\n' security prefix,
 // and unmarshaling the JSON response into resp.
 func (c *LUCIClient) CallPRPC(ctx context.Context, service, method string, req, resp any) error {
+	return c.callPRPCWithMaxBytes(ctx, service, method, req, resp, maxHTTPBodyBytes)
+}
+
+func (c *LUCIClient) callPRPCWithMaxBytes(ctx context.Context, service, method string, req, resp any, maxBytes int64) error {
 	if c == nil {
 		return fmt.Errorf("LUCIClient is nil")
 	}
@@ -332,6 +340,9 @@ func (c *LUCIClient) CallPRPC(ctx context.Context, service, method string, req, 
 	if resp == nil {
 		return fmt.Errorf("response pointer cannot be nil")
 	}
+	if maxBytes <= 0 {
+		maxBytes = maxHTTPBodyBytes
+	}
 
 	jsonBytes, err := json.Marshal(req)
 	if err != nil {
@@ -339,7 +350,8 @@ func (c *LUCIClient) CallPRPC(ctx context.Context, service, method string, req, 
 	}
 
 	endpoint := fmt.Sprintf("https://%s/prpc/%s/%s", c.Host, service, method)
-	if strings.HasPrefix(c.Host, "http://") || strings.HasPrefix(c.Host, "https://") {
+	lowerHost := strings.ToLower(c.Host)
+	if strings.HasPrefix(lowerHost, "http://") || strings.HasPrefix(lowerHost, "https://") {
 		endpoint = fmt.Sprintf("%s/prpc/%s/%s", c.Host, service, method)
 	}
 
@@ -356,7 +368,7 @@ func (c *LUCIClient) CallPRPC(ctx context.Context, service, method string, req, 
 	}
 	defer httpResp.Body.Close()
 
-	bodyBytes, err := readBoundedBody(httpResp.Body, maxHTTPBodyBytes)
+	bodyBytes, err := readBoundedBody(httpResp.Body, maxBytes)
 	if err != nil {
 		return fmt.Errorf("failed to read %s/%s response: %w", service, method, err)
 	}
@@ -413,7 +425,7 @@ func (c *LUCIClient) SearchBuilds(ctx context.Context, gerritHost, project strin
 				},
 			},
 			Mask: bbBuildMask{
-				Fields: "id,builder,status,create_time,start_time,end_time,summary_markdown,critical,input.experiments,tags",
+				Fields: searchBuildsFieldsMask,
 			},
 			PageSize:  1000,
 			PageToken: pageToken,
@@ -482,15 +494,7 @@ func (c *LUCIClient) SearchBuildsByPatchset(ctx context.Context, gerritHost, pro
 	// If multiple searches fail with distinct non-cancellation errors, only the
 	// error from the earliest patchset in the input slice is reported, which
 	// keeps the failure message deterministic without dumping redundant errors.
-	failed := -1
-	for i, err := range errs {
-		if err == nil {
-			continue
-		}
-		if failed < 0 || (errors.Is(errs[failed], context.Canceled) && !errors.Is(err, context.Canceled)) {
-			failed = i
-		}
-	}
+	failed := firstNonCanceledErrorIndex(errs)
 	if failed < 0 {
 		return results, nil
 	}
@@ -988,6 +992,24 @@ func formatCheckSummary(builds []bbBuild, changeNum int) string {
 	return fmt.Sprintf(GlyphPass+" %d passing", passed)
 }
 
+const (
+	// maxBuildbucketBatchSize caps the number of SearchBuilds sub-requests per
+	// Buildbucket Builds/Batch pRPC call.
+	maxBuildbucketBatchSize = 50
+	// maxBatchHTTPBodyBytes bounds Builds/Batch HTTP responses (64 MiB).
+	maxBatchHTTPBodyBytes = 64 * 1024 * 1024
+	// defaultBuilderRunLimit is the default per-builder page size for
+	// `gh run list -w` when -L/--limit is not specified.
+	defaultBuilderRunLimit = 10
+	// maxBuilderRunLimit is Buildbucket's maximum pageSize per SearchBuilds call.
+	maxBuilderRunLimit = 1000
+	// searchBuildsFieldsMask requests the Buildbucket fields needed by change-scoped
+	// `SearchBuilds` queries.
+	searchBuildsFieldsMask = "id,builder,status,create_time,start_time,end_time,summary_markdown,critical,input.experiments,tags"
+	// searchBuilderBuildsMask adds `number` for builder-scoped `CheckItem` output.
+	searchBuilderBuildsMask = "number," + searchBuildsFieldsMask
+)
+
 func canonicalAllowedBuildbucketHost(raw string) (string, bool) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -1035,4 +1057,306 @@ func ResolveEffectiveBuildbucketHost(explicitHost string, flagChanged bool, conf
 		return canonical, nil
 	}
 	return explicitHost, nil
+}
+
+// BuilderSearchResult holds the recent builds (or per-builder RPC error) for one
+// queried LUCI builder in `SearchBuilderBuildsBatch`.
+type BuilderSearchResult struct {
+	Project string
+	Bucket  string
+	Builder string
+	Builds  []bbBuild
+	Error   string
+}
+
+type bbBatchSubRequest struct {
+	SearchBuilds *bbSearchBuildsRequest `json:"searchBuilds,omitempty"`
+}
+
+type bbBatchRequest struct {
+	Requests []bbBatchSubRequest `json:"requests"`
+}
+
+type bbRPCStatus struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+type bbBatchSubResponse struct {
+	SearchBuilds *bbSearchBuildsResponse `json:"searchBuilds,omitempty"`
+	Error        *bbRPCStatus            `json:"error,omitempty"`
+}
+
+type bbBatchResponse struct {
+	Responses []bbBatchSubResponse `json:"responses"`
+}
+
+func splitLUCIBucket(rawBucket, defaultProject string) (project, shortBucket string, ok bool) {
+	b := strings.TrimSpace(rawBucket)
+	if b == "" {
+		return "", "", false
+	}
+	if strings.HasPrefix(b, "luci.") {
+		if defaultProject != "" {
+			if after, cut := strings.CutPrefix(b, "luci."+defaultProject+"."); cut && after != "" {
+				return defaultProject, after, true
+			}
+		}
+		proj, short, cut := strings.Cut(strings.TrimPrefix(b, "luci."), ".")
+		if !cut || proj == "" || short == "" {
+			return "", "", false
+		}
+		return proj, short, true
+	}
+	if defaultProject == "" {
+		return "", b, false
+	}
+	return defaultProject, b, true
+}
+
+// ParseBuilderSelector parses a LUCI builder identifier in the form
+// "<project>/<bucket>/<builder>", "buildbucket/luci.<project>.<bucket>/<builder>",
+// "luci.<project>.<bucket>/<builder>", or "<bucket>/<builder>" (when defaultProject
+// is non-empty).
+func ParseBuilderSelector(raw, defaultProject string) (bbBuilder, error) {
+	clean := strings.TrimSpace(raw)
+	clean = strings.TrimPrefix(clean, "buildbucket/")
+	parts := strings.Split(clean, "/")
+	switch len(parts) {
+	case 2:
+		first, builder := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+		if builder != "" {
+			if proj, bucket, ok := splitLUCIBucket(first, defaultProject); ok {
+				return bbBuilder{Project: proj, Bucket: bucket, Builder: builder}, nil
+			}
+		}
+	case 3:
+		proj := strings.TrimSpace(parts[0])
+		bucket := strings.TrimSpace(parts[1])
+		builder := strings.TrimSpace(parts[2])
+		if proj != "" && bucket != "" && builder != "" {
+			if strings.HasPrefix(bucket, "luci.") {
+				p, short, ok := splitLUCIBucket(bucket, proj)
+				if !ok || p != proj {
+					break
+				}
+				bucket = short
+			}
+			return bbBuilder{Project: proj, Bucket: bucket, Builder: builder}, nil
+		}
+	}
+	return bbBuilder{}, fmt.Errorf("invalid LUCI builder selector %q: expected '<project>/<bucket>/<builder>' (for example, 'my-project/ci/linux-build').\n\n"+
+		"Usage examples:\n"+
+		"  gh run list -w <project>/<bucket>/<builder> -L 5\n"+
+		"  gh run list -w <project>/<bucket>/<builder> --status completed\n\n"+
+		"To inspect checks on a Gerrit change instead, run:\n"+
+		"  gh run list [<change-id>]", raw)
+}
+
+// ParseRunStatusFilter validates a `--status` flag value on `gh run list` and
+// maps it to the corresponding Buildbucket status or status mask.
+func ParseRunStatusFilter(raw string) (string, error) {
+	clean := strings.TrimSpace(raw)
+	if clean == "" {
+		return "", nil
+	}
+	switch strings.ToLower(clean) {
+	case "completed", "ended", "ended_mask":
+		return "ENDED_MASK", nil
+	case "in_progress", "started", "running":
+		return "STARTED", nil
+	case "queued", "scheduled", "pending":
+		return "SCHEDULED", nil
+	case "success", "passed":
+		return "SUCCESS", nil
+	case "failure", "failed":
+		return "FAILURE", nil
+	case "infra_failure", "infra":
+		return "INFRA_FAILURE", nil
+	case "canceled", "cancelled":
+		return "CANCELED", nil
+	default:
+		return "", fmt.Errorf("invalid --status value %q: must be one of completed, in_progress, queued, success, failure, infra_failure, or canceled", raw)
+	}
+}
+
+func formatBatchSubError(errStatus *bbRPCStatus) string {
+	if errStatus == nil {
+		return ""
+	}
+	if msg := strings.TrimSpace(errStatus.Message); msg != "" {
+		return msg
+	}
+	return fmt.Sprintf("RPC code %d", errStatus.Code)
+}
+
+func (c *LUCIClient) executeBuildsBatch(
+	ctx context.Context,
+	n, chunkSize int,
+	makeSubReq func(idx int) bbBatchSubRequest,
+	handleResp func(idx int, sub bbBatchSubResponse),
+) error {
+	numChunks := (n + chunkSize - 1) / chunkSize
+	chunkErrs := make([]error, numChunks)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	sem := make(chan struct{}, maxConcurrentBuildSearches)
+	var wg sync.WaitGroup
+	for chunkIdx := range numChunks {
+		start := chunkIdx * chunkSize
+		end := min(start+chunkSize, n)
+		wg.Add(1)
+		go func(cIdx, lo, hi int) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				chunkErrs[cIdx] = ctx.Err()
+				return
+			}
+			if err := ctx.Err(); err != nil {
+				chunkErrs[cIdx] = err
+				return
+			}
+
+			reqs := make([]bbBatchSubRequest, hi-lo)
+			for i := range hi - lo {
+				reqs[i] = makeSubReq(lo + i)
+			}
+			var batchResp bbBatchResponse
+			if err := c.callPRPCWithMaxBytes(ctx, "buildbucket.v2.Builds", "Batch", bbBatchRequest{Requests: reqs}, &batchResp, maxBatchHTTPBodyBytes); err != nil {
+				chunkErrs[cIdx] = err
+				cancel()
+				return
+			}
+			if len(batchResp.Responses) != len(reqs) {
+				chunkErrs[cIdx] = fmt.Errorf("Buildbucket Builds/Batch returned %d responses for %d requests at offset %d",
+					len(batchResp.Responses), len(reqs), lo)
+				cancel()
+				return
+			}
+			for i, sub := range batchResp.Responses {
+				handleResp(lo+i, sub)
+			}
+		}(chunkIdx, start, end)
+	}
+	wg.Wait()
+	return firstNonCanceledError(chunkErrs)
+}
+
+// SearchBuilderBuildsBatch queries Buildbucket for recent builds across one or
+// more LUCI builders, batching multi-builder queries via buildbucket.v2.Builds/Batch
+// with bounded concurrency.
+func (c *LUCIClient) SearchBuilderBuildsBatch(ctx context.Context, builders []bbBuilder, limit int, statusFilter string) ([]BuilderSearchResult, error) {
+	if c == nil {
+		return nil, fmt.Errorf("LUCIClient is nil")
+	}
+	if len(builders) == 0 {
+		return nil, fmt.Errorf("builders list cannot be empty")
+	}
+	bbStatus, err := ParseRunStatusFilter(statusFilter)
+	if err != nil {
+		return nil, err
+	}
+	pageSize := limit
+	if pageSize <= 0 {
+		pageSize = defaultBuilderRunLimit
+	}
+	if pageSize > maxBuilderRunLimit {
+		return nil, fmt.Errorf("invalid --limit %d: must be between 1 and %d", limit, maxBuilderRunLimit)
+	}
+
+	makeSearchReq := func(b bbBuilder) *bbSearchBuildsRequest {
+		bCopy := b
+		return &bbSearchBuildsRequest{
+			Predicate: bbPredicate{
+				Builder: &bCopy,
+				Status:  bbStatus,
+			},
+			Mask:     bbBuildMask{Fields: searchBuilderBuildsMask},
+			PageSize: pageSize,
+		}
+	}
+
+	stampForBuilder := func(b bbBuilder, rawBuilds []bbBuild) []bbBuild {
+		out := make([]bbBuild, len(rawBuilds))
+		copy(out, rawBuilds)
+		stampBuildbucketBuilds(out)
+		for i := range out {
+			out[i].Builder.Project = cmp.Or(out[i].Builder.Project, b.Project)
+			out[i].Builder.Bucket = cmp.Or(out[i].Builder.Bucket, b.Bucket)
+			out[i].Builder.Builder = cmp.Or(out[i].Builder.Builder, b.Builder)
+		}
+		return out
+	}
+
+	results := make([]BuilderSearchResult, len(builders))
+	for i, b := range builders {
+		results[i] = BuilderSearchResult{
+			Project: b.Project,
+			Bucket:  b.Bucket,
+			Builder: b.Builder,
+			Builds:  []bbBuild{},
+		}
+	}
+
+	if len(builders) == 1 {
+		b := builders[0]
+		var resp bbSearchBuildsResponse
+		if err := c.CallPRPC(ctx, "buildbucket.v2.Builds", "SearchBuilds", makeSearchReq(b), &resp); err != nil {
+			return nil, err
+		}
+		results[0].Builds = stampForBuilder(b, resp.Builds)
+		return results, nil
+	}
+
+	err = c.executeBuildsBatch(
+		ctx,
+		len(builders),
+		maxBuildbucketBatchSize,
+		func(idx int) bbBatchSubRequest {
+			return bbBatchSubRequest{SearchBuilds: makeSearchReq(builders[idx])}
+		},
+		func(idx int, sub bbBatchSubResponse) {
+			if sub.Error != nil {
+				results[idx].Error = formatBatchSubError(sub.Error)
+				return
+			}
+			if sub.SearchBuilds != nil {
+				results[idx].Builds = stampForBuilder(builders[idx], sub.SearchBuilds.Builds)
+			}
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if !slices.ContainsFunc(results, func(r BuilderSearchResult) bool { return r.Error == "" }) {
+		r := results[0]
+		return nil, fmt.Errorf("Buildbucket SearchBuilds failed for all %d builders (first: %s/%s/%s: %s)",
+			len(results), r.Project, r.Bucket, r.Builder, SanitizeUntrustedText(r.Error))
+	}
+	return results, nil
+}
+
+func firstNonCanceledErrorIndex(errs []error) int {
+	failed := -1
+	for i, err := range errs {
+		if err == nil {
+			continue
+		}
+		if failed < 0 || (errors.Is(errs[failed], context.Canceled) && !errors.Is(err, context.Canceled)) {
+			failed = i
+		}
+	}
+	return failed
+}
+
+func firstNonCanceledError(errs []error) error {
+	if idx := firstNonCanceledErrorIndex(errs); idx >= 0 {
+		return errs[idx]
+	}
+	return nil
 }

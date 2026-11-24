@@ -239,9 +239,9 @@ Inspecting and rerunning builds: gh run
 
 Listing runs: ``run list``
 ==========================
-Lists all checks and tryjobs for a change with duration, Buildbucket build ID,
-status, and URL (pass ``--all`` to include subbuilds hidden by
-``ci.hide_tag_filters``):
+Lists all checks and tryjobs for a change, or recent postsubmit/roller builds
+for one or more LUCI builders via ``-w, --workflow`` (pass ``--all`` to include
+subbuilds hidden by ``ci.hide_tag_filters``):
 
 .. code-block:: console
 
@@ -251,11 +251,21 @@ status, and URL (pass ``--all`` to include subbuilds hidden by
    # List runs for a specific change:
    $ ./gh run list 472267
 
+   # List recent postsubmit or roller builds for a LUCI builder:
+   $ ./gh run list -w pigweed/pigweed.ci/pigweed-linux-bazel-host -L 5
+   $ ./gh run list -w pigweed/tools.roll/bloaty-roller -L 3 --status completed --json
+
+   # Batch-query multiple LUCI builders via Builds/Batch (repeatable or '-' stdin):
+   $ printf 'pigweed/pigweed.ci/a\npigweed/pigweed.ci/b\n' | ./gh run list -w - -L 3 --json
+
+   # Filter builds on an active CL by builder, limit (-L), or status (-s):
+   $ ./gh run list 472267 -w pigweed-linux-bazel-host -s failure -L 5
+
    # Include non-blocking experimental checks or hidden subbuilds:
    $ ./gh run list --experimental
    $ ./gh run list --all
 
-   # Output JSON:
+   # Output JSON (returns flat []CheckItem array in both change and builder modes):
    $ ./gh run list --json
 
 Viewing runs, steps, and logs: ``run view``
@@ -468,6 +478,13 @@ Key behavioral and flag differences
 * ``--all`` **flag (ghish-only)**: On ``pr checks``, ``run list``, and
   ``run view``, ``--all`` expands all individual passing checks without
   collapsing and includes child subbuilds hidden by ``ci.hide_tag_filters``.
+* ``-w, --workflow <builder>``: In upstream ``gh``, ``run list -w`` filters by
+  a GitHub Actions workflow name or YAML file. Here ``-w, --workflow`` queries
+  or filters LUCI Buildbucket builders (accepting
+  ``<project>/<bucket>/<builder>``, ``<bucket>/<builder>``,
+  ``luci.<project>.<bucket>/<builder>``, or ``-`` on ``stdin`` for
+  ``Builds/Batch`` queries). Both change mode and builder mode emit a flat
+  ``[]CheckItem`` JSON array under ``--json``.
 * ``--target <target>`` **flag (ghish-only)**: On ``run view``, ``--target``
   specifies the Android Busytown target name when inspecting a direct build ID
   (e.g. ``gh run view P99164207 --target firmware_host_tests --log-failed``).

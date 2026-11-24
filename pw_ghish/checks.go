@@ -229,10 +229,15 @@ func summarizeGateLabel(name string, info LabelInfo) string {
 }
 
 type CheckItem struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Bucket string `json:"bucket"`
-	Status string `json:"status"`
+	ID         string `json:"id"`
+	Number     int    `json:"number,omitempty"`
+	Project    string `json:"project,omitempty"`
+	Name       string `json:"name"`
+	Bucket     string `json:"bucket"`
+	Status     string `json:"status"`
+	CreateTime string `json:"createTime,omitempty"`
+	StartTime  string `json:"startTime,omitempty"`
+	EndTime    string `json:"endTime,omitempty"`
 	// StatusSymbol is the glyph text output shows for Status; it is
 	// display-only and never part of --json output.
 	StatusSymbol string `json:"-"`
@@ -250,9 +255,14 @@ type CheckItem struct {
 func NewCheckItem(b bbBuild) CheckItem {
 	return CheckItem{
 		ID:           b.ID,
+		Number:       b.Number,
+		Project:      b.Builder.Project,
 		Name:         b.Builder.Builder,
 		Bucket:       b.Builder.Bucket,
 		Status:       b.Status,
+		CreateTime:   b.CreateTime,
+		StartTime:    b.StartTime,
+		EndTime:      b.EndTime,
 		StatusSymbol: getStatusSymbol(b.Status),
 		Duration:     formatDuration(b.StartTime, b.EndTime),
 		URL:          BuildURL(b),

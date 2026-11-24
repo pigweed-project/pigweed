@@ -28,20 +28,9 @@ Subcommands accepting `[<id>]` support:
 - **Omitted argument**: Automatically resolves the active change on the current
   Git branch.
 - **Change number**: `472267` or with patchset `472267/3`.
-- **Gerrit URL**:
-  `https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/472267`
-  (or `/+/472267/3`). Automatically routes to the Gerrit host in the URL even
-  when invoked from a different repository.
-- **Shortlink**: `pwrev/472267`, `pwrev.dev/472267`, `pwrev.dev/i/472267`
-  (internal review), `fxrev/472267`, `fxrev.dev/472267`, `fxr/472267`,
-  `fxrev.dev/i/472267`, `fxr/i/472267`, `ag/472267`, `aosp/472267`,
-  `crrev.com/c/472267`, `crrev.com/i/472267` (and `go/<shortlink>` or
-  `goto.google.com/<shortlink>` forms), plus any custom prefixes configured in
-  `.ghish.toml` (`[gerrit.shortlinks]`) or `git config
-  ghish.gerrit.shortlink.<prefix>`. Automatically resolves the corresponding
-  Gerrit host.
-- **Branch name**: `my-feature`, `cl/472267`, `change-472267` (resolves via
-  branch commit `Change-Id` or `branch.<name>.gerrit-change-id` config).
+- **Gerrit URL**: `https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/472267` (or `/+/472267/3`); routes to the URL's Gerrit host from any repo.
+- **Shortlink**: `pwrev/472267`, `pwrev.dev/472267`, `pwrev.dev/i/472267`, `fxrev.dev/472267`, `fxr/472267`, `fxrev.dev/i/472267`, `ag/472267`, `aosp/472267`, `crrev.com/c/472267`, `crrev.com/i/472267` (`go/<shortlink>` forms included), plus `[gerrit.shortlinks]` in `.ghish.toml` or `git config ghish.gerrit.shortlink.<prefix>`.
+- **Branch name**: `my-feature`, `cl/472267`, `change-472267` (via `Change-Id` or `branch.<name>.gerrit-change-id`).
 
 Commands:
 - **`./gh pr view [<id>]`**: View change metadata (patchset, owner, reviewers,
@@ -66,18 +55,7 @@ Commands:
 
 ### 2. Push & Edit
 - **`./gh pr create`**: Push local commit(s) to Gerrit as a **new** change.
-  - *Safety Guard*: Fails with a clear error and URL if the change already
-    exists (use `pr push` to update existing changes).
-  - *Stack Guard*: Halts if pushing multiple commits unless `--stack` is
-    specified.
-  - *Submodule Guard*: Enforces `gerrit.submodule_policy` (`"allow"`,
-    `"warn-unpushed"`, `"require-pushed"`, or `"forbid-manual-rolls"`, plus
-    automatic detection of Gerrit's `No-Submodule-Changes` submit requirement)
-    before `git push`.
-  - *Multi-Remote & Default Branch*: Automatically resolves non-`origin`
-    remotes (`gerrit.remote` in `.ghish.toml`, `branch.<cur>.remote`, `goog`,
-    `aosp`, `partner`) and default branches (`gerrit.default_branch`, tracked
-    upstream merge branch, `refs/remotes/<remote>/HEAD`, `main`).
+  - *Guards*: Fails if change exists (use `pr push`), requires `--stack` for multiple commits, and enforces `gerrit.submodule_policy` (`"allow"`, `"warn-unpushed"`, `"require-pushed"`, `"forbid-manual-rolls"` / `No-Submodule-Changes`). Auto-resolves non-`origin` remotes (`gerrit.remote`, `branch.<cur>.remote`, `goog`, `aosp`, `partner`) and default branches (`gerrit.default_branch`, upstream merge branch, `refs/remotes/<remote>/HEAD`, `main`).
   - Flags: `-t, --title <str>`, `-b, --body <str>`, `-F, --body-file <file|->`,
     `--bug <id>`, `--fixed <id>`, `-r, --reviewer <email|@owners>`, `--owner`,
     `-c, --cc <email>`, `--auto`, `--trigger [1|2]` (alias `--cq [1|2]`;
@@ -184,7 +162,7 @@ Commands:
   build's recorded `<project>/<bucket>/<builder>` and skipping child subbuilds
   tagged with `skip-retry-in-gerrit:subbuild`) or via `treetop~runaction` /
   `Presubmit-Ready+1` on Android Busytown / TreeHugger changes.
-- **`./gh run list [<id>] [--all]`** & **`./gh run watch [<id>]`**.
+- **`./gh run list [<id>] [-w|--workflow <builder|->] [-L <n>] [-s <status>] [--all] [--json]`** & **`./gh run watch [<id>]`**.
 
 ### 5. Listing, Merging & Status
 - **`./gh pr list [--limit 30] [--state open|merged|closed|all] [--all-projects] [--json <fields>]`**:
@@ -249,6 +227,7 @@ Use the long form for `--auto` (`-a` is `--assignee`), `--publish` (`-p` is
 |---|---|---|
 | `pr list -a` | assignee | queries Gerrit `reviewer:` — Gerrit dropped assignees in 3.8. |
 | `pr list -l` | issue label | a Gerrit **vote** predicate, e.g. `Code-Review+2`. |
+| `run list -w` | workflow file/name | queries or filters a LUCI builder `<project>/<bucket>/<builder>`. |
 | `run list/view --json` | a field list | a boolean; it takes no fields. `pr view --json` does take fields. |
 | `--json state` | `OPEN`/`CLOSED`/`MERGED` | Gerrit's `NEW`/`MERGED`/`ABANDONED`. |
 | `--json` status values | strings | always bare ASCII enums (`"status": "READY_TO_LAND"`, `"status": "ok"`); text-mode glyphs (`✓`, `●`) never appear in them, so compare values directly. |

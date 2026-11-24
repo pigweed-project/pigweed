@@ -1191,3 +1191,256 @@ func TestResolveEffectiveBuildbucketHost_AndProviderValidation(t *testing.T) {
 		t.Errorf("expected run view with untrusted ci.buildbucket_host to fail closed, got: %v", err)
 	}
 }
+
+func TestRunList_BuilderModeSingleAndBatch(t *testing.T) {
+	NewMockGit(t)
+	server := NewMockGerritServer(t)
+
+	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
+		var req bbSearchBuildsRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode SearchBuilds: %v", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Predicate.Builder != nil && req.Predicate.Builder.Builder == "unbuilt-builder" {
+			server.RespondJSON(w, http.StatusOK, map[string]any{"builds": []bbBuild{}})
+			return
+		}
+		if req.Predicate.Builder == nil || req.Predicate.Builder.Builder != "pigweed-linux-bazel" {
+			t.Errorf("unexpected SearchBuilds builder predicate: %+v", req.Predicate)
+		}
+		if req.Predicate.Status != "ENDED_MASK" {
+			t.Errorf("SearchBuilds status = %q, want ENDED_MASK", req.Predicate.Status)
+		}
+		if req.PageSize != 3 {
+			t.Errorf("SearchBuilds pageSize = %d, want 3", req.PageSize)
+		}
+		server.RespondJSON(w, http.StatusOK, map[string]any{
+			"builds": []bbBuild{{
+				ID:         "87000000001",
+				Number:     102,
+				Status:     "FAILURE",
+				CreateTime: "2026-11-09T10:00:00Z",
+				StartTime:  "2026-11-09T10:00:05Z",
+				EndTime:    "2026-11-09T10:02:05Z",
+			}},
+		})
+	})
+
+	server.OnBuildsBatch(func(sub bbBatchSubRequest) bbBatchSubResponse {
+		if sub.SearchBuilds == nil || sub.SearchBuilds.Predicate.Builder == nil {
+			t.Errorf("expected searchBuilds builder predicate: %+v", sub)
+			return BatchErrorResp(3, "missing searchBuilds builder predicate")
+		}
+		switch sub.SearchBuilds.Predicate.Builder.Builder {
+		case "restricted-builder":
+			return BatchErrorResp(7, "permission denied")
+		case "unbuilt-builder":
+			return BatchSearchResp()
+		default:
+			var idx int
+			if _, err := fmt.Sscanf(sub.SearchBuilds.Predicate.Builder.Builder, "builder-%d", &idx); err != nil {
+				t.Errorf("unexpected builder %q: %v", sub.SearchBuilds.Predicate.Builder.Builder, err)
+				return BatchErrorResp(3, "unexpected builder")
+			}
+			return BatchSearchResp(bbBuild{
+				ID:         fmt.Sprintf("88000000%03d", idx),
+				Number:     200 + idx,
+				Status:     "SUCCESS",
+				CreateTime: "2026-11-09T11:00:00Z",
+			})
+		}
+	})
+
+	// 1. Single builder via -w/--workflow (text + Verdict/Next)
+	textOut, err := executeCommand(RootCmd, "run", "list", "-w", "luci.pigweed.prod.ci/pigweed-linux-bazel", "-L", "3", "-s", "completed")
+	if err != nil {
+		t.Fatalf("single builder run list failed: %v\nOutput: %s", err, textOut)
+	}
+	if server.CallCount("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds") != 1 {
+		t.Errorf("SearchBuilds calls = %d, want 1", server.CallCount("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds"))
+	}
+	if !strings.Contains(textOut, "Verdict: FAILED") || !strings.Contains(textOut, "gh run view 87000000001 --log-failed") {
+		t.Errorf("unexpected single-builder text output:\n%s", textOut)
+	}
+
+	// 2. Multi-chunk (>50 builders) batch via -w - (stdin) returns flat []CheckItem + partial RPC warning
+	var stdinLines []string
+	for i := range 53 {
+		stdinLines = append(stdinLines, fmt.Sprintf("pigweed/prod.ci/builder-%02d", i))
+	}
+	stdinLines = append(stdinLines, "pigweed/prod.ci/unbuilt-builder", "pigweed/prod.ci/restricted-builder")
+
+	var stdoutBuf, stderrBuf strings.Builder
+	err = executeCommandIO(
+		RootCmd,
+		strings.NewReader(strings.Join(stdinLines, "\n")+"\n"),
+		&stdoutBuf,
+		&stderrBuf,
+		"run", "list", "-w", "-", "-L", "3", "--status", "completed", "--json",
+	)
+	if err != nil {
+		t.Fatalf("batch builder run list failed: %v\nStderr: %s", err, stderrBuf.String())
+	}
+	if got := server.CallCount("POST", "/prpc/buildbucket.v2.Builds/Batch"); got != 2 {
+		t.Errorf("Batch calls = %d, want 2 chunks for 55 builders", got)
+	}
+	if !strings.Contains(stderrBuf.String(), "Warning: pigweed/prod.ci/restricted-builder: permission denied") {
+		t.Errorf("expected partial error warning on stderr, got: %q", stderrBuf.String())
+	}
+
+	var parsed []CheckItem
+	if err := json.Unmarshal([]byte(stdoutBuf.String()), &parsed); err != nil {
+		t.Fatalf("failed to decode flat []CheckItem JSON: %v\nStdout: %s", err, stdoutBuf.String())
+	}
+	if len(parsed) != 53 {
+		t.Fatalf("len(parsed) = %d, want 53 flat CheckItem entries", len(parsed))
+	}
+	if parsed[0].Project != "pigweed" || parsed[0].Bucket != "prod.ci" || parsed[0].Name != "builder-00" || parsed[0].Number != 200 || parsed[0].CreateTime != "2026-11-09T11:00:00Z" {
+		t.Errorf("parsed[0] = %+v, want CheckItem with project/bucket/name/number/createTime", parsed[0])
+	}
+	if parsed[52].Name != "builder-52" || parsed[52].ID != "88000000052" || parsed[52].Number != 252 {
+		t.Errorf("parsed[52] = %+v, want builder-52 (ID 88000000052, Number 252)", parsed[52])
+	}
+
+	// Empty builder query with --json emits [] rather than null
+	stdoutBuf.Reset()
+	stderrBuf.Reset()
+	err = executeCommandIO(
+		RootCmd,
+		strings.NewReader("pigweed/prod.ci/unbuilt-builder\n"),
+		&stdoutBuf,
+		&stderrBuf,
+		"run", "list", "-w", "pigweed/prod.ci/unbuilt-builder", "--json",
+	)
+	if err != nil {
+		t.Fatalf("empty builder run list --json failed: %v", err)
+	}
+	if strings.TrimSpace(stdoutBuf.String()) != "[]" {
+		t.Errorf("empty builder run list --json = %q, want []", stdoutBuf.String())
+	}
+
+	// 3. Invalid --status, --limit, and -w fail closed
+	if _, err := executeCommand(RootCmd, "run", "list", "-w", "pigweed/prod.ci/a", "--status", "bogus"); err == nil || !strings.Contains(err.Error(), "invalid --status") {
+		t.Errorf("expected invalid --status error, got: %v", err)
+	}
+	if _, err := executeCommand(RootCmd, "run", "list", "-w", "pigweed/prod.ci/a", "-L", "0"); err == nil || !strings.Contains(err.Error(), "invalid --limit") {
+		t.Errorf("expected invalid --limit error, got: %v", err)
+	}
+	if _, err := executeCommand(RootCmd, "run", "list", "-w", "badselector"); err == nil || !strings.Contains(err.Error(), "invalid LUCI builder selector") {
+		t.Errorf("expected invalid selector error, got: %v", err)
+	}
+	if sel, err := ParseBuilderSelector("projA/luci.projA.ci/builder", ""); err != nil || sel.Project != "projA" || sel.Bucket != "ci" || sel.Builder != "builder" {
+		t.Errorf("ParseBuilderSelector(3-part luci bucket) = (%+v, %v), want projA/ci/builder", sel, err)
+	}
+	for _, badSel := range []string{"projA/luci.projB.ci/builder", "projA/luci.projA/builder"} {
+		if _, err := ParseBuilderSelector(badSel, ""); err == nil || !strings.Contains(err.Error(), "invalid LUCI builder selector") {
+			t.Errorf("expected invalid LUCI builder selector for %q, got: %v", badSel, err)
+		}
+	}
+}
+
+func TestRunList_BuilderMode_ExperimentalAndCanceledVerdict(t *testing.T) {
+	NewMockGit(t)
+	server := NewMockGerritServer(t)
+	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
+		var req bbSearchBuildsRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode SearchBuilds: %v", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		status := "FAILURE"
+		if req.Predicate.Status == "CANCELED" {
+			status = "CANCELED"
+		}
+		server.RespondJSON(w, http.StatusOK, map[string]any{
+			"builds": []bbBuild{{
+				ID:         "87000000099",
+				Number:     99,
+				Status:     status,
+				CreateTime: "2026-11-09T10:00:00Z",
+				Input:      &bbInput{Experiments: []string{"luci.non_production"}},
+			}},
+		})
+	})
+
+	// Explicitly queried non-production (*.dev.ci) builder returns its builds without requiring -e
+	devOut, err := executeCommand(RootCmd, "run", "list", "-w", "pigweed/pigweed.dev.ci/pigweed-linux-bazel")
+	if err != nil {
+		t.Fatalf("dev builder run list failed: %v\nOutput: %s", err, devOut)
+	}
+	if !strings.Contains(devOut, "87000000099") || !strings.Contains(devOut, "Verdict: FAILED (1 of 1 builds failed)") {
+		t.Errorf("expected non-production builder failure verdict without -e, got:\n%s", devOut)
+	}
+
+	// Canceled builds emit Verdict: CANCELED instead of Verdict: PASSED (0 builds passed)
+	cancOut, err := executeCommand(RootCmd, "run", "list", "-w", "pigweed/pigweed.ci/pigweed-linux-bazel", "--status", "canceled")
+	if err != nil {
+		t.Fatalf("canceled builder run list failed: %v\nOutput: %s", err, cancOut)
+	}
+	if !strings.Contains(cancOut, "Verdict: CANCELED (1 of 1 builds canceled)") {
+		t.Errorf("expected Verdict: CANCELED, got:\n%s", cancOut)
+	}
+}
+
+func TestRunList_ChangeScopedWorkflowFilterAndDefaultProject(t *testing.T) {
+	NewMockGit(t)
+	server := NewMockGerritServer(t)
+	server.OnDefaultChange(12345, WithSubject("Scoped Change"))
+	server.OnSearchBuilds(
+		FakeBuild("101", "linux-bazel", "FAILURE"),
+		FakeBuild("102", "mac-bazel", "SUCCESS"),
+	)
+
+	jsonOut, err := executeCommand(RootCmd, "run", "list", "12345", "-w", "linux-bazel", "-s", "failure", "-L", "1", "--json")
+	if err != nil {
+		t.Fatalf("change-scoped run list -w --json failed: %v\nOutput: %s", err, jsonOut)
+	}
+	var items []CheckItem
+	if err := json.Unmarshal([]byte(jsonOut), &items); err != nil {
+		t.Fatalf("decode CheckItem[]: %v\n%s", err, jsonOut)
+	}
+	if len(items) != 1 || items[0].Name != "linux-bazel" {
+		t.Errorf("items = %+v, want single linux-bazel item", items)
+	}
+
+	emptyOut, err := executeCommand(RootCmd, "run", "list", "12345", "-w", "missing-builder", "--json")
+	if err != nil {
+		t.Fatalf("change-scoped non-matching -w --json failed: %v", err)
+	}
+	if strings.TrimSpace(emptyOut) != "[]" {
+		t.Errorf("empty change-scoped -w --json = %q, want []", emptyOut)
+	}
+
+	// 2-part <bucket>/<builder> selector resolves default project from ci.try_buckets, and all-fail Batch errors fail closed.
+	cfgDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cfgDir, ".ghish.toml"), []byte("[ci]\ntry_buckets = [\"my-proj/try\"]\n"), 0644); err != nil {
+		t.Fatalf("write .ghish.toml: %v", err)
+	}
+	MockCWD = cfgDir
+	server.On("POST", "/prpc/buildbucket.v2.Builds/SearchBuilds", func(w http.ResponseWriter, r *http.Request) {
+		var req bbSearchBuildsRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode SearchBuilds: %v", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Predicate.Builder == nil || req.Predicate.Builder.Project != "my-proj" || req.Predicate.Builder.Bucket != "ci" || req.Predicate.Builder.Builder != "linux-gn" {
+			t.Errorf("unexpected 2-part selector predicate: %+v", req.Predicate.Builder)
+		}
+		server.RespondJSON(w, http.StatusOK, map[string]any{"builds": []bbBuild{{ID: "87000000088", Status: "SUCCESS"}}})
+	})
+	twoPartOut, err := executeCommand(RootCmd, "run", "list", "-w", "ci/linux-gn", "--json")
+	if err != nil || !strings.Contains(twoPartOut, "87000000088") {
+		t.Errorf("2-part selector run list = (%q, %v), want build 87000000088", twoPartOut, err)
+	}
+
+	server.OnBuildsBatch(func(bbBatchSubRequest) bbBatchSubResponse {
+		return BatchErrorResp(7, "denied")
+	})
+	if _, err := executeCommand(RootCmd, "run", "list", "-w", "my-proj/ci/a", "-w", "my-proj/ci/b"); err == nil || !strings.Contains(err.Error(), "SearchBuilds failed for all 2 builders") {
+		t.Errorf("expected all-fail Batch error, got: %v", err)
+	}
+}
