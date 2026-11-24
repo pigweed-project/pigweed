@@ -1,0 +1,51 @@
+# Copyright 2026 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+# Resolution Module File
+# ======================
+# Root-only module overrides (and, later, default lockfile bindings).
+#
+# Included from //MODULE.bazel. Bazel ignores module overrides in non-root
+# modules, so nothing here affects projects that depend on @pigweed.
+# See https://pigweed.dev/build/dependency_architecture.html.
+
+single_version_override(
+    module_name = "rules_rust",
+    patch_strip = 1,
+    patches = [
+        # Adds more thumbv6m, thumbv8m, and thumbv8m triples
+        # TODO: https://pwbug.dev/392707726 - Upstream below patch
+        "//pw_rust/bazel_patches:0003-Add-thumbv6m-and-more-thumbv7m-and-thumbv8m-triples.patch",
+    ],
+)
+
+single_version_override(
+    module_name = "rules_rust_bindgen",
+    patch_strip = 1,
+    patches = [
+        # Passes the Rust target triple to bindgen so that bindings are
+        # generated for the target when the C++ toolchain is GCC.
+        # TODO: https://pwbug.dev/581542189 - Upstream below patch
+        "//pw_rust/bazel_patches:0001-bindgen-Set-TARGET-to-the-Rust-target-triple.patch",
+    ],
+)
+
+single_version_override(
+    module_name = "googletest",
+    patch_strip = 1,
+    patches = [
+        # This patches googletest to remove the Fuchsia syslog dependency (which is unused and deprecated)
+        "//pw_build/bazel_patches:0001-Remove-unused-syslog-dependency-for-Fuchsia.patch",
+    ],
+)

@@ -261,6 +261,8 @@ pw_py_test(
     ],
     data = [
         "//:MODULE.bazel",
+        "//bazel:dev.MODULE.bazel",
+        "//bazel:resolve.MODULE.bazel",
     ],
 )
 

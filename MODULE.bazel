@@ -34,7 +34,7 @@ bazel_dep(name = "freertos", version = "11.3.2")
 bazel_dep(name = "fuzztest", version = "20260219.0")
 bazel_dep(name = "gazelle", version = "0.52.2", repo_name = "bazel_gazelle")
 
-# When this version is bumped, remove the patch referenced below if included
+# When this version is bumped, remove the patch in //bazel:resolve.MODULE.bazel if included
 bazel_dep(name = "googletest", version = "1.17.0.bcr.2", repo_name = "com_google_googletest")
 bazel_dep(name = "grpc-java", version = "1.69.0")
 bazel_dep(name = "nanopb", version = "0.4.9.1.bcr.3")
@@ -71,7 +71,8 @@ bazel_dep(name = "rules_rust_prost", version = "0.68.1")
 bazel_dep(name = "rules_shell", version = "0.6.1")
 bazel_dep(name = "sphinxdocs", version = "2.2.0")
 
-bazel_dep(name = "rules_doxygen", version = "2.4.2", dev_dependency = True)
+# TODO: https://pwbug.dev/301336229 - Move rules_mypy and its types extension to
+# //bazel:dev.MODULE.bazel alongside the Python dependency split.
 bazel_dep(name = "rules_mypy", version = "0.41.0", dev_dependency = True)
 
 # Bazel 9 compatibility
@@ -97,45 +98,8 @@ bazel_dep(name = "aspect_rules_esbuild", version = "0.27.1")
 # aspect_rules_js 3.x.
 bazel_dep(name = "flatbuffers", version = "25.12.19.bcr.1")
 
-# Repository overrides
-# ====================
-
-single_version_override(
-    module_name = "rules_rust",
-    patch_strip = 1,
-    patches = [
-        # Adds more thumbv6m, thumbv8m, and thumbv8m triples
-        # TODO: https://pwbug.dev/392707726 - Upstream below patch
-        "//pw_rust/bazel_patches:0003-Add-thumbv6m-and-more-thumbv7m-and-thumbv8m-triples.patch",
-    ],
-)
-
-single_version_override(
-    module_name = "rules_rust_bindgen",
-    patch_strip = 1,
-    patches = [
-        # Passes the Rust target triple to bindgen so that bindings are
-        # generated for the target when the C++ toolchain is GCC.
-        # TODO: https://pwbug.dev/581542189 - Upstream below patch
-        "//pw_rust/bazel_patches:0001-bindgen-Set-TARGET-to-the-Rust-target-triple.patch",
-    ],
-)
-
-single_version_override(
-    module_name = "googletest",
-    patch_strip = 1,
-    patches = [
-        # This patches googletest to remove the Fuchsia syslog dependency (which is unused and deprecated)
-        "//pw_build/bazel_patches:0001-Remove-unused-syslog-dependency-for-Fuchsia.patch",
-    ],
-)
-
 # Transitive deps not in BCR
 # ==========================
-http_archive = use_repo_rule(
-    "@bazel_tools//tools/build_defs/repo:http.bzl",
-    "http_archive",
-)
 
 # TODO(b/370523804): Remove this once the following issues are addressed in a
 # released version of rules_fuzzing
@@ -144,26 +108,6 @@ non_module_dependencies = use_extension("@rules_fuzzing//fuzzing/private:extensi
 use_repo(
     non_module_dependencies,
     "rules_fuzzing_oss_fuzz",
-)
-
-git_repository = use_repo_rule(
-    "@bazel_tools//tools/build_defs/repo:git.bzl",
-    "git_repository",
-)
-
-git_repository(
-    name = "bazel_clang_tidy",
-    commit = "c4d35e0d0b838309358e57a2efed831780f85cd0",
-    dev_dependency = True,
-    remote = "https://github.com/erenon/bazel_clang_tidy.git",
-)
-
-git_repository(
-    name = "pigweed_doxylink",
-    build_file = "//third_party/doxylink:doxylink.BUILD.bazel",
-    commit = "e3303148c641e3a192026090fd7f445c433f08fc",
-    dev_dependency = True,
-    remote = "https://pigweed.googlesource.com/third_party/github/sphinx-contrib/doxylink",
 )
 
 # Internal repo with Bazel support metadata
@@ -193,14 +137,14 @@ xcode_sdk_repository(
 cipd_ext = use_extension("//pw_env_setup/bazel/cipd:defs.bzl", "cipd")
 use_repo(cipd_ext, "cipd_client")
 
-cipd_dev_ext = use_extension("//pw_env_setup/bazel/cipd:defs.bzl", "cipd", dev_dependency = True)
-
 pw_cxx_toolchain = use_extension("//pw_toolchain/cc:pw_cxx_toolchain.bzl", "pw_cxx_toolchain")
 
 # Fetch llvm toolchain.
+# LINT.IfChange(llvm_version)
 # ROLL: Warning: this is automatically updated by
 # ROLL: https://cr-buildbucket.appspot.com/build/8664893828981719937
 LLVM_VERSION = "git_revision:af6388c513b2fa42aeb09f3aaf4d42742858223d"
+# LINT.ThenChange(//bazel/dev.MODULE.bazel:llvm_version)
 
 pw_cxx_toolchain.llvm(cipd_tag = LLVM_VERSION)
 pw_cxx_toolchain.arm_gcc(cipd_tag = "version:2@15.2.rel1.1")
@@ -217,34 +161,6 @@ cipd_ext.require(
     },
 )
 use_repo(cipd_ext, linux_sysroot = "pigweed.linux_sysroot")
-
-register_toolchains(
-    "//pw_toolchain:cc_toolchain_cortex-m0",
-    "//pw_toolchain:cc_toolchain_cortex-m0plus",
-    "//pw_toolchain:cc_toolchain_cortex-m3",
-    "//pw_toolchain:cc_toolchain_cortex-m4",
-    "//pw_toolchain:cc_toolchain_cortex-m33",
-    "//pw_toolchain/host_clang:host_cc_toolchain_linux",
-    "//pw_toolchain/host_clang:host_cc_toolchain_macos",
-    "//pw_toolchain/riscv_clang:riscv_clang_cc_toolchain_rv32imc",
-    "//pw_toolchain/riscv_clang:riscv_clang_cc_toolchain_rv32imac",
-    dev_dependency = True,
-)
-
-register_toolchains(
-    "//pw_toolchain:default_mcu_test_toolchain",
-    dev_dependency = True,
-)
-
-register_execution_platforms(
-    "//pw_grpc:test_platform",
-    dev_dependency = True,
-)
-
-register_toolchains(
-    "//pw_toolchain/fuchsia:all",
-    dev_dependency = True,
-)
 
 # Configure cc_compatibility_proxy
 cc_compatibility_proxy = use_extension("@rules_cc//cc:extensions.bzl", "compatibility_proxy")
@@ -280,18 +196,6 @@ use_repo(
     "rust_bindgen_linux_aarch64",
     "rust_bindgen_linux_x86_64",
     "rust_bindgen_macos_aarch64",
-)
-
-register_toolchains(
-    "@pw_rust_toolchains//:all",
-    dev_dependency = True,
-)
-
-register_toolchains(
-    "//pw_toolchain/rust:prebuilt_bindgen_toolchain_linux_aarch64",
-    "//pw_toolchain/rust:prebuilt_bindgen_toolchain_linux_x86_64",
-    "//pw_toolchain/rust:prebuilt_bindgen_toolchain_macos_aarch64",
-    dev_dependency = True,
 )
 
 crate = use_extension("@rules_rust//crate_universe:extension.bzl", "crate")
@@ -585,59 +489,6 @@ cipd_ext.require(
 )
 use_repo(cipd_ext, qemu = "pigweed.qemu")
 
-# Vendored libraries
-# ==================
-
-# TODO: https://pwbug.dev/378531541 - These are one-off external libraries that
-# are NOT in the BCR that downstream users may need to override/unify to their
-# expected version.
-
-# TODO: https://github.com/bazelbuild/bazel/issues/23077 - Make these
-# bazel_deps dev_dependencies once archive_override has a build_file argument.
-http_archive(
-    name = "stm32f4xx_hal_driver",
-    build_file = "//third_party/stm32cube:stm32_hal_driver.BUILD.bazel",
-    dev_dependency = True,
-    sha256 = "d0427a3830f0c23dd4810952321b8209be7b3c50897d1fc2d79587435cc3a379",
-    strip_prefix = "stm32f4xx-hal-driver-1.8.0",
-    urls = ["https://github.com/STMicroelectronics/stm32f4xx-hal-driver/archive/refs/tags/v1.8.0.tar.gz"],
-)
-
-http_archive(
-    name = "cmsis_device_f4",
-    build_file = "//third_party/stm32cube:cmsis_device.BUILD.bazel",
-    dev_dependency = True,
-    sha256 = "1d9612ecaaab8708c88be2c9573927f2e5e9a911aa2c1427182b545ed5ed0fd6",
-    strip_prefix = "cmsis-device-f4-2.6.8",
-    urls = ["https://github.com/STMicroelectronics/cmsis-device-f4/archive/refs/tags/v2.6.8.tar.gz"],
-)
-
-http_archive(
-    name = "cmsis_core",
-    build_file = "//third_party/stm32cube:cmsis_core.BUILD.bazel",
-    dev_dependency = True,
-    sha256 = "32f226c31d7d1ff4a504404400603e047b99f405cd0c9a8f417f1f250251b829",
-    strip_prefix = "cmsis-core-5.4.0_cm4",
-    urls = ["https://github.com/STMicroelectronics/cmsis-core/archive/refs/tags/v5.4.0_cm4.tar.gz"],
-)
-
-git_repository(
-    name = "mcuxpresso",
-    commit = "0cc0caa0c44fc9ceae1ad4c0a9e3b79e8b38d751",
-    dev_dependency = True,
-    # temporary point to antmicro github fork until SDK generated files
-    # will be pushed to: https://pigweed.googlesource.com/pigweed/mcuxpresso-sdk
-    remote = "https://github.com/antmicro/mcuxpresso-sdk.git",
-)
-
-git_repository(
-    name = "smartfusion_mss",
-    build_file = "//third_party/smartfusion_mss:smartfusion_mss.BUILD.bazel",
-    commit = "052a2ed78fa2c7a1a7cdac5e4a988b03269d2b42",
-    dev_dependency = True,
-    remote = "https://github.com/seank/smartfusion_mss",
-)
-
 # Other Pigweed-specific dependencies
 # ===================================
 cipd_ext.require(
@@ -676,140 +527,13 @@ cipd_ext.require(
 )
 use_repo(cipd_ext, go = "pigweed.go")
 
-cipd_dev_ext.require(
-    name = "pigweed.pyrefly",
-    packages = {
-        "fuchsia/third_party/3pp/pyrefly/${platform}": "version:2@1.3.2.3",
-    },
-)
-use_repo(cipd_dev_ext, pyrefly = "pigweed.pyrefly")
-
-# Set up legacy pw_transfer test binaries.
-# Required by: pigweed.
-# Used in modules: //pw_transfer.
-cipd_dev_ext.require(
-    name = "pigweed.pw_transfer_test_binaries",
-    # Only ever needed if you run the pw_transfer unit tests.
-    packages = {
-        "pigweed/pw_transfer_test_binaries/${os=linux}-${arch=amd64}": "version:pw_transfer_test_binaries_528098d588f307881af83f769207b8e6e1b57520-linux-amd64-cipd.cipd",
-    },
-)
-use_repo(cipd_dev_ext, pw_transfer_test_binaries = "pigweed.pw_transfer_test_binaries")
-
-workspace_and_buildfile = use_repo_rule("//pw_build/bazel_internal:workspace_and_buildfile.bzl", "workspace_and_buildfile")
-
-workspace_and_buildfile(
-    name = "pw_build_external_runfile_resource",
-    build_file = "//pw_build:test_data/external_py_runfiles.BUILD",
-    dev_dependency = True,
-)
-
-local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl", "local_repository")
-
-local_repository(
-    name = "pw_cc_compile_commands_test_external",
-    dev_dependency = True,
-    path = "pw_ide/bazel/compile_commands/test/external_repo",
-)
-
-local_repository(
-    name = "pw_bazel_test_external",
-    dev_dependency = True,
-    path = "pw_bazel/test/external_repo",
-)
-
-# Doxygen setup
-# =============
-
-# Get executables.
-cipd_dev_ext.require(
-    name = "pigweed.doxygen_linux_amd64",
-    packages = {
-        "pigweed/third_party/doxygen/linux-amd64": "version:1.9.6-1",
-    },
-)
-use_repo(cipd_dev_ext, doxygen_linux_amd64 = "pigweed.doxygen_linux_amd64")
-
-cipd_dev_ext.require(
-    name = "pigweed.doxygen_mac_amd64",
-    packages = {
-        "pigweed/third_party/doxygen/mac-amd64": "version:1.9.6-1",
-    },
-)
-use_repo(cipd_dev_ext, doxygen_mac_amd64 = "pigweed.doxygen_mac_amd64")
-
-cipd_dev_ext.require(
-    name = "pigweed.doxygen_mac_arm64",
-    packages = {
-        "pigweed/third_party/doxygen/mac-arm64": "version:1.9.6",
-    },
-)
-use_repo(cipd_dev_ext, doxygen_mac_arm64 = "pigweed.doxygen_mac_arm64")
-
-cipd_dev_ext.require(
-    name = "pigweed.doxygen_windows_amd64",
-    packages = {
-        "pigweed/third_party/doxygen/windows-amd64": "version:1.9.6-1",
-    },
-)
-use_repo(cipd_dev_ext, doxygen_windows_amd64 = "pigweed.doxygen_windows_amd64")
-
-# Configure rules_doxygen to use our executables.
-doxygen_extension = use_extension("@rules_doxygen//:extensions.bzl", "doxygen_extension", dev_dependency = True)
-doxygen_extension.configuration(
-    executable = "@doxygen_linux_amd64//:bin/doxygen",
-    platform = "linux",
-)
-doxygen_extension.configuration(
-    executable = "@doxygen_mac_amd64//:doxygen",
-    platform = "mac",
-)
-doxygen_extension.configuration(
-    executable = "@doxygen_mac_arm64//:doxygen",
-    platform = "mac-arm",
-)
-doxygen_extension.configuration(
-    executable = "@doxygen_windows_amd64//:windows.exe",
-    platform = "windows",
-)
-use_repo(doxygen_extension, "doxygen")
-
-# Configure Node.js dependencies
-# ==============================
-
-node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node", dev_dependency = True)
-node.toolchain(node_version = "26.5.0")
-
-npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
-
-# aspect_rules_js 3.x strips `.gitignore` files by default, which causes Bazel
-# to drop the otherwise-empty `@protobuf-ts/protoc/installed/` directory that
-# `@protobuf-ts/protoc`'s runtime script scans for cached protoc binaries.
-npm.npm_exclude_package_contents(
-    package = "@protobuf-ts/protoc",
-    presets = [],
-)
-npm.npm_translate_lock(
-    name = "npm",
-    data = [
-        "//:package.json",
-        "//pw_async2/codelab/webui:package.json",
-        "//pw_web:package.json",
-        "//pw_web:pnpm-workspace.yaml",
-    ],
-    # Uncomment the following when pnpm lock file needs to be updated.
-    # update_pnpm_lock = True,
-    pnpm_lock = "//pw_web:pnpm-lock.yaml",
-)
-use_repo(npm, "npm")
-
-pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm", dev_dependency = True)
-use_repo(pnpm, "pnpm")
-
 # Setup Fuchsia SDK.
 # ==================
 # Since `@fuchsia_infra` isn't a real BCR module and relies on `git_override` to bring in its
 # transitive dependencies, mark it as a `dev_dependency` for now.
+#
+# TODO: https://pwbug.dev/301336229 - Move to //bazel:dev.MODULE.bazel (with the
+# rest of the Fuchsia SDK setup) once the roller supports included module files.
 bazel_dep(name = "fuchsia_infra", dev_dependency = True)
 git_override(
     module_name = "fuchsia_infra",
@@ -823,70 +547,17 @@ git_override(
     remote = "https://fuchsia.googlesource.com/fuchsia-infra-bazel-rules",
 )
 
-FUCHSIA_SDK_VERSION = "version:34.20261106.5.1"
-
-# Use `cipd_ext` and `fuchsia_clang_ext` from `@fuchsia_infra` to override `@fuchsia_infra`'s
-# instantiations of `@rules_fuchsia`, `@fuchsia_sdk` and `@fuchsia_clang`.
-#
-# This simultaneously allows:
-#  - `@rules_fuchsia`/`@fuchsia_sdk` builddefs to have providers compatible with
-#    `@fuchsia_infra` builddefs,
-#  - the version of `@fuchsia_products` to be aligned with `@rules_fuchsia` and `@fuchsia_sdk`,
-#  - not double-fetching large dependencies like `@fuchsia_sdk` and `@fuchsia_clang`, and
-#  - decoupling `@fuchsia_infra` vs `@rules_fuchsia`/`@fuchsia_sdk` vs `@fuchsia_clang` versions.
-fuchsia_cipd_ext = use_extension("@fuchsia_infra//cipd:defs.bzl", "cipd_ext", dev_dependency = True)
-
-fuchsia_clang_ext = use_extension("@fuchsia_infra//:extensions.bzl", "fuchsia_clang_ext", dev_dependency = True)
-
-fuchsia_cipd_ext.repository(
-    name = "rules_fuchsia",
-    cipd_bin = "@cipd_client//:cipd",
-    package = "fuchsia/development/rules_fuchsia",
-    tag = FUCHSIA_SDK_VERSION,
-)
-use_repo(fuchsia_cipd_ext, "rules_fuchsia")
-
-fuchsia_cipd_ext.repository(
-    name = "fuchsia_sdk",
-    cipd_bin = "@cipd_client//:cipd",
-    package = "fuchsia/sdk/core/fuchsia-bazel-rules/linux-amd64",
-    tag = FUCHSIA_SDK_VERSION,
-)
-use_repo(fuchsia_cipd_ext, "fuchsia_sdk")
-
-cipd_dev_ext.require(
-    name = "fuchsia_products_metadata",
-    packages = {
-        "fuchsia/development/product_bundles/v2": FUCHSIA_SDK_VERSION,
-    },
-)
-use_repo(cipd_dev_ext, "fuchsia_products_metadata")
-
-# TODO: b/531679151 - Switch back to `@rules_fuchsia//fuchsia:products.bzl` once
-# the upstream Fuchsia `fuchsia_remote_product_bundle` implementation no longer
-# passes the removed `product_version` field to `FuchsiaProductBundleInfo`.
-fuchsia_products_repository = use_repo_rule("//pw_toolchain/fuchsia:products.bzl", "fuchsia_products_repository")
-
-fuchsia_products_repository(
-    name = "fuchsia_products",
-    dev_dependency = True,
-    metadata_file = "@fuchsia_products_metadata//:product_bundles.json",
-)
-
-fuchsia_clang_ext.cipd_tag(
-    cipd_tag = LLVM_VERSION,
-)
-use_repo(fuchsia_clang_ext, "fuchsia_clang")
-
-register_toolchains(
-    "//pw_toolchain/fuchsia:fuchsia_sdk_toolchain",
-    dev_dependency = True,
-)
-
-fake_fuchsia_sdk_extension = use_extension("@com_google_googletest//:fake_fuchsia_sdk.bzl", "fuchsia_sdk", dev_dependency = True)
-
-override_repo(fake_fuchsia_sdk_extension, "fuchsia_sdk")
-
 # Set up Zephyr RTOS support, by default to a stub.
 pw_zephyr_config = use_extension("@pigweed//zephyr/config:pw_zephyr_config.bzl", "pw_zephyr_config")
 use_repo(pw_zephyr_config, "kconfig", "zephyr", "zephyr_version")
+
+# Root-only module files
+# ======================
+# Module overrides (resolve) and dev-only dependencies (dev); see
+# https://pigweed.dev/build/dependency_architecture.html.
+#
+# Bazel only allows `include()` in the root module and in modules with a
+# non-registry override, so strip these lines when publishing MODULE.bazel to a
+# Bazel registry.
+include("//bazel:resolve.MODULE.bazel")
+include("//bazel:dev.MODULE.bazel")

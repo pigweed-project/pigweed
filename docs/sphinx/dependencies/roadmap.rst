@@ -4,7 +4,7 @@
 Roadmap & status
 ================
 This page captures Pigweed's dependency implementation status and roadmap
-(current as of **November 19, 2026**) for its
+(current as of **November 23, 2026**) for its
 :ref:`dependency architecture <docs-build-dependency-architecture>`.
 
 .. note::
@@ -30,10 +30,15 @@ Pigweed:
 * **Prebuilt binaries and toolchains (CIPD)**: ``cipd``, ``pw_cxx_toolchain``,
   and ``pw_rust`` extensions supporting root-module toolchain tag overrides,
   ``dev_dependency = True`` toolchain registrations, ``override_repo`` escape
-  hatches, and **6** dev-only ``cipd_dev_ext`` repositories.
+  hatches, and **7** dev-only ``cipd_dev_ext`` repositories.
 * **Bzlmod hygiene**: Initial ``dev_dependency = True`` module declarations
   (``rules_doxygen``, ``rules_mypy``) and non-root consumer CI testing
   (:cs:`pw_build/bazel_tests/non_root_test`).
+* **Module file layout**: Root :cs:`MODULE.bazel` split via ``include()``
+  into the Resolution Module File (:cs:`bazel/resolve.MODULE.bazel`,
+  ``single_version_override`` patches) and Dev Module File
+  (:cs:`bazel/dev.MODULE.bazel`, most existing ``dev_dependency = True``
+  declarations), enforced by :cs:`pw_build/py/module_bazel_leak_test.py`.
 
 -------------------
 Current limitations
@@ -46,9 +51,10 @@ Current limitations
   ``@rules_python``'s ``pip`` extension, Bazel evaluates Pigweed's default
   manifests even when the resulting hub repository is overridden.
 * **Non-propagating module patches**: Required portability and security patches
-  in :cs:`MODULE.bazel` currently rely on root-only ``single_version_override``
-  declarations, which Bazel ignores when ``@pigweed`` is consumed as a
-  dependency. Downstream roots must duplicate those patches manually.
+  in :cs:`bazel/resolve.MODULE.bazel` currently rely on root-only
+  ``single_version_override`` declarations, which Bazel ignores when
+  ``@pigweed`` is consumed as a dependency. Downstream roots must duplicate
+  those patches manually.
 * **Direct BCR resolution and remaining dev-dependency bloat**: Pigweed still
   resolves Bazel modules directly against ``bcr.bazel.build``, and a number of
   upstream-only build rules, Python packages, crates, and CIPD tools have not
