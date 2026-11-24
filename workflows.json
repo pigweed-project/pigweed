@@ -54,6 +54,51 @@
         "project_working_subdir": "pw_kernel/examples/adventure",
         "no_test": true
       }
+    },
+    {
+      "name": "bthost_no_fuchsia_sdk_config",
+      "description": "Overrides @fuchsia_sdk to a nonexistent path to block downloads; see https://pwbug.dev/392092401 for switching to --override_module",
+      "build_type": "bazel",
+      "args": [
+        "--override_repository=fuchsia_sdk=/disallow/fuchsia_sdk/download/"
+      ],
+      "env": {},
+      "driver_options": {
+        "@type": "pw.build.proto.BazelDriverOptions",
+        "no_test": true
+      }
+    },
+    {
+      "name": "bthost_fuchsia_config",
+      "description": "Fuchsia build configuration for bt-host",
+      "build_type": "bazel",
+      "args": [
+        "--config=fuchsia"
+      ],
+      "env": {}
+    },
+    {
+      "name": "bthost_package_config",
+      "description": "Fuchsia bt-host package and builder manifest build configuration",
+      "build_type": "bazel",
+      "args": [
+        "--config=fuchsia",
+        "--output_groups=+builder_manifest"
+      ],
+      "env": {},
+      "driver_options": {
+        "@type": "pw.build.proto.BazelDriverOptions",
+        "no_test": true
+      }
+    },
+    {
+      "name": "internal_release",
+      "description": "Release Fuchsia CIPD artifacts to turquoise_internal instead of fuchsia",
+      "build_type": "bazel",
+      "args": [
+        "--config=internal_release"
+      ],
+      "mixin": true
     }
   ],
   "output_specs": [],
@@ -945,6 +990,44 @@
       "targets": [
         "//..."
       ]
+    },
+    {
+      "name": "bthost_no_fuchsia_sdk",
+      "description": "Fails if a non-Fuchsia target pulls in the (large) @fuchsia_sdk",
+      "use_config": "bthost_no_fuchsia_sdk_config",
+      "targets": [
+        "//pw_status/..."
+      ]
+    },
+    {
+      "name": "bthost_no_fuchsia_sdk_internal",
+      "description": "Fails if a non-Fuchsia target pulls in the (large) @fuchsia_sdk (internal release)",
+      "use_config": "bthost_no_fuchsia_sdk_config",
+      "use_config_mixins": [
+        "internal_release"
+      ],
+      "targets": [
+        "//pw_status/..."
+      ]
+    },
+    {
+      "name": "bthost_package",
+      "description": "Build Fuchsia bt-host and bt-hci-virtual packages and CIPD builder manifest",
+      "use_config": "bthost_package_config",
+      "targets": [
+        "//pw_bluetooth_sapphire/fuchsia:infra"
+      ]
+    },
+    {
+      "name": "bthost_package_internal",
+      "description": "Build internal Fuchsia bt-host and bt-hci-virtual packages and CIPD builder manifest",
+      "use_config": "bthost_package_config",
+      "use_config_mixins": [
+        "internal_release"
+      ],
+      "targets": [
+        "//pw_bluetooth_sapphire/fuchsia:infra"
+      ]
     }
   ],
   "tools": [
@@ -1041,6 +1124,23 @@
       "analyzer_friendly_args": [
         "--check"
       ]
+    },
+    {
+      "name": "bthost_tests",
+      "description": "Run Fuchsia bt-host QEMU integration tests",
+      "use_config": "bthost_fuchsia_config",
+      "target": "//pw_bluetooth_sapphire/fuchsia:infra.test_all",
+      "type": "ANALYZER"
+    },
+    {
+      "name": "bthost_tests_internal",
+      "description": "Run internal Fuchsia bt-host QEMU integration tests",
+      "use_config": "bthost_fuchsia_config",
+      "use_config_mixins": [
+        "internal_release"
+      ],
+      "target": "//pw_bluetooth_sapphire/fuchsia:infra.test_all",
+      "type": "ANALYZER"
     }
   ],
   "groups": [
@@ -1266,6 +1366,28 @@
       "description": "UBSAN googletest build",
       "builds": [
         "ubsan_googletest"
+      ]
+    },
+    {
+      "name": "bthost",
+      "description": "Build, test, and package Fuchsia bt-host prebuilts",
+      "builds": [
+        "bthost_no_fuchsia_sdk",
+        "bthost_package"
+      ],
+      "analyzers": [
+        "bthost_tests"
+      ]
+    },
+    {
+      "name": "bthost_internal",
+      "description": "Build, test, and package internal Fuchsia bt-host prebuilts",
+      "builds": [
+        "bthost_no_fuchsia_sdk_internal",
+        "bthost_package_internal"
+      ],
+      "analyzers": [
+        "bthost_tests_internal"
       ]
     },
     {
