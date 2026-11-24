@@ -1,0 +1,9 @@
+INF  Listening on port <port>
+INF  Aggregator GetTemperatureAggregates
+INF  Aggregator gathered temperatures: min=15, max=25, avg=20
+INF  Listening on port <port>
+INF  Server GetTemperature
+INF  Listening on port <port>
+INF  Server GetTemperature
+INF  Listening on port <port>
+INF  Server GetTemperature

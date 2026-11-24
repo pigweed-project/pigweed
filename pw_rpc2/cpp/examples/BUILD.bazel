@@ -59,3 +59,40 @@ pw_py_test(
     main = "example_test.py",
     target_compatible_with = select(hosts_lin_mac),
 )
+
+# Runs each fan-in fan-out client against each aggregator+servers cluster, and
+# compares their output to the expected output.
+pw_py_test(
+    name = "fan_in_fan_out_test",
+    size = "small",
+    srcs = ["example_test.py"],
+    args = [
+        "--servers",
+        "$(rootpath //pw_rpc2/cpp/examples/fan_in_fan_out:cluster_coro)",
+        "$(rootpath //pw_rpc2/cpp/examples/fan_in_fan_out:cluster_polling)",
+        "--clients",
+        "$(rootpath //pw_rpc2/cpp/examples/fan_in_fan_out:client_coro)",
+        "$(rootpath //pw_rpc2/cpp/examples/fan_in_fan_out:client_polling)",
+        "--expected-server-output",
+        "$(rootpath //pw_rpc2/cpp/examples/fan_in_fan_out:fan_in_fan_out_server.expected)",
+        "--expected-client-output",
+        "$(rootpath //pw_rpc2/cpp/examples/fan_in_fan_out:fan_in_fan_out_client.expected)",
+    ],
+    data = [
+        "//pw_rpc2/cpp/examples/fan_in_fan_out:client_coro",
+        "//pw_rpc2/cpp/examples/fan_in_fan_out:client_polling",
+        "//pw_rpc2/cpp/examples/fan_in_fan_out:cluster_coro",
+        "//pw_rpc2/cpp/examples/fan_in_fan_out:cluster_polling",
+        "//pw_rpc2/cpp/examples/fan_in_fan_out:fan_in_fan_out_client.expected",
+        "//pw_rpc2/cpp/examples/fan_in_fan_out:fan_in_fan_out_server.expected",
+    ],
+    # Disable the macOS nano malloc zone so sanitizers (e.g. ASan) don't log
+    # "malloc: nano zone abandoned due to inability to reserve vm space.", which
+    # interrupts the expected output.
+    env = select({
+        "@platforms//os:macos": {"MallocNanoZone": "0"},
+        "//conditions:default": {},
+    }),
+    main = "example_test.py",
+    target_compatible_with = select(hosts_lin_mac),
+)

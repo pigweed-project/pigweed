@@ -285,3 +285,96 @@ RPC's response future directly:
 
 ``main()`` posts the task to a :cc:`pw::async2::BasicDispatcher` and runs the
 dispatcher until the task has finished and the connection has closed.
+
+.. _module-pw_rpc2-examples-fan-in-fan-out:
+
+----------------------
+Fan-in fan-out example
+----------------------
+The fan-in fan-out example shows a service that calls other services. An
+aggregator server serves the ``SensorAggregator`` service from ``sensor.proto``.
+For each ``GetTemperatureAggregates`` call, it calls ``GetTemperature`` on three
+downstream ``Sensor`` nodes at the same time, waits for all of their responses,
+and combines them into one response:
+
+.. literalinclude:: cpp/examples/fan_in_fan_out/sensor.proto
+   :language: protobuf
+   :start-at: message GetTemperatureRequest
+
+.. list-table::
+   :header-rows: 1
+
+   * - Program
+     - Description
+   * - ``node``
+     - Implements ``Sensor`` with one fixed temperature reading.
+   * - ``server_coro``
+     - Implements ``SensorAggregator`` by fanning out to the nodes, with
+       coroutines.
+   * - ``server_polling``
+     - Implements ``SensorAggregator`` by fanning out to the nodes, with
+       futures.
+   * - ``client_coro``
+     - Calls ``GetTemperatureAggregates`` from a coroutine.
+   * - ``client_polling``
+     - Calls ``GetTemperatureAggregates`` from a task.
+   * - ``cluster_coro``
+     - Starts three nodes and ``server_coro``.
+   * - ``cluster_polling``
+     - Starts three nodes and ``server_polling``.
+
+The source code is in :cs:`pw_rpc2/cpp/examples/fan_in_fan_out`.
+
+.. _module-pw_rpc2-examples-fan-in-fan-out-run:
+
+Run the example
+===============
+Start the nodes and an aggregator server:
+
+.. code-block:: console
+
+   bazelisk run //pw_rpc2/cpp/examples/fan_in_fan_out:cluster_coro
+
+In another terminal, run a client:
+
+.. code-block:: console
+
+   bazelisk run //pw_rpc2/cpp/examples/fan_in_fan_out:client_coro
+
+The client logs the combined response:
+
+.. literalinclude:: cpp/examples/fan_in_fan_out/fan_in_fan_out_client.expected
+   :language: output
+
+The aggregator logs the call and the combined result. When the cluster stops,
+it prints each node's log:
+
+.. literalinclude:: cpp/examples/fan_in_fan_out/fan_in_fan_out_server.expected
+   :language: output
+
+.. _module-pw_rpc2-examples-fan-in-fan-out-coro:
+
+Fan out with coroutines
+=======================
+The aggregator holds a generated ``Sensor::Client`` for each node. It starts
+all three calls and awaits them together with :cc:`Join <pw::async2::Join>`,
+which resolves once every call has resolved:
+
+.. literalinclude:: cpp/examples/fan_in_fan_out/server_coro.cc
+   :language: cpp
+   :dedent:
+   :start-after: // DOCSTAG: [pw_rpc2-examples-fan-in-fan-out-aggregator-coro]
+   :end-before: // DOCSTAG: [pw_rpc2-examples-fan-in-fan-out-aggregator-coro]
+
+.. _module-pw_rpc2-examples-fan-in-fan-out-futures:
+
+Fan out with futures
+====================
+Without coroutines, ``GetTemperatureAggregatesFuture`` stores the future that
+``Join`` returns and polls it like any other future:
+
+.. literalinclude:: cpp/examples/fan_in_fan_out/server_polling.cc
+   :language: cpp
+   :dedent:
+   :start-after: // DOCSTAG: [pw_rpc2-examples-fan-in-fan-out-aggregator-polling]
+   :end-before: // DOCSTAG: [pw_rpc2-examples-fan-in-fan-out-aggregator-polling]
