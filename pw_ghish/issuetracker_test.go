@@ -572,6 +572,16 @@ func TestSanitizeUntrustedText(t *testing.T) {
 			want:  "HelloWorld!",
 		},
 		{
+			name:  "strips OSC, charset escapes, and DEL",
+			input: "Build\x1b]8;;https://example.com\x07Link\x1b]8;;\x1b\\\x1b(B\x7fOK",
+			want:  "BuildLinkOK",
+		},
+		{
+			name:  "strips truecolor CSI, C1 CSI/OSC, and DCS sequences",
+			input: "\x1b[38:2:255:0:0mRed\x1b[0m \u009b31mC1\u009b0m \u009d0;title\u009c \x1bPignored\x1b\\OK\u0085",
+			want:  "Red C1  OK",
+		},
+		{
 			name:  "strips non-printable control chars but preserves newline, tab, carriage return",
 			input: "Line1\x00\x07\x08\n\tIndented\r\nLine2\x1f",
 			want:  "Line1\n\tIndented\r\nLine2",

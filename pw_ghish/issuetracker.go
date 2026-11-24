@@ -1059,16 +1059,17 @@ func IssueToJSONMap(issue *BuganizerIssue, comments []BuganizerComment, profile 
 }
 
 var (
-	ansiEscapeRegex  = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+	ansiEscapeRegex  = regexp.MustCompile(`\x1b\[[0-9:;<=>?]*[ -/]*[@-~]|\x9b[0-9:;<=>?]*[ -/]*[@-~]|(?:\x1b\]|\x9d)[^\x1b\x07\x9c]*(?:\x07|\x1b\\|\x9c)|\x1b(?:P|X|\^|_)[^\x1b\x9c]*(?:\x07|\x1b\\|\x9c)|\x1b(?:\(|\))[0-9A-Za-z]`)
 	nonAlphaNumRegex = regexp.MustCompile(`[^a-z0-9]+`)
 )
 
-// SanitizeUntrustedText strips ANSI escape sequences and non-printable control characters
-// (preserving \n, \t, and \r) from untrusted issue titles, descriptions, and comments.
+// SanitizeUntrustedText strips ANSI/C1 escape sequences and non-printable control
+// characters (preserving \n, \t, and \r) from untrusted issue titles,
+// descriptions, logs, and comments.
 func SanitizeUntrustedText(s string) string {
 	s = ansiEscapeRegex.ReplaceAllString(s, "")
 	return strings.Map(func(r rune) rune {
-		if r == '\n' || r == '\t' || r == '\r' || r >= 32 {
+		if r == '\n' || r == '\t' || r == '\r' || (r >= 32 && r != 0x7f && (r < 0x80 || r > 0x9f)) {
 			return r
 		}
 		return -1

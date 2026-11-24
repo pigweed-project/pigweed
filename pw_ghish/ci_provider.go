@@ -34,6 +34,7 @@ type (
 // FailureReportOptions configures failure log extraction across CI providers.
 type FailureReportOptions struct {
 	MaxLogLines            int
+	FullLog                bool
 	PreferredLogs          []string
 	IncludeSummaryMarkdown bool
 	Target                 string
@@ -156,8 +157,10 @@ func (p *BuildbucketProvider) FetchFailureReportWithOptions(ctx context.Context,
 		return nil, err
 	}
 	maxLines := opts.MaxLogLines
-	if maxLines <= 0 {
-		maxLines = 40
+	if opts.FullLog {
+		maxLines = 0
+	} else if maxLines <= 0 {
+		maxLines = defaultFailureLogWindowLines
 	}
 	details, err := client.GetBuildDetails(ctx, b.ID)
 	if err != nil {

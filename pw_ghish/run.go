@@ -729,7 +729,7 @@ func runDirectBuildbucketView(cmd *cobra.Command, projCfg *ProjectConfig, luciCl
 	}
 
 	if runViewLogFailed || runViewLog {
-		maxLines := 100
+		maxLines := defaultFailureLogWindowLines
 		if runViewLog {
 			maxLines = 0
 		}
@@ -931,7 +931,7 @@ var runViewCmd = &cobra.Command{
 				return nil
 			}
 
-			maxLines := 100
+			maxLines := defaultFailureLogWindowLines
 			if runViewLog {
 				maxLines = 0
 			}
@@ -951,6 +951,7 @@ var runViewCmd = &cobra.Command{
 				}
 				rep, fetchErr := activeProvider.FetchFailureReportWithOptions(ctx, build, FailureReportOptions{
 					MaxLogLines:            maxLines,
+					FullLog:                runViewLog,
 					PreferredLogs:          projCfg.PreferredLogs(),
 					IncludeSummaryMarkdown: projCfg.IncludeSummaryMarkdown(),
 					Target:                 runViewTarget,

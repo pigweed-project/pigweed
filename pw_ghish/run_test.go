@@ -1704,3 +1704,88 @@ func TestRunView_SharedLeafFailingSteps(t *testing.T) {
 		t.Errorf("ExtractFailureReportWithOptions FailedStep = %+v, want build|compile", rep)
 	}
 }
+
+func TestRunView_LogFailed_WindowedEarlyErrorAndFullLog(t *testing.T) {
+	server := NewMockGerritServer(t)
+
+	var logLines []string
+	for i := 1; i <= 500; i++ {
+		switch i {
+		case 40:
+			logLines = append(logLines, "\x1b[31mpw_status/status.cc:12:5: error: expected ';'\x1b[0m\x1b]0;title\x07")
+		case 499:
+			logLines = append(logLines, "Final summary: 1 target failed.")
+		default:
+			logLines = append(logLines, fmt.Sprintf("[%03d/500] compiling target_%03d.cc", i, i))
+		}
+	}
+	fullLogBody := strings.Join(logLines, "\n") + "\n"
+	server.OnString("GET", "/logs/window-test", http.StatusOK, "text/plain", fullLogBody)
+	server.OnGetBuild(FakeBuildDetails("87000000041", "linux-build", "FAILURE",
+		WithSteps(FakeStep("compile", "FAILURE",
+			WithStepLogs(FakeLog("stdout", server.URL+"/logs/window-test")),
+		)),
+	))
+
+	// 1. Text --log-failed preserves both early error (line 40), omission marker, and tail (line 499).
+	textOut, err := executeCommand(RootCmd, "run", "view", "87000000041", "--log-failed")
+	if err != nil {
+		t.Fatalf("run view --log-failed failed: %v\nOutput: %s", err, textOut)
+	}
+	if !strings.Contains(textOut, "pw_status/status.cc:12:5: error: expected ';'") {
+		t.Errorf("expected early compiler error in --log-failed text output, got:\n%s", textOut)
+	}
+	if !strings.Contains(textOut, "Final summary: 1 target failed.") {
+		t.Errorf("expected tail summary in --log-failed text output, got:\n%s", textOut)
+	}
+	if !strings.Contains(textOut, "lines omitted ...]") {
+		t.Errorf("expected windowed omission marker in --log-failed text output, got:\n%s", textOut)
+	}
+	if strings.Contains(textOut, "\x1b") {
+		t.Errorf("expected ANSI CSI/OSC sequences stripped, got:\n%s", textOut)
+	}
+
+	// 2. JSON --log-failed emits the same windowed snippet without truncation to 25 lines.
+	jsonOut, err := executeCommand(RootCmd, "run", "view", "87000000041", "--log-failed", "--json")
+	if err != nil {
+		t.Fatalf("run view --log-failed --json failed: %v\nOutput: %s", err, jsonOut)
+	}
+	var reps []FailureReport
+	if err := json.Unmarshal([]byte(jsonOut), &reps); err != nil {
+		t.Fatalf("unmarshal []FailureReport: %v\n%s", err, jsonOut)
+	}
+	if len(reps) != 1 || !strings.Contains(reps[0].LogSnippet, "pw_status/status.cc:12:5: error: expected ';'") || !strings.Contains(reps[0].LogSnippet, "Final summary: 1 target failed.") {
+		t.Errorf("unexpected JSON --log-failed windowed report: %+v", reps)
+	}
+
+	// 3. --log outputs the complete sanitized log without window omission.
+	fullOut, err := executeCommand(RootCmd, "run", "view", "87000000041", "--log")
+	if err != nil {
+		t.Fatalf("run view --log failed: %v\nOutput: %s", err, fullOut)
+	}
+	if !strings.Contains(fullOut, "[001/500] compiling target_001.cc") || !strings.Contains(fullOut, "[500/500] compiling target_500.cc") {
+		t.Errorf("expected full unsliced log under --log, got len=%d", len(fullOut))
+	}
+	if strings.Contains(fullOut, "\x1b") {
+		t.Errorf("expected ANSI sequences stripped in --log output")
+	}
+
+	// 4. 40-line log (between 26 and 60 lines) is preserved in full by text --log-failed without truncating back to 25 lines.
+	var mediumLines []string
+	for i := 1; i <= 40; i++ {
+		mediumLines = append(mediumLines, fmt.Sprintf("medium line %02d", i))
+	}
+	server.OnString("GET", "/logs/medium-test", http.StatusOK, "text/plain", strings.Join(mediumLines, "\n")+"\n")
+	server.OnGetBuild(FakeBuildDetails("87000000042", "linux-build", "FAILURE",
+		WithSteps(FakeStep("compile", "FAILURE",
+			WithStepLogs(FakeLog("stdout", server.URL+"/logs/medium-test")),
+		)),
+	))
+	medOut, err := executeCommand(RootCmd, "run", "view", "87000000042", "--log-failed")
+	if err != nil {
+		t.Fatalf("run view --log-failed (40 lines) failed: %v\nOutput: %s", err, medOut)
+	}
+	if !strings.Contains(medOut, "medium line 01") || !strings.Contains(medOut, "medium line 40") {
+		t.Errorf("expected all 40 lines preserved without 25-line truncation, got:\n%s", medOut)
+	}
+}

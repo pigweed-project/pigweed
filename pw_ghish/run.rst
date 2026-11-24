@@ -348,7 +348,7 @@ Fetch failure summaries and raw step log snippets in the terminal:
    $ ./gh run view P99164207/firmware_host_tests --log-failed
    $ ./gh run view P99164207 --target firmware_host_tests --log-failed
 
-   # Print the full step log instead of the tail snippet:
+   # Print the full step log instead of the windowed failure snippet:
    $ ./gh run view -j pigweed-lintformat --log
 
    # Output JSON report:
@@ -370,11 +370,15 @@ returning a ``[]LUCIBuildDetails`` JSON array in batch mode (or a single
 On **LUCI Buildbucket** builds, ``run view --log-failed`` prioritizes curated
 ``failure summary`` (or ``failure_summary``) streams before falling back to
 ``stdout`` and ``stderr`` (configurable via ``ci.preferred_logs`` in
-``.ghish.toml``). For orchestrator builds where compilation or test failures
-occur in a child subbuild, ``run view --log-failed`` also includes the top-level
-build ``SummaryMarkdown`` (including reproduction hints such as ``fx repro``)
-while deduplicating truncated summary blocks against the full ``failure
-summary`` log snippet.
+``.ghish.toml``). When extracting a snippet, it strips ANSI/control sequences and
+scans the full bounded log to anchor a window around the first high-signal
+build/test error marker plus the non-overlapping tail summary (separated by
+``[... N lines omitted ...]``; pass ``--log`` for the complete cleaned log).
+For orchestrator builds where compilation or test failures occur in a child
+subbuild, ``run view --log-failed`` also includes the top-level build
+``SummaryMarkdown`` (including reproduction hints such as ``fx repro``) while
+deduplicating truncated summary blocks against the full ``failure summary`` log
+snippet.
 
 On **Android Busytown / TreeHugger** builds, ``run view --log-failed`` uses a
 two-tier retrieval strategy:

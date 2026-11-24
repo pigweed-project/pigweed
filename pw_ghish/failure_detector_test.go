@@ -450,3 +450,91 @@ func TestBudgetLogSnippet_TotalLines(t *testing.T) {
 		})
 	}
 }
+
+func TestWindowFailureLog_MarkerTailAndSanitization(t *testing.T) {
+	// 500-line log with an early located compiler error at line 50 plus ANSI CSI/OSC noise and a tail summary.
+	var lines []string
+	for i := 1; i <= 500; i++ {
+		switch i {
+		case 50:
+			lines = append(lines, "\x1b[31msrc/foo.cc:42:10: fatal error: missing header\x1b[0m\x1b]0;build title\x07\x7f")
+		case 498:
+			lines = append(lines, "ninja: build stopped: subcommand failed.")
+		default:
+			lines = append(lines, fmt.Sprintf("[%03d/500] compiling unit_%03d.cc", i, i))
+		}
+	}
+	raw := strings.Join(lines, "\r\n") + "\r\n"
+
+	got, hasWin := windowFailureLog(raw, defaultFailureLogWindowLines, defaultFailureLogMaxBytes)
+	if !hasWin {
+		t.Fatalf("expected hasMarkerWindow=true when marker is present")
+	}
+	if strings.Contains(got, "\x1b") || strings.ContainsRune(got, 0x7f) {
+		t.Errorf("expected ANSI CSI/OSC and DEL to be stripped, got:\n%s", got)
+	}
+	if !strings.Contains(got, "src/foo.cc:42:10: fatal error: missing header") {
+		t.Errorf("expected early failure marker at line 50, got:\n%s", got)
+	}
+	if !strings.Contains(got, "[... 44 lines omitted ...]") {
+		t.Errorf("expected leading omission marker before error context, got:\n%s", got)
+	}
+	if !strings.Contains(got, "[... 405 lines omitted ...]") {
+		t.Errorf("expected middle omission marker between error window and tail, got:\n%s", got)
+	}
+	if !strings.Contains(got, "ninja: build stopped: subcommand failed.") {
+		t.Errorf("expected tail summary line 498, got:\n%s", got)
+	}
+
+	// Expanded markers (e.g. CONFLICT (, panic:, FAIL:, fatal:) trigger marker windowing rather than plain tailing.
+	for _, marker := range []string{"FAIL: FooTest", "panic: nil pointer", "fatal: not a git repository", "FATAL: out of memory", "CONFLICT (content): Merge conflict"} {
+		t.Run(marker, func(t *testing.T) {
+			var ml []string
+			for i := 1; i <= 120; i++ {
+				if i == 15 {
+					ml = append(ml, marker)
+				} else {
+					ml = append(ml, fmt.Sprintf("step output line %d", i))
+				}
+			}
+			snip, win := windowFailureLog(strings.Join(ml, "\n"), 30, 8192)
+			if !win || !strings.Contains(snip, marker) {
+				t.Errorf("marker %q not windowed (win=%v):\n%s", marker, win, snip)
+			}
+		})
+	}
+
+	// Unmarked logs return plain tail with hasWin=false so budgetLogSnippet keeps its format.
+	var unmarked []string
+	for i := 1; i <= 100; i++ {
+		unmarked = append(unmarked, fmt.Sprintf("[%03d/100] building step", i))
+	}
+	plain, win := windowFailureLog(strings.Join(unmarked, "\n"), 60, 8192)
+	if win {
+		t.Errorf("expected hasWin=false when no failure marker matches")
+	}
+	if !strings.Contains(plain, "[100/100] building step") || strings.Contains(plain, "[001/100]") {
+		t.Errorf("expected 60-line tail for unmarked log, got:\n%s", plain)
+	}
+
+	// Near-tail marker overlap extends continuously without inserting a broken omission marker.
+	var nearTail []string
+	for i := 1; i <= 90; i++ {
+		if i == 75 {
+			nearTail = append(nearTail, "src/bar.cc:8: error: near tail")
+		} else {
+			nearTail = append(nearTail, fmt.Sprintf("step line %d", i))
+		}
+	}
+	overlap, win := windowFailureLog(strings.Join(nearTail, "\n"), 60, 8192)
+	if !win || !strings.Contains(overlap, "src/bar.cc:8: error: near tail") || !strings.Contains(overlap, "step line 90") {
+		t.Errorf("near-tail overlap failed (win=%v):\n%s", win, overlap)
+	}
+
+	// Byte cap truncates safely on valid UTF-8 boundaries.
+	wide := strings.Repeat("✓", 1000) + "\nsrc/a.cc:1: error: boom\n" + strings.Repeat("✗", 1000)
+	capped, _ := windowFailureLog(wide, 60, 512)
+	if len(capped) > 512 || !utf8.ValidString(capped) || !strings.HasSuffix(capped, "\n[... truncated ...]") {
+		t.Errorf("byte cap violated UTF-8 or limit (len=%d valid=%v): %q", len(capped), utf8.ValidString(capped), capped)
+	}
+}

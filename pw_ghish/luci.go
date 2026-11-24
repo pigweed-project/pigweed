@@ -140,6 +140,11 @@ type FailureReport struct {
 	// Patchset is set only when the build ran on an earlier code-equivalent
 	// patchset rather than the one requested.
 	Patchset int `json:"patchset,omitempty"`
+	// windowed and fullLog record whether LogSnippet already contains a full-log
+	// marker window (with "[... N lines omitted ...]") or the complete cleaned log,
+	// so FormatFailureReports avoids double-budgeting it down to 25 lines.
+	windowed bool
+	fullLog  bool
 }
 
 type bbBuilder struct {
@@ -806,12 +811,18 @@ func (c *LUCIClient) ExtractFailureReportWithOptions(ctx context.Context, b *LUC
 		if logURL := cmp.Or(targetLog.ViewURL, targetLog.URL); logURL != "" {
 			report.LogName = targetLog.Name
 			report.FullLogURL = logURL
-			snippet, totalLines, err := c.fetchLogStreamTail(ctx, logURL, maxLogLines)
+			rawLog, totalLines, err := c.fetchLogStreamTail(ctx, logURL, 0)
 			if err != nil {
-				report.LogSnippet = fmt.Sprintf("[Error fetching log stream from %s: %v]", logURL, err)
-			} else {
-				report.LogSnippet = strings.TrimSpace(snippet)
+				report.LogSnippet = SanitizeUntrustedText(fmt.Sprintf("[Error fetching log stream from %s: %v]", logURL, err))
+			} else if maxLogLines <= 0 {
+				report.LogSnippet = strings.TrimSpace(sanitizeLogText(rawLog))
 				report.LogTotalLines = totalLines
+				report.fullLog = true
+			} else {
+				snip, hasWin := windowFailureLog(rawLog, maxLogLines, defaultFailureLogMaxBytes)
+				report.LogSnippet = snip
+				report.LogTotalLines = totalLines
+				report.windowed = hasWin || (totalLines > 0 && totalLines <= maxLogLines)
 			}
 		}
 	}

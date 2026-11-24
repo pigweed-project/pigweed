@@ -22,8 +22,14 @@ import (
 )
 
 const (
-	maxFailureSummaryLines = 8
-	maxFailureLogLines     = 25
+	maxFailureSummaryLines       = 8
+	maxFailureLogLines           = 25
+	defaultFailureLogWindowLines = 60
+	defaultFailureLogMaxBytes    = 8192
+	defaultWindowLeadLines       = 5
+	defaultWindowTrailLines      = 25
+	defaultWindowTailLines       = 20
+	maxExcerptLineRunes          = 350
 )
 
 var (
@@ -362,6 +368,10 @@ func compactFailureSummary(summary string, maxLines int) string {
 }
 
 func isInfraNoiseLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, "[... ") && strings.HasSuffix(trimmed, " omitted ...]") {
+		return true
+	}
 	if infraNoiseKeywordRegex.MatchString(line) {
 		return true
 	}
@@ -370,7 +380,7 @@ func isInfraNoiseLine(line string) bool {
 
 // failureLineRank scores a trimmed log line by diagnostic priority:
 //   - Rank 1: located compiler/linker/build/test failure lines (`file:line: error:`, `ld.lld: error:`, `ERROR: path:line:`)
-//   - Rank 2: failure headers (`FAILED`, `FAIL: `, `panicked at`, `Assertion`, `Traceback`, `ERROR:`)
+//   - Rank 2: failure headers (`FAILED`, `FAIL:`, `panic:`, `panicked at`, `fatal:`, `FATAL:`, `Assertion`, `CONFLICT (`, `Traceback`, `ERROR:`)
 //   - Rank 3: standalone word `error`
 //   - Rank 0: ordinary output line
 func failureLineRank(trimmed string) int {
@@ -389,8 +399,13 @@ func failureLineRank(trimmed string) int {
 		return 1
 	}
 	if strings.Contains(trimmed, "FAILED") ||
-		strings.Contains(trimmed, "FAIL: ") ||
+		strings.Contains(trimmed, "FAIL:") ||
 		strings.Contains(trimmed, "panicked at") ||
+		strings.Contains(trimmed, "panic:") ||
+		strings.Contains(trimmed, "fatal:") ||
+		strings.Contains(trimmed, "fatal error:") ||
+		strings.Contains(trimmed, "FATAL:") ||
+		strings.Contains(trimmed, "CONFLICT (") ||
 		strings.Contains(trimmed, "Assertion") ||
 		strings.Contains(trimmed, "ASSERT") ||
 		strings.Contains(trimmed, "Traceback") ||
@@ -404,6 +419,30 @@ func failureLineRank(trimmed string) int {
 		return 3
 	}
 	return 0
+}
+
+func sanitizeLogText(raw string) string {
+	normalized := strings.ReplaceAll(raw, "\r\n", "\n")
+	clean := SanitizeUntrustedText(normalized)
+	return strings.ReplaceAll(clean, "\r", "\n")
+}
+
+func findBestFailureLine(lines []string, skipInfraNoise bool) int {
+	bestIdx := -1
+	bestRank := 0
+	for i, line := range lines {
+		if skipInfraNoise && isInfraNoiseLine(line) {
+			continue
+		}
+		if r := failureLineRank(strings.TrimSpace(line)); r > 0 && (bestRank == 0 || r < bestRank) {
+			bestRank = r
+			bestIdx = i
+			if bestRank == 1 {
+				break
+			}
+		}
+	}
+	return bestIdx
 }
 
 // selectFailureLogWindow selects up to maxLines non-empty lines from nonEmpty,
@@ -425,19 +464,7 @@ func selectFailureLogWindow(nonEmpty []string, maxLines int) []string {
 	if len(candidates) <= maxLines {
 		return candidates
 	}
-	bestIdx := -1
-	bestRank := 0
-	for i, line := range candidates {
-		r := failureLineRank(strings.TrimSpace(line))
-		if r > 0 && (bestRank == 0 || r < bestRank) {
-			bestRank = r
-			bestIdx = i
-			if bestRank == 1 {
-				break
-			}
-		}
-	}
-	if bestRank > 0 {
+	if bestIdx := findBestFailureLine(candidates, false); bestIdx >= 0 {
 		start := max(bestIdx-5, 0)
 		end := min(start+maxLines, len(candidates))
 		start = max(end-maxLines, 0)
@@ -592,7 +619,11 @@ func FormatFailureReports(reports []FailureReport) string {
 				header = fmt.Sprintf("Log Snippet (%s)", r.LogName)
 			}
 			fmt.Fprintf(&sb, "\n%s:\n", header)
-			sb.WriteString(budgetLogSnippet(r.LogSnippet, r.Builder, maxFailureLogLines, r.LogTotalLines))
+			if r.windowed || r.fullLog {
+				sb.WriteString(r.LogSnippet)
+			} else {
+				sb.WriteString(budgetLogSnippet(r.LogSnippet, r.Builder, maxFailureLogLines, r.LogTotalLines))
+			}
 			sb.WriteString("\n")
 		}
 		if r.FullLogURL != "" {
@@ -600,4 +631,110 @@ func FormatFailureReports(reports []FailureReport) string {
 		}
 	}
 	return sb.String()
+}
+
+func capExcerptBytes(s string, maxBytes int) string {
+	if maxBytes <= 0 || len(s) <= maxBytes {
+		return s
+	}
+	const suffix = "\n[... truncated ...]"
+	if maxBytes <= len(suffix) {
+		cut := maxBytes
+		for cut > 0 && !utf8.RuneStart(s[cut]) {
+			cut--
+		}
+		return s[:cut]
+	}
+	limit := maxBytes - len(suffix)
+	if nl := strings.LastIndexByte(s[:limit], '\n'); nl > limit/2 {
+		return s[:nl] + suffix
+	}
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + suffix
+}
+
+// windowFailureLog strips ANSI/control sequences from raw and extracts a bounded
+// window of up to maxLines lines and maxBytes bytes. When a ranked build/test
+// failure marker is found, it anchors around the first highest-priority marker
+// (leading + trailing context) plus the non-overlapping final tail summary
+// separated by "[... N lines omitted ...]" markers, returning hasMarkerWindow=true.
+// When the log fits within maxLines or has no matching marker, it returns either
+// the full sanitized log or the final maxLines tail lines with hasMarkerWindow=false.
+func windowFailureLog(raw string, maxLines int, maxBytes int) (string, bool) {
+	if maxLines <= 0 {
+		maxLines = defaultFailureLogWindowLines
+	}
+	if maxBytes <= 0 {
+		maxBytes = defaultFailureLogMaxBytes
+	}
+
+	clean := strings.Trim(sanitizeLogText(raw), "\n")
+	if strings.TrimSpace(clean) == "" {
+		return "", false
+	}
+
+	rawLines := strings.Split(clean, "\n")
+	lines := make([]string, len(rawLines))
+	for i, ln := range rawLines {
+		lines[i] = TruncateVisible(strings.TrimRight(ln, " \t"), maxExcerptLineRunes)
+	}
+
+	if len(lines) <= maxLines {
+		return capExcerptBytes(strings.Join(lines, "\n"), maxBytes), false
+	}
+
+	matchIdx := findBestFailureLine(lines, true)
+	if matchIdx < 0 {
+		return capExcerptBytes(strings.Join(lines[len(lines)-maxLines:], "\n"), maxBytes), false
+	}
+
+	lead := defaultWindowLeadLines
+	after := defaultWindowTrailLines
+	tailCount := defaultWindowTailLines
+	if maxLines > defaultFailureLogWindowLines {
+		extra := maxLines - defaultFailureLogWindowLines
+		afterExtra := (extra * 3) / 5
+		after += afterExtra
+		tailCount += extra - afterExtra
+	} else if maxLines < defaultFailureLogWindowLines {
+		budget := max(maxLines-2, 1)
+		tailCount = budget / 3
+		errBudget := max(budget-tailCount, 1)
+		lead = min(defaultWindowLeadLines, (errBudget-1)/5)
+		after = max(errBudget-1-lead, 0)
+	}
+
+	var out []string
+	errStart := max(0, matchIdx-lead)
+	errEnd := min(len(lines), matchIdx+after+1)
+	if errStart > 0 {
+		out = append(out, fmt.Sprintf("[... %d lines omitted ...]", errStart))
+	}
+
+	tailStart := len(lines) - tailCount
+	if tailCount > 0 && tailStart > errEnd {
+		out = append(out, lines[errStart:errEnd]...)
+		out = append(out, fmt.Sprintf("[... %d lines omitted ...]", tailStart-errEnd))
+		out = append(out, lines[tailStart:]...)
+	} else {
+		rem := max(maxLines-len(out), 1)
+		rest := lines[errStart:]
+		if len(rest) <= rem {
+			out = append(out, rest...)
+		} else if rem <= 1 {
+			out = append(out, lines[matchIdx])
+			if matchIdx+1 < len(lines) {
+				out = append(out, fmt.Sprintf("[... %d lines omitted ...]", len(lines)-matchIdx-1))
+			}
+		} else {
+			keep := rem - 1
+			out = append(out, rest[:keep]...)
+			out = append(out, fmt.Sprintf("[... %d lines omitted ...]", len(rest)-keep))
+		}
+	}
+
+	return capExcerptBytes(strings.Join(out, "\n"), maxBytes), true
 }
