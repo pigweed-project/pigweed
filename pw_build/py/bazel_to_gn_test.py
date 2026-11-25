@@ -14,14 +14,17 @@
 """Tests for the pw_build.bazel_to_gn module."""
 
 import json
+import os
+import tempfile
 import unittest
 
 from io import StringIO
+from pathlib import Path
 
 from unittest import mock
 from unittest.mock import call
 
-from pw_build.bazel_to_gn import BazelToGnConverter
+from pw_build.bazel_to_gn import BazelToGnConverter, _module_bazel_files
 
 # Test fixtures.
 
@@ -165,6 +168,164 @@ class TestBazelToGnConverter(unittest.TestCase):
         self.assertEqual(
             set(b2g.repo_names()), set(['pigweed', 'foo', 'bar', 'baz'])
         )
+
+    def test_load_modules_from_included_files(self) -> None:
+        """Tests that bazel_deps in included module files are loaded."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'repo'
+            (root / 'bazel').mkdir(parents=True)
+            (Path(tmp) / 'outside.MODULE.bazel').write_text(
+                'bazel_dep(name = "outside", version = "1.0")\n',
+                encoding='utf-8',
+            )
+            (root / 'MODULE.bazel').write_text(
+                MODULE_BAZEL
+                + '# include("//bazel:commented_out.MODULE.bazel")\n'
+                + 'include("//:/outside.MODULE.bazel")\n'
+                + 'include("//:../outside.MODULE.bazel")\n'
+                + 'include(\n'
+                + '    "//bazel:dev.MODULE.bazel",\n'
+                + ')\n',
+                encoding='utf-8',
+            )
+            (root / 'bazel' / 'dev.MODULE.bazel').write_text(
+                'bazel_dep(name = "qux", version = "1.0", '
+                'dev_dependency = True)\n'
+                'include("//:nested.MODULE.bazel")\n',
+                encoding='utf-8',
+            )
+            (root / 'nested.MODULE.bazel').write_text(
+                'bazel_dep(name = "quux", version = "2.0", '
+                'dev_dependency = True)\n',
+                encoding='utf-8',
+            )
+
+            module_files = _module_bazel_files(root / 'MODULE.bazel')
+            self.assertEqual(
+                module_files,
+                [
+                    root / 'MODULE.bazel',
+                    root / 'bazel' / 'dev.MODULE.bazel',
+                    root / 'nested.MODULE.bazel',
+                ],
+            )
+
+            b2g = BazelToGnConverter()
+            for module_file in module_files:
+                with open(module_file, encoding='utf-8') as file:
+                    b2g.load_modules(file)
+
+        self.assertEqual(
+            set(b2g.repo_names()),
+            {'pigweed', 'foo', 'bar', 'baz', 'qux', 'quux'},
+        )
+
+    def test_module_bazel_files_warns_on_parse_failure(self) -> None:
+        """Tests that a module file that cannot be parsed is reported."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'ok.MODULE.bazel').write_text('', encoding='utf-8')
+            module_bazel = root / 'MODULE.bazel'
+            module_bazel.write_text(
+                'include("//:ok.MODULE.bazel")\nbazel_dep(name = \n',
+                encoding='utf-8',
+            )
+            with mock.patch('builtins.print') as mock_print:
+                files = _module_bazel_files(module_bazel)
+            self.assertEqual(files, [module_bazel])
+            mock_print.assert_called_once()
+            message = mock_print.call_args.args[0]
+            self.assertTrue(message.startswith('W: '))
+            self.assertIn(str(module_bazel), message)
+            self.assertIn('ignoring its include() calls', message)
+
+    def test_module_bazel_files_depth_first_order(self) -> None:
+        """Tests that nested includes come before later sibling includes."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'bazel').mkdir()
+            (root / 'MODULE.bazel').write_text(
+                'include("//bazel:resolve.MODULE.bazel")\n'
+                'include("//bazel:dev.MODULE.bazel")\n',
+                encoding='utf-8',
+            )
+            (root / 'bazel' / 'resolve.MODULE.bazel').write_text(
+                'include("//:nested.MODULE.bazel")\n',
+                encoding='utf-8',
+            )
+            (root / 'nested.MODULE.bazel').write_text('', encoding='utf-8')
+            (root / 'bazel' / 'dev.MODULE.bazel').write_text(
+                '', encoding='utf-8'
+            )
+            self.assertEqual(
+                _module_bazel_files(root / 'MODULE.bazel'),
+                [
+                    root / 'MODULE.bazel',
+                    root / 'bazel' / 'resolve.MODULE.bazel',
+                    root / 'nested.MODULE.bazel',
+                    root / 'bazel' / 'dev.MODULE.bazel',
+                ],
+            )
+
+    def test_module_bazel_files_ignores_malformed_labels(self) -> None:
+        """Tests that labels Bazel rejects are not followed."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            # These exist, but only labels that Bazel rejects name them.
+            (root / 'sub').mkdir()
+            (root / 'sub' / 'backslash.MODULE.bazel').write_text('')
+            (root / 'dot.MODULE.bazel').write_text('')
+            (root / 'up.MODULE.bazel').write_text('')
+            (root / 'ok.MODULE.bazel').write_text('')
+            (root / 'MODULE.bazel').write_text(
+                'include("//:sub\\\\backslash.MODULE.bazel")\n'
+                'include("//:./dot.MODULE.bazel")\n'
+                'include("//sub/..:up.MODULE.bazel")\n'
+                'include("//:C:/up.MODULE.bazel")\n'
+                'include("//up.MODULE.bazel")\n'
+                'include("//:ok.MODULE.bazel")\n',
+                encoding='utf-8',
+            )
+            self.assertEqual(
+                _module_bazel_files(root / 'MODULE.bazel'),
+                [root / 'MODULE.bazel', root / 'ok.MODULE.bazel'],
+            )
+
+    @unittest.skipIf(os.name == 'nt', 'Creating symlinks needs privileges')
+    def test_module_bazel_files_visits_symlinked_file_once(self) -> None:
+        """Tests that a file and the symlinks to it are listed only once."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'MODULE.bazel').write_text(
+                'include("//:alias.MODULE.bazel")\n'
+                'include("//:real.MODULE.bazel")\n',
+                encoding='utf-8',
+            )
+            (root / 'real.MODULE.bazel').write_text(
+                'include("//:loop.MODULE.bazel")\n', encoding='utf-8'
+            )
+            (root / 'alias.MODULE.bazel').symlink_to(root / 'real.MODULE.bazel')
+            (root / 'loop.MODULE.bazel').symlink_to(root / 'MODULE.bazel')
+            self.assertEqual(
+                _module_bazel_files(root / 'MODULE.bazel'),
+                [root / 'MODULE.bazel', root / 'alias.MODULE.bazel'],
+            )
+
+    def test_module_bazel_files_warns_on_null_bytes(self) -> None:
+        """Tests that null bytes are reported; ValueError before Python 3.12."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'ok.MODULE.bazel').write_text('', encoding='utf-8')
+            module_bazel = root / 'MODULE.bazel'
+            module_bazel.write_bytes(b'include("//:ok.MODULE.bazel")\n\0')
+            with mock.patch('builtins.print') as mock_print:
+                files = _module_bazel_files(module_bazel)
+            self.assertEqual(files, [module_bazel])
+            mock_print.assert_called_once()
+            message = mock_print.call_args.args[0]
+            self.assertTrue(
+                message.startswith(f'W: Cannot parse {module_bazel}')
+            )
 
     def test_get_initial_targets(self):
         """Tests adding initial targets to the pending queue."""

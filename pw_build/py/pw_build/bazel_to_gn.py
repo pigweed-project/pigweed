@@ -14,6 +14,7 @@
 """Generates BUILD.gn files from rules in Bazel workspace."""
 
 import argparse
+import ast
 import json
 import os
 import re
@@ -38,6 +39,143 @@ from pw_build.gn_target import GnTarget
 from pw_build.gn_writer import GnFile
 
 ROOT_DIR_VARNAMES = ['PW_ROOT', 'BUILD_WORKSPACE_DIRECTORY']
+
+
+def _parse_module_file(path: Path) -> ast.Module | None:
+    """Parses a module file with Python's parser.
+
+    Module files are Starlark, but the top-level calls searched for here are
+    also valid Python. Prints a warning and returns None if parsing fails.
+    """
+    source = path.read_text(encoding='utf-8')
+    try:
+        return ast.parse(source)
+    except SyntaxError as err:
+        reason = f'line {err.lineno}: {err.msg}'
+    # Depending on the Python version, null bytes raise ValueError, and deeply
+    # nested expressions raise RecursionError or MemoryError ("too complex to
+    # parse"), instead of SyntaxError.
+    except (ValueError, RecursionError, MemoryError) as err:
+        reason = str(err)
+    print(f'W: Cannot parse {path} ({reason}); ignoring its include() calls')
+    return None
+
+
+def _top_level_calls(tree: ast.Module) -> Iterator[tuple[str, ast.Call]]:
+    """Yields (function name, call) for each top-level ``name(...)`` call."""
+    for node in tree.body:
+        # Only bare call statements matter; skip assignments and docstrings.
+        if not isinstance(node, ast.Expr):
+            continue
+        call = node.value
+        if not isinstance(call, ast.Call):
+            continue
+        # Skip calls on objects, such as extension tags: ``ext.tag(...)``.
+        if not isinstance(call.func, ast.Name):
+            continue
+        yield call.func.id, call
+
+
+def _split_include_label(label: str) -> tuple[str, str] | None:
+    """Splits an include() label into its package and target.
+
+    Returns None unless the label names a ``*.MODULE.bazel`` file in the root
+    repository using only path segments that Bazel accepts.
+    """
+    # include() only accepts files from the root module's own repository.
+    if not label.startswith('//'):
+        return None
+    pkg, colon, target = label.removeprefix('//').partition(':')
+    # Bazel requires the "//package:target" form and this file name suffix.
+    if not colon or not target.endswith('.MODULE.bazel'):
+        return None
+    # Labels separate segments with "/" only. A backslash or a second ":"
+    # could otherwise name a Windows drive or UNC path.
+    if '\\' in label or ':' in target:
+        return None
+    # Reject absolute paths (empty segments) and "." or ".." segments.
+    segments = target.split('/') + (pkg.split('/') if pkg else [])
+    if any(segment in ('', '.', '..') for segment in segments):
+        return None
+    return pkg, target
+
+
+def _included_labels(tree: ast.Module) -> Iterator[tuple[str, str]]:
+    """Yields the (package, target) of each well-formed include() call."""
+    for name, call in _top_level_calls(tree):
+        if name != 'include':
+            continue
+        # include() takes exactly one argument: a string literal label.
+        if len(call.args) != 1 or call.keywords:
+            continue
+        label = call.args[0]
+        if not isinstance(label, ast.Constant):
+            continue
+        if not isinstance(label.value, str):
+            continue
+        pkg_and_target = _split_include_label(label.value)
+        if pkg_and_target is not None:
+            yield pkg_and_target
+
+
+def _walk_includes(
+    path: Path, root_dir: Path, real_root: Path, seen: set[Path]
+) -> Iterator[Path]:
+    """Yields every file that path includes, depth first.
+
+    Bazel evaluates an included file in place of its include() call, so this
+    is the order in which Bazel sees the declarations.
+
+    Args:
+        path: Module file to read.
+        root_dir: Directory holding the root MODULE.bazel file.
+        real_root: root_dir with symlinks resolved.
+        seen: Resolved paths of the files visited so far; updated in place.
+    """
+    tree = _parse_module_file(path)
+    if tree is None:
+        return
+    for pkg, target in _included_labels(tree):
+        included = root_dir / pkg / target
+        # Compare resolved paths so that a file reached through a symlink is
+        # visited only once and cannot lead outside the repository.
+        real_included = included.resolve()
+        if real_included in seen:
+            continue
+        if not real_included.is_relative_to(real_root):
+            continue
+        seen.add(real_included)
+        yield included
+        yield from _walk_includes(included, root_dir, real_root, seen)
+
+
+def _module_bazel_files(
+    module_bazel_path: str | os.PathLike[str],
+) -> list[Path]:
+    """Returns MODULE.bazel followed by every module file it include()s.
+
+    Args:
+        module_bazel_path: Path to the root MODULE.bazel file.
+
+    Returns:
+        The root file followed by every *.MODULE.bazel file it includes
+        (directly or indirectly), depth first, which is the order in which
+        Bazel evaluates them. Includes that resolve outside the root file's
+        directory are ignored.
+
+    Raises:
+        OSError: A module file is missing or cannot be read.
+        UnicodeDecodeError: A module file is not valid UTF-8.
+    """
+    root_module = Path(module_bazel_path)
+    root_dir = root_module.parent
+    files = [root_module]
+    files.extend(
+        _walk_includes(
+            root_module, root_dir, root_dir.resolve(), {root_module.resolve()}
+        )
+    )
+    return files
 
 
 def _parse_args() -> argparse.Namespace:
@@ -348,8 +486,9 @@ def _bazel_to_gn(args: argparse.Namespace) -> None:
     os.chdir(root_dir)
 
     print('[~] Converting Bazel rules and their dependencies to GN targets...')
-    with open(Path(root_dir, 'MODULE.bazel')) as file:
-        b2g.load_modules(file)
+    for module_file in _module_bazel_files(root_dir / 'MODULE.bazel'):
+        with open(module_file, encoding='utf-8') as file:
+            b2g.load_modules(file)
 
     third_party_path = Path(root_dir, 'third_party')
     for repo_name in b2g.repo_names():
