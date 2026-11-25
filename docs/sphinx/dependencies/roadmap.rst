@@ -36,7 +36,7 @@ Pigweed:
   (:cs:`pw_build/bazel_tests/non_root_test`).
 * **Module file layout**: Root :cs:`MODULE.bazel` split via ``include()``
   into the Resolution Module File (:cs:`bazel/resolve.MODULE.bazel`,
-  ``single_version_override`` patches) and Dev Module File
+  module overrides) and Dev Module File
   (:cs:`bazel/dev.MODULE.bazel`, most existing ``dev_dependency = True``
   declarations), enforced by :cs:`pw_build/py/module_bazel_leak_test.py`.
 

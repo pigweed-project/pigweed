@@ -527,26 +527,6 @@ cipd_ext.require(
 )
 use_repo(cipd_ext, go = "pigweed.go")
 
-# Setup Fuchsia SDK.
-# ==================
-# Since `@fuchsia_infra` isn't a real BCR module and relies on `git_override` to bring in its
-# transitive dependencies, mark it as a `dev_dependency` for now.
-#
-# TODO: https://pwbug.dev/301336229 - Move to //bazel:dev.MODULE.bazel (with the
-# rest of the Fuchsia SDK setup) once the roller supports included module files.
-bazel_dep(name = "fuchsia_infra", dev_dependency = True)
-git_override(
-    module_name = "fuchsia_infra",
-    # ROLL: Warning: this is automatically updated by
-    # ROLL: https://cr-buildbucket.appspot.com/build/8671446753110151665
-    commit = "127a22ce4864f457f6b1b8a6546de13ed4409d18",
-    patch_strip = 1,
-    patches = [
-        "//pw_build/bazel_patches:0002-Watch-ensure_file-in-fuchsia_infra-cipd_repository.patch",
-    ],
-    remote = "https://fuchsia.googlesource.com/fuchsia-infra-bazel-rules",
-)
-
 # Set up Zephyr RTOS support, by default to a stub.
 pw_zephyr_config = use_extension("@pigweed//zephyr/config:pw_zephyr_config.bzl", "pw_zephyr_config")
 use_repo(pw_zephyr_config, "kconfig", "zephyr", "zephyr_version")

@@ -280,7 +280,10 @@ use_repo(pnpm, "pnpm")
 
 # Fuchsia SDK
 # ===========
-# `@fuchsia_infra` and its `git_override` are in //MODULE.bazel.
+# `@fuchsia_infra` is not in a registry; //bazel:resolve.MODULE.bazel
+# provides its `git_override`.
+bazel_dep(name = "fuchsia_infra", dev_dependency = True)
+
 FUCHSIA_SDK_VERSION = "version:34.20261106.5.1"
 
 # LINT.IfChange(llvm_version)

@@ -49,3 +49,16 @@ single_version_override(
         "//pw_build/bazel_patches:0001-Remove-unused-syslog-dependency-for-Fuchsia.patch",
     ],
 )
+
+# Provides `@fuchsia_infra` (declared in //bazel:dev.MODULE.bazel; not in BCR).
+git_override(
+    module_name = "fuchsia_infra",
+    # ROLL: Warning: this is automatically updated by
+    # ROLL: https://cr-buildbucket.appspot.com/build/8671446753110151665
+    commit = "127a22ce4864f457f6b1b8a6546de13ed4409d18",
+    patch_strip = 1,
+    patches = [
+        "//pw_build/bazel_patches:0002-Watch-ensure_file-in-fuchsia_infra-cipd_repository.patch",
+    ],
+    remote = "https://fuchsia.googlesource.com/fuchsia-infra-bazel-rules",
+)
