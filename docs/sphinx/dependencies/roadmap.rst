@@ -4,7 +4,7 @@
 Roadmap & status
 ================
 This page captures Pigweed's dependency implementation status and roadmap
-(current as of **November 23, 2026**) for its
+(current as of **November 24, 2026**) for its
 :ref:`dependency architecture <docs-build-dependency-architecture>`.
 
 .. note::
@@ -35,10 +35,13 @@ Pigweed:
   (``rules_doxygen``, ``rules_mypy``) and non-root consumer CI testing
   (:cs:`pw_build/bazel_tests/non_root_test`).
 * **Module file layout**: Root :cs:`MODULE.bazel` split via ``include()``
-  into the Resolution Module File (:cs:`bazel/resolve.MODULE.bazel`,
-  module overrides) and Dev Module File
-  (:cs:`bazel/dev.MODULE.bazel`, most existing ``dev_dependency = True``
-  declarations), enforced by :cs:`pw_build/py/module_bazel_leak_test.py`.
+  into the Resolution Module File (:cs:`bazel/resolve.MODULE.bazel`, every
+  module override) and Dev Module File (:cs:`bazel/dev.MODULE.bazel`, every
+  ``dev_dependency = True`` declaration except ``rules_mypy`` and its ``types``
+  extension, which stay in the root file until the PyPI split), enforced by
+  :cs:`pw_build/py/module_bazel_leak_test.py`. :ref:`module-pw_fortifier`
+  scanners and :cs:`pw_build/py/pw_build/bazel_to_gn.py` follow ``include()``
+  into both files.
 
 -------------------
 Current limitations
@@ -68,8 +71,10 @@ Pigweed is completing the
 milestones:
 
 #. **Split MODULE.bazel into Core, Resolution, and Dev Module Files and prune
-   dev dependencies**: Expose ``@rust_crates`` (with stub ``crates_std`` and
-   ``crates_no_std`` hubs on ``pw_rust_crates``) and
+   dev dependencies**: The three-file layout and its tooling support are in
+   place (see `Current status`_); populating the files remains. Expose
+   ``@rust_crates`` (with stub ``crates_std`` and ``crates_no_std`` hubs on
+   ``pw_rust_crates``) and
    ``@pigweed_python_packages`` (via a ``pw_py_packages`` wrapper extension) in
    the Core Module File. Isolate Pigweed's default ``crate`` and ``pip``
    extensions under ``use_extension(..., dev_dependency = True)`` in the
