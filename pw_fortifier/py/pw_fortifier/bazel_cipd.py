@@ -17,7 +17,7 @@ import argparse
 import os
 
 from pw_fortifier.async_path import AsyncPath
-from pw_fortifier.bazelisk_utils import BazelRepo
+from pw_fortifier.bazelisk_utils import BazelRepo, is_module_file_selected
 from pw_fortifier.cipd_utils import CipdPackageSet
 from pw_fortifier.freshness_result import TIER1_TOOLCHAIN
 from pw_fortifier.package_analyzer import PackageAnalyzer
@@ -27,7 +27,7 @@ PKG_TYPE: str = 'bazel_cipd'
 
 
 class BazelCipdAnalyzer(PackageAnalyzer):
-    """Scans CIPD repositories in MODULE.bazel for freshness."""
+    """Scans CIPD repositories in MODULE.bazel (and includes) for freshness."""
 
     PKG_TYPE = PKG_TYPE
 
@@ -41,7 +41,7 @@ class BazelCipdAnalyzer(PackageAnalyzer):
         await super().configure(args)
         if args.files is None:
             return
-        if 'MODULE.bazel' in args.files:
+        if is_module_file_selected(self.root, args.files):
             return
         self.skip_setup = True
 

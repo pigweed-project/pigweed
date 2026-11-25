@@ -15,14 +15,20 @@
 
 import argparse
 import asyncio
+from collections.abc import Sequence
 import json
 import os
+from pathlib import Path
 import requests
 
 from pw_fortifier.async_path import AsyncPath
-from pw_fortifier.bazelisk_utils import run_bazelisk
+from pw_fortifier.bazelisk_utils import (
+    find_bazel_dep_location,
+    is_module_file_selected,
+    module_bazel_files,
+    run_bazelisk,
+)
 from pw_fortifier.git_utils import ReadOnlyGitWorkspace
-from pw_fortifier.code_snippet import find_location
 from pw_fortifier.package_analyzer import PackageAnalyzer
 from pw_fortifier.freshness_result import (
     FreshnessResult,
@@ -69,7 +75,7 @@ async def _get_dependencies(
 
 
 class BazelDepAnalyzer(PackageAnalyzer):
-    """Scans Bazel dependencies in MODULE.bazel for freshness."""
+    """Scans Bazel dependencies in MODULE.bazel (and includes) for freshness."""
 
     PKG_TYPE: str = 'bazel_dep'
 
@@ -82,7 +88,7 @@ class BazelDepAnalyzer(PackageAnalyzer):
         await super().configure(args)
         if args.files is None:
             return
-        if 'MODULE.bazel' in args.files:
+        if is_module_file_selected(self.root, args.files):
             return
         self.skip_setup = True
 
@@ -91,7 +97,7 @@ class BazelDepAnalyzer(PackageAnalyzer):
         dep: dict[str, str],
         prod_modules: set[str],
         bcr_repo: ReadOnlyGitWorkspace,
-        rel_path: str,
+        module_files: Sequence[Path],
     ) -> FreshnessResult | None:
         """Scans a single dependency for freshness."""
         module = dep.get('name')
@@ -172,7 +178,7 @@ class BazelDepAnalyzer(PackageAnalyzer):
         earliest = self.find_lowest(tier, current, all_versions)
 
         # Locate where the current version is specified
-        location = find_location(self.root, rel_path, self.PKG_TYPE, module)
+        location = find_bazel_dep_location(self.root, module_files, module)
 
         return FreshnessResult(
             package=module,
@@ -187,7 +193,7 @@ class BazelDepAnalyzer(PackageAnalyzer):
         """Examines Bazel dependencies for freshness."""
         module_bazel_path = os.path.join(self.root, 'MODULE.bazel')
         cwd = os.path.dirname(module_bazel_path)
-        rel_path = 'MODULE.bazel'
+        module_files = module_bazel_files(module_bazel_path)
 
         prod_modules, all_dependencies = await _get_dependencies(cwd)
 
@@ -200,7 +206,7 @@ class BazelDepAnalyzer(PackageAnalyzer):
 
         for dep in all_dependencies:
             res = await self._scan_dependency(
-                dep, prod_modules, bcr_repo, rel_path
+                dep, prod_modules, bcr_repo, module_files
             )
             await self._send_result(res)
 

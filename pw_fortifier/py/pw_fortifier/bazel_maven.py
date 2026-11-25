@@ -24,8 +24,12 @@ import xml.etree.ElementTree as ET
 import requests
 
 from pw_fortifier.async_path import AsyncPath
-from pw_fortifier.bazelisk_utils import BazelRepo
-from pw_fortifier.code_snippet import find_location
+from pw_fortifier.bazelisk_utils import (
+    BazelRepo,
+    find_module_location,
+    is_module_file_selected,
+    module_bazel_files,
+)
 from pw_fortifier.package_analyzer import PackageAnalyzer
 from pw_fortifier.freshness_result import (
     FreshnessResult,
@@ -44,7 +48,7 @@ PKG_TYPE: str = 'bazel_maven'
 
 
 class BazelMavenAnalyzer(PackageAnalyzer):
-    """Scans Maven dependencies in MODULE.bazel for freshness."""
+    """Scans Maven dependencies in MODULE.bazel (and includes) for freshness."""
 
     PKG_TYPE = PKG_TYPE
 
@@ -57,7 +61,7 @@ class BazelMavenAnalyzer(PackageAnalyzer):
         await super().configure(args)
         if args.files is None:
             return
-        if 'MODULE.bazel' in args.files:
+        if is_module_file_selected(self.root, args.files):
             return
         self.skip_setup = True
 
@@ -181,7 +185,7 @@ class BazelMavenAnalyzer(PackageAnalyzer):
     async def _set_up(self) -> None:
         """Examines Maven dependencies for freshness."""
         module_bazel_path = os.path.join(self.root, 'MODULE.bazel')
-        rel_path = 'MODULE.bazel'
+        module_files = module_bazel_files(module_bazel_path)
 
         async for repo in BazelRepo.load(module_bazel_path):
             # MAven rules have repositories and artifacts attributes
@@ -225,7 +229,9 @@ class BazelMavenAnalyzer(PackageAnalyzer):
                     )
                     continue
 
-                location = find_location(self.root, rel_path, package)
+                location = find_module_location(
+                    self.root, module_files, package
+                )
 
                 res = FreshnessResult(
                     package=package,

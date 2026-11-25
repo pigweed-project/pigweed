@@ -20,7 +20,7 @@ import json
 import os
 import subprocess
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock
 
 import requests
 from pyfakefs.fake_filesystem_unittest import TestCaseMixin
@@ -268,6 +268,48 @@ class TestBazelMavenAnalyzer(unittest.IsolatedAsyncioTestCase, TestCaseMixin):
         for call_args in mock_get.call_args_list:
             self.assertNotIn('my.custom.repo', call_args[0][0])
 
+    @patch('pw_fortifier.bazel_maven.BazelRepo.load')
+    async def test_run_reports_included_module_file(
+        self, mock_load: MagicMock
+    ) -> None:
+        """Tests that an artifact is located in the file that declares it."""
+        mock_load.side_effect = self._mock_load_repos
+        # Move the maven.install() call into an included module file.
+        dev_module = os.path.join('bazel', 'dev.MODULE.bazel')
+        with open(self.module_bazel, 'w', encoding='utf-8') as f:
+            f.write('include("//bazel:dev.MODULE.bazel")\n')
+        self.fs.create_file(
+            os.path.join(self.test_dir, dev_module),
+            contents=self.module_bazel_content,
+        )
+
+        analyzer = BazelMavenAnalyzer()
+        consumer = PipelineSink()
+        await configure_stage_for_test(
+            analyzer,
+            src_repo=self.test_dir,
+            working_dir=self.working_dir,
+        )
+        analyzer.connect(consumer)
+        version = PackageVersion('31.1-jre', date(2026, 6, 1))
+        with patch.object(
+            analyzer,
+            '_resolve_artifact',
+            AsyncMock(return_value=(version, version)),
+        ):
+            await analyzer.run()
+
+        result_path = await consumer.input_queue.get()
+        assert result_path is not None
+        res = await FreshnessResult.load(result_path)
+        self.assertIsNone(await consumer.input_queue.get())
+
+        self.assertEqual(res.package, 'com.google.guava:guava')
+        self.assertEqual(res.source, dev_module)
+        assert res.location is not None
+        self.assertEqual(res.location.file, dev_module)
+        self.assertEqual(res.location.lines, (4, 4))
+
     @patch('requests.head')
     async def test_get_timestamp_success(self, mock_head: MagicMock) -> None:
         """Tests _get_timestamp parses Last-Modified header."""
@@ -400,6 +442,22 @@ class TestBazelMavenAnalyzer(unittest.IsolatedAsyncioTestCase, TestCaseMixin):
             files=['other.txt'],
         )
         self.assertTrue(analyzer.skip_setup)
+
+    async def test_configure_included_module_file(self) -> None:
+        """Tests that an included module file in --files triggers the scan."""
+        with open(self.module_bazel, 'a', encoding='utf-8') as f:
+            f.write('include("//bazel:dev.MODULE.bazel")\n')
+        self.fs.create_file(
+            os.path.join(self.test_dir, 'bazel', 'dev.MODULE.bazel')
+        )
+        analyzer = BazelMavenAnalyzer()
+        await configure_stage_for_test(
+            analyzer,
+            src_repo=self.test_dir,
+            working_dir=self.working_dir,
+            files=['bazel/dev.MODULE.bazel'],
+        )
+        self.assertFalse(analyzer.skip_setup)
 
 
 if __name__ == '__main__':

@@ -39,16 +39,27 @@ class TestBazelDepAnalyzer(unittest.IsolatedAsyncioTestCase, TestCaseMixin):
         self.module_bazel = os.path.join(self.test_dir, 'MODULE.bazel')
         self._date_patcher = None
 
+        self.dev_module = os.path.join('bazel', 'dev.MODULE.bazel')
         self.module_bazel_content = (
             '# Fake MODULE.bazel\n'
             'bazel_dep(name = "foo-mod", version = "1.0.0")\n'
             'bazel_dep(name = "bar-tool", version = "2.0.0")\n'
-            'bazel_dep('
-            'name = "dev-mod", version = "3.0.0", dev_dependency = True'
-            ')\n'
+            'include("//bazel:dev.MODULE.bazel")\n'
         )
         self.fs.create_file(
             self.module_bazel, contents=self.module_bazel_content
+        )
+        # A dev dependency declared across several lines in an included file.
+        self.fs.create_file(
+            os.path.join(self.test_dir, self.dev_module),
+            contents=(
+                '# Fake dev.MODULE.bazel\n'
+                'bazel_dep(\n'
+                '    name = "dev-mod",\n'
+                '    version = "3.0.0",\n'
+                '    dev_dependency = True,\n'
+                ')\n'
+            ),
         )
 
         # Write a fake OWNERS file
@@ -140,15 +151,14 @@ class TestBazelDepAnalyzer(unittest.IsolatedAsyncioTestCase, TestCaseMixin):
                         'bazel_dep(name = "bar-tool", '
                         'version = "2.0.0")\n'
                     )
-                elif l_val == '4,4':
-                    stdout = (
-                        'hash1 (<assignee-dev@google.com> '
-                        '2026-06-01 10:00:00 +0000 4) '
-                        'bazel_dep(name = "dev-mod", '
-                        'version = "3.0.0", dev_dependency = True)\n'
-                    )
                 else:
                     stdout = ''
+            elif rel_path == self.dev_module and l_val == '2,6':
+                stdout = (
+                    'hash1 (<assignee-dev@google.com> '
+                    '2026-06-01 10:00:00 +0000 3) '
+                    '    name = "dev-mod",\n'
+                )
             else:
                 stdout = ''
         else:
@@ -303,9 +313,10 @@ class TestBazelDepAnalyzer(unittest.IsolatedAsyncioTestCase, TestCaseMixin):
         self.assertIsNone(bar_res.assignee)
 
         dev_res = next(r for r in results if r.package == 'dev-mod')
-        self.assertEqual(dev_res.source, 'MODULE.bazel')
-        self.assertEqual(dev_res.location.file, 'MODULE.bazel')
-        self.assertEqual(dev_res.location.lines, (4, 4))
+        # Declared across lines 2-6 of the included module file.
+        self.assertEqual(dev_res.source, self.dev_module)
+        self.assertEqual(dev_res.location.file, self.dev_module)
+        self.assertEqual(dev_res.location.lines, (2, 6))
         self.assertEqual(dev_res.pkg_type, 'bazel_dep')
         self.assertEqual(
             dev_res.current, PackageVersion('3.0.0', date(2026, 3, 3))
@@ -348,6 +359,17 @@ class TestBazelDepAnalyzer(unittest.IsolatedAsyncioTestCase, TestCaseMixin):
         analyzer.connect(consumer)
         await analyzer.run()
         self.assertIsNone(await consumer.input_queue.get())
+
+    async def test_configure_included_module_file(self) -> None:
+        """Tests that an included module file in --files triggers the scan."""
+        analyzer = BazelDepAnalyzer()
+        await configure_stage_for_test(
+            analyzer,
+            src_repo=self.test_dir,
+            working_dir=self.working_dir,
+            files=['bazel/dev.MODULE.bazel'],
+        )
+        self.assertFalse(analyzer.skip_setup)
 
 
 if __name__ == '__main__':

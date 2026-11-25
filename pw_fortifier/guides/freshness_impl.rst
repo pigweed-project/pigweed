@@ -184,11 +184,11 @@ Available package analyzers
 The following package analyzers are provided by ``pw_fortifier``:
 
 * :py:class:`~pw_fortifier.bazel_cipd.BazelCipdAnalyzer`: CIPD packages in
-  ``MODULE.bazel``.
+  ``MODULE.bazel`` and the module files it includes.
 * :py:class:`~pw_fortifier.bazel_dep.BazelDepAnalyzer`: BCR dependencies in
-  ``MODULE.bazel``.
+  ``MODULE.bazel`` and the module files it includes.
 * :py:class:`~pw_fortifier.bazel_maven.BazelMavenAnalyzer`: Maven artifacts in
-  ``MODULE.bazel``.
+  ``MODULE.bazel`` and the module files it includes.
 * :py:class:`~pw_fortifier.cargo.CargoAnalyzer`: Rust crates in ``Cargo.toml``
   and ``Cargo.lock``. (Pairs with
   :py:class:`~pw_fortifier.cargo.CargoUpdater`).

@@ -527,6 +527,22 @@ class TestBazelCipdAnalyzer(unittest.IsolatedAsyncioTestCase, TestCaseMixin):
         )
         self.assertTrue(analyzer.skip_setup)
 
+    async def test_configure_included_module_file(self) -> None:
+        """Tests that an included module file in --files triggers the scan."""
+        with open(self.module_bazel, 'a', encoding='utf-8') as f:
+            f.write('include("//bazel:dev.MODULE.bazel")\n')
+        self.fs.create_file(
+            os.path.join(self.test_dir, 'bazel', 'dev.MODULE.bazel')
+        )
+        analyzer = BazelCipdAnalyzer()
+        await configure_stage_for_test(
+            analyzer,
+            src_repo=self.test_dir,
+            working_dir=self.working_dir,
+            files=['bazel/dev.MODULE.bazel'],
+        )
+        self.assertFalse(analyzer.skip_setup)
+
 
 if __name__ == '__main__':
     unittest.main()
