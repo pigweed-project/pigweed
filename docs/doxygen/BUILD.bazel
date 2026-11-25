@@ -100,6 +100,7 @@ filegroup(
         "//pw_sys_io:doxygen",
         "//pw_system:doxygen",
         "//pw_thread:doxygen",
+        "//pw_thread_threadx:doxygen",
         "//pw_tokenizer:doxygen",
         "//pw_toolchain:doxygen",
         "//pw_trace:doxygen",

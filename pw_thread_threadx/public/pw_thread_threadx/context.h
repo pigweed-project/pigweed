@@ -33,28 +33,42 @@ namespace pw::thread::threadx {
 
 class Options;
 
-// Static thread context allocation including the TCB, an event group for
-// joining if enabled, and an external statically allocated stack.
-//
-// Example usage:
-//
-//   std::array<ULONG, kFooStackSizeWords> example_thread_stack;
-//   pw::thread::threadx::Context example_thread_context(example_thread_stack);
-//   void StartExampleThread() {
-//      pw::thread::DetachedThread(
-//        pw::thread::threadx::Options()
-//            .set_name("example_thread")
-//            .set_priority(kFooPriority)
-//            .set_context(example_thread_context),
-//        example_thread_function);
-//   }
+/// @module{pw_thread_threadx}
+
+/// Static thread context allocation including the TCB, an event group for
+/// joining if enabled, and an external statically allocated stack.
+///
+/// Example usage:
+///
+/// @code{.cpp}
+///   std::array<ULONG, kFooStackSizeWords> example_thread_stack;
+///   pw::thread::threadx::Context example_thread_context(example_thread_stack);
+///   void StartExampleThread() {
+///     pw::thread::DetachedThread(
+///         pw::thread::threadx::Options()
+///             .set_name("example_thread")
+///             .set_priority(kFooPriority)
+///             .set_context(example_thread_context),
+///         example_thread_function);
+///   }
+/// @endcode
 class Context {
  public:
+  /// Constructs a thread context using an externally allocated stack.
+  ///
+  /// @pre `stack_span.size() >= config::kMinimumStackSizeWords`, and the
+  /// backing storage must outlive this `Context` and any thread using it.
+  ///
+  /// @param[in] stack_span Pre-allocated stack storage in `ULONG` words.
   explicit Context(span<ULONG> stack_span) : tcb_{}, stack_span_(stack_span) {}
   Context(const Context&) = delete;
   Context& operator=(const Context&) = delete;
 
-  // Intended for unit test & Thread use only.
+  /// Returns the underlying ThreadX `TX_THREAD` thread control block.
+  ///
+  /// Intended for unit test and `pw::Thread` use only.
+  ///
+  /// @returns A reference to the underlying `TX_THREAD` TCB.
   TX_THREAD& tcb() { return tcb_; }
 
  private:
@@ -105,23 +119,31 @@ class Context {
   std::array<char, config::kMaximumNameLength + 1> name_;
 };
 
-// Static thread context allocation including the stack along with the Context.
-//
-// Example usage:
-//
-//   pw::thread::threadx::ContextWithStack<kFooStackSizeWords>
-//       example_thread_context;
-//   void StartExampleThread() {
-//      pw::Thread(
-//        pw::thread::threadx::Options()
-//            .set_name("static_example_thread")
-//            .set_priority(kFooPriority)
-//            .set_static_context(example_thread_context),
-//        example_thread_function).detach();
-//   }
+/// Static thread context allocation including the stack along with the
+/// `Context`.
+///
+/// Example usage:
+///
+/// @code{.cpp}
+///   pw::thread::threadx::ContextWithStack<kFooStackSizeWords>
+///       example_thread_context;
+///   void StartExampleThread() {
+///     pw::Thread(
+///         pw::thread::threadx::Options()
+///             .set_name("static_example_thread")
+///             .set_priority(kFooPriority)
+///             .set_context(example_thread_context),
+///         example_thread_function)
+///         .detach();
+///   }
+/// @endcode
+///
+/// @tparam kStackSizeWords Stack size in `ULONG` words. Must be at least
+/// `config::kMinimumStackSizeWords`.
 template <size_t kStackSizeWords = config::kDefaultStackSizeWords>
 class ContextWithStack final : public Context {
  public:
+  /// Constructs a thread context with an internally allocated stack.
   constexpr ContextWithStack() : Context(stack_storage_) {
     static_assert(kStackSizeWords >= config::kMinimumStackSizeWords);
   }
@@ -129,5 +151,7 @@ class ContextWithStack final : public Context {
  private:
   std::array<ULONG, kStackSizeWords> stack_storage_;
 };
+
+/// @endmodule
 
 }  // namespace pw::thread::threadx

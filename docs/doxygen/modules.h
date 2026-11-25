@@ -77,6 +77,9 @@
 /// @defgroup category_freertos Amazon FreeRTOS
 /// @ingroup category_os_backends
 /// @brief Safe, non-overflowing OS abstractions & wrappers for FreeRTOS
+/// @defgroup category_threadx Eclipse ThreadX
+/// @ingroup category_os_backends
+/// @brief Thread-safe OS abstraction layers & backends for Azure RTOS ThreadX
 /// @defgroup category_zephyr Zephyr
 /// @ingroup category_os_backends
 /// @brief Modules, backends, and helpers for the Zephyr RTOS
@@ -262,6 +265,8 @@
 /// @defgroup pw_thread pw_thread
 /// @ingroup category_os
 /// @brief Thread creation and execution
+/// @defgroup pw_thread_threadx pw_thread_threadx
+/// @ingroup pw_thread category_threadx
 /// @defgroup pw_tokenizer pw_tokenizer
 /// @ingroup category_observability
 /// @brief Compress strings to shrink logs by +75%

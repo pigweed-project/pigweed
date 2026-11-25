@@ -19,21 +19,27 @@
 
 namespace pw::thread::threadx {
 
-// A callback that is executed for each thread when using ForEachThread(). The
-// callback should return true if thread iteration should continue. When this
-// callback returns false, ForEachThread() will cease iteration of threads and
-// return an `Aborted` error code.
+/// @module{pw_thread_threadx}
+
+/// A callback that is executed for each thread when using `ForEachThread()`.
+/// The callback should return `true` if thread iteration should continue. When
+/// this callback returns `false`, `ForEachThread()` ceases iteration of threads
+/// and returns an @ABORTED error code.
 using ThreadCallback = pw::Function<bool(const TX_THREAD&)>;
 
-// Iterates through all threads that haven't been deleted, calling the provided
-// callback on each thread.
-//
-// Returns:
-//   Aborted - The callback requested an early-termination of thread iteration.
-//   OkStatus - Successfully iterated over all threads.
-//
-// Warning: This is only safe to use when the scheduler is disabled.
+/// Iterates through all threads that haven't been deleted, calling the provided
+/// callback on each thread.
+///
+/// @pre This is only safe to use when the scheduler is disabled.
+///
+/// @param[in] cb Callback invoked for each non-deleted thread.
+///
+/// @returns
+/// * @OK: Successfully iterated over all threads.
+/// * @ABORTED: The callback requested early termination of thread iteration.
 Status ForEachThread(const ThreadCallback& cb);
+
+/// @endmodule
 
 namespace internal {
 

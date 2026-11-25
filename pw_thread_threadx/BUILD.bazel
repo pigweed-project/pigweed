@@ -182,6 +182,17 @@ cc_library(
     ],
 )
 
+filegroup(
+    name = "doxygen",
+    srcs = [
+        "public/pw_thread_threadx/config.h",
+        "public/pw_thread_threadx/context.h",
+        "public/pw_thread_threadx/options.h",
+        "public/pw_thread_threadx/snapshot.h",
+        "public/pw_thread_threadx/util.h",
+    ],
+)
+
 sphinx_docs_library(
     name = "docs",
     srcs = [
