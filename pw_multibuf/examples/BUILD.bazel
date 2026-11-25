@@ -36,11 +36,13 @@ emboss_cc_library(
     visibility = ["//visibility:private"],  # Use :emboss_protocol
 )
 
-# emboss_cc_library doesn't support includes, so we need to wrap it. We also
-# need to disable layering_check since this library isn't what generates the
-# headers.
+# emboss_cc_library doesn't support includes, so we need to wrap it and enable
+# system_include_paths so generated .emb.h headers are passed via -isystem.
+# We also need to disable layering_check since this library isn't what
+# generates the headers.
 cc_library(
     name = "emboss_protocol",
+    features = ["system_include_paths"],
     includes = ["public"],
     deps = [":_emboss_protocol"],
 )

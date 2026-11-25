@@ -313,38 +313,47 @@ emboss_cc_library(
     ],
 )
 
+# emboss_cc_library doesn't support includes, so wrap each target in a
+# cc_library and enable system_include_paths so generated .emb.h headers are
+# passed via -isystem (matching GN and CMake).
 cc_library(
     name = "emboss_a2dp_aac",
+    features = ["system_include_paths"],
     includes = ["public"],
     deps = [":_emboss_a2dp_aac"],
 )
 
 cc_library(
     name = "emboss_a2dp_android_opus",
+    features = ["system_include_paths"],
     includes = ["public"],
     deps = [":_emboss_a2dp_android_opus"],
 )
 
 cc_library(
     name = "emboss_a2dp_sbc",
+    features = ["system_include_paths"],
     includes = ["public"],
     deps = [":_emboss_a2dp_sbc"],
 )
 
 cc_library(
     name = "emboss_a2dp_vendor",
+    features = ["system_include_paths"],
     includes = ["public"],
     deps = [":_emboss_a2dp_vendor"],
 )
 
 cc_library(
     name = "emboss_avdtp",
+    features = ["system_include_paths"],
     includes = ["public"],
     deps = [":_emboss_avdtp"],
 )
 
 cc_library(
     name = "emboss_att",
+    features = ["system_include_paths"],
     includes = ["public"],
     deps = [":_emboss_att"],
 )
@@ -361,6 +370,7 @@ emboss_cc_library(
 # emboss_cc_library doesn't support includes, so we need to wrap it.
 cc_library(
     name = "emboss_hci_android",
+    features = ["system_include_paths"],
     includes = ["public"],
     deps = [":_emboss_hci_android"],
 )
@@ -374,6 +384,7 @@ emboss_cc_library(
 
 cc_library(
     name = "emboss_hci_common",
+    features = ["system_include_paths"],
     includes = ["public"],
     deps = [":_emboss_hci_common"],
 )
@@ -389,6 +400,7 @@ emboss_cc_library(
 
 cc_library(
     name = "emboss_hci_commands",
+    features = ["system_include_paths"],
     includes = ["public"],
     deps = [":_emboss_hci_commands"],
 )
@@ -403,6 +415,7 @@ emboss_cc_library(
 
 cc_library(
     name = "emboss_hci_data",
+    features = ["system_include_paths"],
     includes = ["public"],
     deps = [":_emboss_hci_data"],
 )
@@ -418,6 +431,7 @@ emboss_cc_library(
 
 cc_library(
     name = "emboss_hci_events",
+    features = ["system_include_paths"],
     includes = ["public"],
     deps = [":_emboss_hci_events"],
 )
@@ -432,6 +446,7 @@ emboss_cc_library(
 
 cc_library(
     name = "emboss_hci_h4",
+    features = ["system_include_paths"],
     includes = ["public"],
     deps = [":_emboss_hci_h4"],
 )
@@ -447,6 +462,7 @@ emboss_cc_library(
 
 cc_library(
     name = "emboss_hci_test",
+    features = ["system_include_paths"],
     includes = ["public"],
     deps = [":_emboss_hci_test"],
 )
@@ -460,6 +476,7 @@ emboss_cc_library(
 
 cc_library(
     name = "emboss_l2cap_frames",
+    features = ["system_include_paths"],
     includes = ["public"],
     deps = [":_emboss_l2cap_frames"],
 )
@@ -473,6 +490,7 @@ emboss_cc_library(
 
 cc_library(
     name = "emboss_rfcomm_frames",
+    features = ["system_include_paths"],
     includes = ["public"],
     deps = [":_emboss_rfcomm_frames"],
 )
@@ -498,6 +516,7 @@ emboss_cc_library(
 
 cc_library(
     name = "emboss_snoop",
+    features = ["system_include_paths"],
     includes = ["public"],
     deps = [":_emboss_snoop"],
 )
@@ -512,6 +531,7 @@ emboss_cc_library(
 
 cc_library(
     name = "emboss_avctp_avrcp",
+    features = ["system_include_paths"],
     includes = ["public"],
     deps = [":_emboss_avctp_avrcp"],
 )
