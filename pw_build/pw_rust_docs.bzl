@@ -61,6 +61,15 @@ _pw_rust_doc_aspect = aspect(
     implementation = _pw_rust_doc_aspect_impl,
 )
 
+def _target_platform_transition_impl(_settings, attr):
+    return {"//command_line_option:platforms": str(attr.platform)}
+
+_target_platform_transition = transition(
+    implementation = _target_platform_transition_impl,
+    inputs = [],
+    outputs = ["//command_line_option:platforms"],
+)
+
 def _pw_rust_docs_impl(ctx):
     """The implementation of the `pw_rust_docs` rule
 
@@ -122,13 +131,29 @@ def _pw_rust_docs_impl(ctx):
     # Generate a root index.html that redirects to the 'pigweed' crate's documentation.
     # By default, rustdoc doesn't generate a styled landing page for the workspace
     # (and we disabled --enable-index-page because it only generates a minimal flat list).
-    # This redirect ensures users land on the proper front page.
-    redirect_script = ctx.actions.declare_file("generate_redirect.sh")
-    ctx.actions.write(
-        output = redirect_script,
-        content = "bash\n-c\necho '<meta http-equiv=\"refresh\" content=\"0; url=pigweed/index.html\" />' > {}/index.html\n".format(output_dir.path),
-    )
-    rustdoc_scripts.append(redirect_script)
+    # This redirect ensures users land on the proper front page. Targets that
+    # pass --enable-index-page keep the index that rustdoc generates instead.
+    if "--enable-index-page" not in ctx.attr.rustdoc_flags:
+        redirect_script = ctx.actions.declare_file("generate_redirect.sh")
+        ctx.actions.write(
+            output = redirect_script,
+            content = "bash\n-c\necho '<meta http-equiv=\"refresh\" content=\"0; url=pigweed/index.html\" />' > {}/index.html\n".format(output_dir.path),
+        )
+        rustdoc_scripts.append(redirect_script)
+
+    nested_inputs = []
+    for docs, subdir in ctx.attr.nested_docs.items():
+        for docs_dir in docs.files.to_list():
+            nested_inputs.append(docs_dir)
+            nested_script = ctx.actions.declare_file("copy_nested_docs_{}.sh".format(subdir))
+            ctx.actions.write(
+                output = nested_script,
+                content = "bash\n-c\nmkdir -p {dst} && cp -RL {src}/. {dst}/ && chmod -R u+w {dst}\n".format(
+                    src = docs_dir.path,
+                    dst = "{}/{}".format(output_dir.path, subdir),
+                ),
+            )
+            rustdoc_scripts.append(nested_script)
 
     args = ctx.actions.args()
     for script in rustdoc_scripts:
@@ -139,7 +164,7 @@ def _pw_rust_docs_impl(ctx):
         progress_message = "Generating Rustdocs",
         outputs = [output_dir],
         executable = ctx.executable._run_scripts,
-        inputs = depset(rustdoc_scripts, transitive = rustdoc_inputs),
+        inputs = depset(rustdoc_scripts + nested_inputs, transitive = rustdoc_inputs),
         #env = action.env,
         arguments = [args],
         #tools = action.tools,
@@ -228,6 +253,16 @@ pw_rust_docs = rule(
             doc = "CSS files to include via `<link>` in a rendered Markdown file.",
             allow_files = [".css"],
         ),
+        "nested_docs": attr.label_keyed_string_dict(
+            doc = dedent("""\
+                Separately generated rustdoc directories to include in the output.
+
+                Each key is a target that provides a rustdoc directory, such as a
+                `pw_rust_docs_for_platform` target, and each value is the
+                subdirectory of the output to copy that rustdoc directory into.
+            """),
+            allow_files = True,
+        ),
         "rustdoc_flags": attr.string_list(
             doc = dedent("""\
                 List of flags passed to `rustdoc`.
@@ -283,6 +318,31 @@ pw_rust_docs = rule(
         str(Label("@rules_rust//rust:toolchain_type")),
         "@bazel_tools//tools/cpp:toolchain_type",
     ],
+)
+
+def _pw_rust_docs_for_platform_impl(ctx):
+    return [DefaultInfo(files = depset(ctx.files.docs))]
+
+pw_rust_docs_for_platform = rule(
+    doc = dedent("""\
+    Generates a rustdoc directory for a specific target platform.
+
+    This allows crates that can't be built for the platform of the top-level
+    build to be included in its `pw_rust_docs` target via `nested_docs`.
+    """),
+    implementation = _pw_rust_docs_for_platform_impl,
+    attrs = {
+        "docs": attr.label(
+            doc = "A target that provides a rustdoc directory.",
+            allow_files = True,
+            cfg = _target_platform_transition,
+            mandatory = True,
+        ),
+        "platform": attr.label(
+            doc = "The platform to generate the documentation for.",
+            mandatory = True,
+        ),
+    },
 )
 
 def _zip(ctx, input_dir, output_zip):

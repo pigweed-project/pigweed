@@ -32,7 +32,12 @@ function getSiteRootPath() {
   if (html?.dataset?.content_root != null) {
     root = html.dataset.content_root;
   } else if (metaRustdoc?.dataset?.rootPath != null) {
-    root = `../${metaRustdoc.dataset.rootPath}`;
+    // Rustdoc trees reside in rustdoc/ (1 level below site root), except for
+    // the pw_kernel tree which resides in rustdoc/pw_kernel/ (2 levels below).
+    const treeDepth = window.location.pathname.includes('/rustdoc/pw_kernel/')
+      ? 2
+      : 1;
+    root = `${'../'.repeat(treeDepth)}${metaRustdoc.dataset.rootPath}`;
   } else if (metaDoxygen?.getAttribute('content') != null) {
     root = metaDoxygen.getAttribute('content');
   } else if (

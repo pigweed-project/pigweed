@@ -566,18 +566,8 @@ def on_html_page_context(
     context[canonical_url_key] = fix_canonical_url(canonical_url)
 
 
-def should_add_rust_link(module_name: str, languages: list[str] | None) -> bool:
-    if languages is None:
-        return False
-    ignore = [
-        # TODO: https://pwbug.dev/424641732 - Remove this.
-        'pw_kernel',
-    ]
-    if module_name in ignore:
-        return False
-    if 'Rust' not in languages:
-        return False
-    return True
+def should_add_rust_link(languages: list[str] | None) -> bool:
+    return languages is not None and 'Rust' in languages
 
 
 @functools.lru_cache(maxsize=None)
@@ -662,7 +652,7 @@ def add_links(
     """
     languages = get_languages(module_name, srcdir)
 
-    if should_add_rust_link(module_name, languages) or _has_slug_placeholder(
+    if should_add_rust_link(languages) or _has_slug_placeholder(
         toctree, 'rust-api-ref'
     ):
         _insert_or_append_link(

@@ -453,7 +453,8 @@ Sitemap generation
 ``//docs/sphinx/_extensions/sitemap.py`` during site assembly
 (``//docs/common/assemble.py``). It walks the assembled output directory to
 index all pages across Sphinx, Doxygen, and Rustdoc while excluding client-side
-redirects, verbatim source pages (``rustdoc/src/``), and non-content utility
+redirects, verbatim source pages (``rustdoc/src/`` and
+``rustdoc/pw_kernel/src/``), and non-content utility
 pages. Custom logic is also necessary because the ``pigweed.dev`` production
 server redirects pages that end in ``…/docs.html`` or ``…/index.html`` to
 ``…/`` (e.g. ``pigweed.dev/pw_string/docs.html`` redirects to

@@ -39,6 +39,10 @@ platform(
             "//pw_kernel/subsys/console:console_backend": "//pw_kernel/subsys/console:console_backend_semihosting",
         },
     ),
+    visibility = [
+        ":__subpackages__",
+        "//pw_kernel:__pkg__",
+    ],
 )
 
 constraint_value(

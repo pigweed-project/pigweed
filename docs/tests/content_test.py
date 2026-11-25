@@ -93,6 +93,8 @@ class ContentTest(unittest.TestCase):
             # Doxygen C/C++ API page
             "api/cc/group__pw__string.html",
             # Rustdoc crate page
+            "rustdoc/pw_kernel/index.html",
+            "rustdoc/pw_kernel/kernel/index.html",
             "rustdoc/pw_status/index.html",
         ]
         chromium_bin = get_chromium_executable()

@@ -16,6 +16,14 @@ load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
 load("//pw_build:compatibility.bzl", "incompatible_with_mcu")
 load("//pw_build:pw_rust_docs.bzl", "pw_rust_docs")
 
+# Exported so //pw_kernel:rust_docs can inject the same header placeholder,
+# which //docs/common:assemble replaces with the site header, into the
+# separately built pw_kernel rustdoc tree.
+exports_files(
+    ["header.html"],
+    visibility = ["//pw_kernel:__pkg__"],
+)
+
 pw_rust_docs(
     name = "docs",
 
@@ -53,6 +61,9 @@ pw_rust_docs(
         "//pw_rust/rust/pigweed:pigweed",
     ],
     html_before_content = "header.html",
+    nested_docs = {
+        "//pw_kernel:rustdocs_for_qemu_virt_riscv32": "pw_kernel",
+    },
     rustdoc_flags = [
         "-Z",
         "unstable-options",

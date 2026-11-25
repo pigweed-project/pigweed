@@ -20,6 +20,10 @@ import re
 from .nav import NavLink, is_matching_url
 from .utils import format_href
 
+# Separately built rustdoc trees that are nested under rustdoc/ rather than
+# being a single crate. Their pages live at rustdoc/<tree>/<crate>/...
+_NESTED_RUSTDOC_TREES = ("pw_kernel",)
+
 
 @dataclass
 class Breadcrumb:
@@ -135,13 +139,25 @@ def build_breadcrumb_trail(
             Breadcrumb(title="Rust", href=rust_root_href),
         ]
 
-        rel_parts = Path(norm_path).parts  # ('rustdoc', '<crate>', ...)
-        if len(rel_parts) >= 2:
-            crate_name = rel_parts[1]
-            crate_href = f"https://pigweed.dev/rustdoc/{crate_name}/index.html"
+        rel_parts = Path(norm_path).parts[1:]  # ('<crate>', ...)
+        prefix = "https://pigweed.dev/rustdoc"
+        if len(rel_parts) >= 2 and rel_parts[0] in _NESTED_RUSTDOC_TREES:
+            tree_name = rel_parts[0]
+            prefix = f"{prefix}/{tree_name}"
+            rel_parts = rel_parts[1:]
+            if rel_parts == ("index.html",):
+                trail.append(Breadcrumb(title=tree_name, href=None))
+                return trail
+            trail.append(
+                Breadcrumb(title=tree_name, href=f"{prefix}/index.html")
+            )
 
-            if len(rel_parts) == 2 or (
-                len(rel_parts) == 3 and rel_parts[2] == "index.html"
+        if rel_parts:
+            crate_name = rel_parts[0]
+            crate_href = f"{prefix}/{crate_name}/index.html"
+
+            if len(rel_parts) == 1 or (
+                len(rel_parts) == 2 and rel_parts[1] == "index.html"
             ):
                 trail.append(Breadcrumb(title=crate_name, href=None))
                 return trail

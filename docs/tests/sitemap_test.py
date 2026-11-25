@@ -30,6 +30,8 @@ _BASE_URL = "https://pigweed.dev/"
 # excluded from sitemap.xml.
 _EXCLUDED_REL_FILES = {
     "rustdoc/help.html",
+    "rustdoc/pw_kernel/help.html",
+    "rustdoc/pw_kernel/settings.html",
     "rustdoc/settings.html",
 }
 
@@ -216,7 +218,9 @@ class SitemapTest(unittest.TestCase):
             for path in get_html_files(self.docs_dir, include_redirects=False)
         } - _EXCLUDED_REL_FILES
         expected_rel_files = {
-            rel for rel in expected_rel_files if "rustdoc/src/" not in rel
+            rel
+            for rel in expected_rel_files
+            if "rustdoc/src/" not in rel and "rustdoc/pw_kernel/src/" not in rel
         }
 
         missing_from_sitemap = sorted(expected_rel_files - resolved_rel_files)
@@ -247,6 +251,8 @@ class SitemapTest(unittest.TestCase):
             "https://pigweed.dev/rustdoc/pw_assert/macro.assert!.html",
             # Utility / non-content pages
             "https://pigweed.dev/rustdoc/help.html",
+            "https://pigweed.dev/rustdoc/pw_kernel/help.html",
+            "https://pigweed.dev/rustdoc/pw_kernel/settings.html",
             "https://pigweed.dev/rustdoc/settings.html",
             "https://pigweed.dev/_static/webpack-macros.html",
         ]
@@ -257,7 +263,11 @@ class SitemapTest(unittest.TestCase):
                 f"Excluded URL {excluded_url} should not appear in sitemap.xml",
             )
 
-        rustdoc_src_urls = [u for u in self.urls if "/rustdoc/src/" in u]
+        rustdoc_src_urls = [
+            u
+            for u in self.urls
+            if "/rustdoc/src/" in u or "/rustdoc/pw_kernel/src/" in u
+        ]
         self.assertEqual(
             rustdoc_src_urls,
             [],

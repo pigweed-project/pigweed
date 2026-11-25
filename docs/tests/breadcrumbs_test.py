@@ -290,6 +290,45 @@ class BreadcrumbsTest(unittest.TestCase):
             leaf_text, "pw::async2::ValueFuture< void > Class Reference"
         )
 
+    def test_nested_rustdoc_tree_breadcrumbs(self):
+        """Verifies breadcrumbs for a crate in the nested pw_kernel tree."""
+        html_file = (
+            self.docs_dir / "rustdoc" / "pw_kernel" / "kernel" / "index.html"
+        )
+        self.assertTrue(html_file.exists(), f"{html_file} does not exist")
+        content = html_file.read_text(encoding="utf-8")
+
+        m_crumbs = re.search(
+            r'<pw-breadcrumbs[^>]*>([\s\S]*?)</pw-breadcrumbs>',
+            content,
+        )
+        self.assertIsNotNone(m_crumbs, "Missing <pw-breadcrumbs> in HTML")
+        items = re.findall(
+            r'<li class="pw-breadcrumbs-item">([\s\S]*?)</li>',
+            m_crumbs.group(1),
+        )
+        links = [
+            re.search(r'<a\s+href="([^"]+)">([^<]+)</a>', item)
+            for item in items[:-1]
+        ]
+        self.assertEqual(
+            [(m.group(2).strip(), m.group(1)) for m in links if m],
+            [
+                ("Home", "https://pigweed.dev/index.html"),
+                ("Reference", "https://pigweed.dev/api/index.html"),
+                ("Rust", "https://pigweed.dev/rustdoc/index.html"),
+                (
+                    "pw_kernel",
+                    "https://pigweed.dev/rustdoc/pw_kernel/index.html",
+                ),
+            ],
+        )
+        m_leaf = re.search(
+            r'<span aria-current="page">([^<]+)</span>', items[-1]
+        )
+        self.assertIsNotNone(m_leaf, f"Unexpected final item: {items[-1]}")
+        self.assertEqual(m_leaf.group(1).strip(), "kernel")
+
     def test_rustdoc_breadcrumbs(self):
         """Verifies breadcrumb trail for a Rustdoc API page."""
         html_file = (

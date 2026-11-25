@@ -446,6 +446,9 @@ to other components.
   as HTML. It's essentially a separate documentation subsite that is not integrated
   with the rest of ``pigweed.dev`` (yet). This subsite is available at URLs like
   `pigweed.dev/rustdoc/pw_bytes/ <https://pigweed.dev/rustdoc/pw_bytes/>`_.
+  ``pw_kernel`` crates can't be built for the host, so they're documented
+  separately for a kernel target and nested under
+  `pigweed.dev/rustdoc/pw_kernel/ <https://pigweed.dev/rustdoc/pw_kernel/>`_.
 
 * **Python**: We use Sphinx's `autodoc`_ feature to auto-generate Python API
   reference content. In order for this to work, the Python modules must be

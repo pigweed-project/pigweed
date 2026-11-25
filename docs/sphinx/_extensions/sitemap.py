@@ -27,11 +27,14 @@ _EXCLUDE_DIRS = {
 # anywhere in the relative path.
 _EXCLUDE_PATTERNS = {
     'rustdoc/src/',  # Rustdoc verbatim source code pages
+    'rustdoc/pw_kernel/src/',  # pw_kernel rustdoc verbatim source code pages
 }
 
 # Specific files (relative to outdir) excluded from the sitemap.
 _EXCLUDE_FILES = {
     'rustdoc/help.html',  # Rustdoc keyboard shortcuts help UI
+    'rustdoc/pw_kernel/help.html',  # pw_kernel rustdoc help UI
+    'rustdoc/pw_kernel/settings.html',  # pw_kernel rustdoc settings UI
     'rustdoc/settings.html',  # Rustdoc settings UI
 }
 

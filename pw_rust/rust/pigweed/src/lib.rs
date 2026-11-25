@@ -62,6 +62,12 @@
 //!
 //! - [`pw_thread`](../pw_thread/index.html) - Thread creation and execution.
 //!
+//! ### Kernel
+//!
+//! Embedded kernels, preemptive scheduling, and userspace isolation.
+//!
+//! - [`pw_kernel`](../pw_kernel/index.html) - A Rust-based kernel for embedded systems.
+//!
 //! ### HALs
 //!
 //! Hardware abstraction layer interfaces for timers, I2C, SPI, UART, and GPIO.
@@ -92,9 +98,3 @@
 //!
 //! To build Pigweed's Rust targets, follow the standard Bazel instructions in
 //! the [getting started guide](https://pigweed.dev/get_started/).
-//!
-//! ## Kernel
-//!
-//! Pigweed now includes an experimental **Kernel** written in Rust!
-//! The kernel documentation is currently hosted separately in the main Sphinx docs.
-//! See the [pw_kernel documentation](https://pigweed.dev/pw_kernel/) for details.

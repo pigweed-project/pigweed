@@ -14,7 +14,7 @@
 
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@sphinxdocs//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
-load("//pw_build:pw_rust_docs.bzl", "pw_rust_docs")
+load("//pw_build:pw_rust_docs.bzl", "pw_rust_docs", "pw_rust_docs_for_platform")
 
 exports_files(
     ["rustfmt.toml"],
@@ -139,8 +139,8 @@ pw_rust_docs(
         "//pw_kernel/syscall:syscall_defs",
         "//pw_kernel/syscall:syscall_user",
         "//pw_kernel/kernel:kernel_doc",
-        "//pw_rust/rust/pigweed:pigweed",
     ],
+    html_before_content = "//pw_rust:header.html",
     rustdoc_flags = [
         "-Z",
         "unstable-options",
@@ -158,4 +158,12 @@ filegroup(
     output_group = "rustdoc_dir",
     tags = ["kernel"],
     visibility = ["//visibility:public"],
+)
+
+pw_rust_docs_for_platform(
+    name = "rustdocs_for_qemu_virt_riscv32",
+    docs = ":docs_dir",
+    platform = "//pw_kernel/target/qemu_virt_riscv32",
+    tags = ["kernel"],
+    visibility = ["//pw_rust:__pkg__"],
 )

@@ -57,8 +57,6 @@ multiple processes into a single image.
 
       Unit testing, panic detecting, and other real-world usage topics.
 
-.. TODO: https://pwbug.dev/424641732 - Re-enable the Rust API reference link.
-
 .. toctree::
    :hidden:
    :maxdepth: 1
