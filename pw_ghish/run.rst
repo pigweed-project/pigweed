@@ -431,6 +431,30 @@ Poll checks until all blocking builds complete:
    $ ./gh run watch
    $ ./gh run watch 472267 --interval 30s
 
+Scanning LUCI consoles: ``run console``
+=======================================
+``./gh run console [<project>/<console>|<console>...]`` discovers console
+builders dynamically from ``luci.milo.v1.MiloInternal/QueryConsoleSnapshots``,
+enriches experimental flags and description links via
+``buildbucket.v2.Builders/ListBuilders``, and batch-queries recent builds via
+``buildbucket.v2.Builds/Batch``. Pass ``--project <project>`` (repeatable) or
+``<project>/<console>`` selectors (supporting ``path.Match`` globs such as
+``pigweed.*``); bare ``<console>`` selectors or omitted targets resolve the
+default LUCI project from ``ci.try_buckets`` in ``.ghish.toml`` or the host
+profile. Experimental builders (``experimental: YES``, ``.non_production``, or
+``cq_experimental``) are skipped unless ``-e, --experimental`` is passed,
+``-L, --limit`` and ``-s, --status`` filter fetched builds per builder,
+``--all`` / ``-v`` expands collapsed passing builders, and ``--json`` emits
+the structured ``[]ConsoleBuilderItem`` array.
+
+.. code-block:: console
+
+   # Scan all consoles in the default project or an explicit --project:
+   $ ./gh run console --project pigweed
+
+   # Scan qualified console selectors or globs and inspect failures in JSON:
+   $ ./gh run console 'pigweed/pigweed.*' -L 5 -s completed --json
+
 .. _module-pw_ghish-run-comparison:
 
 --------------------------------------------------

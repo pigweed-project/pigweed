@@ -371,6 +371,13 @@ func (c *LUCIClient) CallPRPC(ctx context.Context, service, method string, req, 
 	return c.callPRPCWithMaxBytes(ctx, service, method, req, resp, maxHTTPBodyBytes)
 }
 
+func prpcServiceLabel(service string) string {
+	if strings.HasPrefix(service, "luci.milo.") {
+		return "LUCI Milo"
+	}
+	return "Buildbucket"
+}
+
 func (c *LUCIClient) callPRPCWithMaxBytes(ctx context.Context, service, method string, req, resp any, maxBytes int64) error {
 	if c == nil {
 		return fmt.Errorf("LUCIClient is nil")
@@ -421,10 +428,11 @@ func (c *LUCIClient) callPRPCWithMaxBytes(ctx context.Context, service, method s
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
+		label := prpcServiceLabel(service)
 		if httpResp.StatusCode == http.StatusUnauthorized || httpResp.StatusCode == http.StatusForbidden {
-			return newLUCIHTTPAuthError(ctx, fmt.Sprintf("Buildbucket %s/%s", service, method), httpResp.StatusCode, bodyBytes)
+			return newLUCIHTTPAuthError(ctx, fmt.Sprintf("%s %s/%s", label, service, method), httpResp.StatusCode, bodyBytes)
 		}
-		return fmt.Errorf("Buildbucket %s/%s returned HTTP %d: %s", service, method, httpResp.StatusCode, string(bodyBytes))
+		return fmt.Errorf("%s %s/%s returned HTTP %d: %s", label, service, method, httpResp.StatusCode, string(bodyBytes))
 	}
 
 	bodyBytes = stripXSSIPrefix(bodyBytes)

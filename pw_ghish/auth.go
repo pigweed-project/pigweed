@@ -714,17 +714,17 @@ func isPreSignedGCSURL(u *url.URL) bool {
 }
 
 // isTrustedLUCIURL reports whether u may receive the LUCI token: HTTPS to
-// cr-buildbucket.appspot.com, logs.chromium.org, or the exact configured
-// Buildbucket host, and never a pre-signed download URL.
-func isTrustedLUCIURL(bbHost string, u *url.URL) bool {
+// cr-buildbucket.appspot.com, luci-milo.appspot.com, logs.chromium.org, or the
+// exact configured LUCI host, and never a pre-signed download URL.
+func isTrustedLUCIURL(luciHost string, u *url.URL) bool {
 	if isPreSignedGCSURL(u) {
 		return false
 	}
 	configured := ""
-	if bbHost != "" {
-		configured = hostnameOf(bbHost)
+	if luciHost != "" {
+		configured = hostnameOf(luciHost)
 	}
-	return urlHostIn(u, "cr-buildbucket.appspot.com", "logs.chromium.org", configured)
+	return urlHostIn(u, "cr-buildbucket.appspot.com", "luci-milo.appspot.com", "logs.chromium.org", configured)
 }
 
 // newLUCIAuth returns the HTTPAuthStrategy for LUCI Buildbucket and LogDog.

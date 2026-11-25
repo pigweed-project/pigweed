@@ -286,10 +286,11 @@ var RunCmd = &cobra.Command{
 	Long: `View and manage CI/CD workflow runs and tryjob builds executed on Buildbucket.
 
 Commands:
-  list    List recent builds for a change or LUCI builder
-  view    View build details, step trees (-v), and failure logs (--log-failed)
-  rerun   Rerun failed checks (--failed) or specific builders (-j <builder>)
-  watch   Watch checks until completion`,
+  list     List recent builds for a change or LUCI builder
+  view     View build details, step trees (-v), and failure logs (--log-failed)
+  console  Scan LUCI Milo consoles and recent builder status
+  rerun    Rerun failed checks (--failed) or specific builders (-j <builder>)
+  watch    Watch checks until completion`,
 }
 
 func runBuilderListMode(cmd *cobra.Command, projCfg *ProjectConfig, specs []string) error {
@@ -1324,8 +1325,11 @@ func init() {
 	runWatchCmd.Flags().StringVar(&buildbucketHost, "buildbucket-host", "cr-buildbucket.appspot.com", "Buildbucket host to query")
 	runWatchCmd.Flags().MarkHidden("buildbucket-host")
 
+	registerRunConsoleFlags()
+
 	RunCmd.AddCommand(runListCmd)
 	RunCmd.AddCommand(runViewCmd)
+	RunCmd.AddCommand(runConsoleCmd)
 	RunCmd.AddCommand(runRerunCmd)
 	RunCmd.AddCommand(runWatchCmd)
 

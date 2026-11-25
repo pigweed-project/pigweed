@@ -164,6 +164,8 @@ Commands:
   tagged with `skip-retry-in-gerrit:subbuild`) or via `treetop~runaction` /
   `Presubmit-Ready+1` on Android Busytown / TreeHugger changes.
 - **`./gh run list [<id>] [-w|--workflow <builder|->] [-L <n>] [-s <status>] [--all] [--json]`** & **`./gh run watch [<id>]`**.
+- **`./gh run console [<project>/<console>|<console>...] [--project <project>] [-L <n>] [-s <status>] [-e] [--all] [--json]`**:
+  Scan LUCI Milo consoles and batch-query recent builder builds via RPC.
 
 ### 5. Listing, Merging & Status
 - **`./gh pr list [--limit 30] [--state open|merged|closed|all] [--all-projects] [--json <fields>]`**:

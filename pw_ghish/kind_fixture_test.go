@@ -284,6 +284,38 @@ func installKindSmokeGerrit(s *MockGerritServer, builds ...bbBuild) {
 	})
 	s.OnAccountSelf(1000000).
 		OnSearchBuilds(builds...).
+		OnBuildsBatch(func(sub bbBatchSubRequest) bbBatchSubResponse {
+			if sub.SearchBuilds == nil || sub.SearchBuilds.Predicate.Builder == nil {
+				return BatchSearchResp()
+			}
+			target := sub.SearchBuilds.Predicate.Builder.Builder
+			for _, b := range builds {
+				if b.Builder.Builder == target {
+					return BatchSearchResp(b)
+				}
+			}
+			return BatchSearchResp()
+		}).
+		OnMiloConsoleSnapshots(miloConsoleSnapshot{
+			Console: &miloConsole{
+				ID:   "pigweed.pigweed",
+				Name: "pigweed.pigweed",
+				Builders: []miloConsoleBuilderRef{
+					{
+						Name: "buildbucket/luci.pigweed.try/linux-bazel",
+						ID:   &bbBuilder{Project: "pigweed", Bucket: "try", Builder: "linux-bazel"},
+					},
+					{
+						Name: "buildbucket/luci.pigweed.try/linux-gn",
+						ID:   &bbBuilder{Project: "pigweed", Bucket: "try", Builder: "linux-gn"},
+					},
+				},
+			},
+		}).
+		OnListBuilders(
+			bbBuilderItem{ID: bbBuilder{Project: "pigweed", Bucket: "try", Builder: "linux-bazel"}},
+			bbBuilderItem{ID: bbBuilder{Project: "pigweed", Bucket: "try", Builder: "linux-gn"}},
+		).
 		OnJSON("GET", "/changes/12345/revisions/current/patch", http.StatusOK, `"`+base64.StdEncoding.EncodeToString([]byte(kindSmokePatch))+`"`).
 		OnJSON("GET", "/changes/12345/revisions/current/files*", http.StatusOK, map[string]any{"/COMMIT_MSG": ok}).
 		OnComments("*", nil).

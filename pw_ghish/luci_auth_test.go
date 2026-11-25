@@ -488,6 +488,7 @@ func TestTrustedURLsAndLogStreamAuth(t *testing.T) {
 		want      bool
 	}{
 		{appspot, "https://cr-buildbucket.appspot.com/prpc/x", true},
+		{appspot, "https://luci-milo.appspot.com/prpc/x", true},
 		{appspot, "https://logs.chromium.org/x", true},
 		{"https://bb.example.test", "https://bb.example.test/x", true},
 		{appspot, "https://CR-BUILDBUCKET.appspot.com/prpc/x", true},
@@ -498,6 +499,7 @@ func TestTrustedURLsAndLogStreamAuth(t *testing.T) {
 		{appspot, "https://foo.luci.app", false},
 		{appspot, "https://x.cr.dev", false},
 		{appspot, "http://cr-buildbucket.appspot.com", false},
+		{appspot, "http://luci-milo.appspot.com", false},
 		{appspot, "http://logs.chromium.org", false},
 		{appspot, "https://storage.googleapis.com/b/o", false},
 		{appspot, "https://logs.chromium.org/x?X-Goog-Signature=abc", false},

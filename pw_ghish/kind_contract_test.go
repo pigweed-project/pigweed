@@ -63,6 +63,7 @@ var kindSmokeArgs = map[string][]string{
 	"ghish pr checks":    {"pr", "checks", "12345"},
 	"ghish pr list":      {"pr", "list"},
 	"ghish pr status":    {"pr", "status"},
+	"ghish run console":  {"run", "console", "--project", "pigweed"},
 	"ghish run list":     {"run", "list", "12345"},
 	"ghish wt list":      {"wt", "list"},
 	// mutation

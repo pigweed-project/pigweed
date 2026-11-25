@@ -151,7 +151,7 @@ func isolateRootCmdForTest(t *testing.T) {
 
 // testPreservedFlags names the flags whose package variables tests assign
 // directly; see resetAllFlags.
-var testPreservedFlags = map[string]bool{"host": true, "profile": true, "buildbucket-host": true}
+var testPreservedFlags = map[string]bool{"host": true, "profile": true, "buildbucket-host": true, "milo-host": true}
 
 func init() {
 	setupRootAliases()
@@ -862,6 +862,10 @@ func NewMockGerritServer(t *testing.T) *MockGerritServer {
 	oldBBHost := buildbucketHost
 	buildbucketHost = s.URL
 	t.Cleanup(func() { buildbucketHost = oldBBHost })
+
+	oldMiloHost := miloHost
+	miloHost = s.URL
+	t.Cleanup(func() { miloHost = oldMiloHost })
 
 	origClient := NewGerritClient
 	NewGerritClient = func(ctx context.Context, cmd *cobra.Command) (*GerritClient, error) {
@@ -1615,6 +1619,60 @@ func BatchGetResp(det *LUCIBuildDetails) bbBatchSubResponse {
 // BatchErrorResp builds an error entry inside a Builds/Batch response.
 func BatchErrorResp(code int, message string) bbBatchSubResponse {
 	return bbBatchSubResponse{Error: &bbRPCStatus{Code: code, Message: message}}
+}
+
+// OnMiloConsoleSnapshots registers a static MiloInternal/QueryConsoleSnapshots response.
+func (s *MockGerritServer) OnMiloConsoleSnapshots(snapshots ...miloConsoleSnapshot) *MockGerritServer {
+	return s.OnMiloConsoleSnapshotsByProject(func(miloQueryConsoleSnapshotsRequest) miloQueryConsoleSnapshotsResponse {
+		if snapshots == nil {
+			return miloQueryConsoleSnapshotsResponse{Snapshots: []miloConsoleSnapshot{}}
+		}
+		return miloQueryConsoleSnapshotsResponse{Snapshots: snapshots}
+	})
+}
+
+// OnMiloConsoleSnapshotsByProject registers a MiloInternal/QueryConsoleSnapshots handler receiving decoded requests.
+func (s *MockGerritServer) OnMiloConsoleSnapshotsByProject(fn func(req miloQueryConsoleSnapshotsRequest) miloQueryConsoleSnapshotsResponse) *MockGerritServer {
+	return s.On("POST", "/prpc/luci.milo.v1.MiloInternal/QueryConsoleSnapshots", func(w http.ResponseWriter, r *http.Request) {
+		var req miloQueryConsoleSnapshotsRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			s.t.Errorf("OnMiloConsoleSnapshotsByProject: failed to decode request body: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		s.RespondJSON(w, http.StatusOK, fn(req))
+	})
+}
+
+// OnListBuilders registers a static buildbucket.v2.Builders/ListBuilders response.
+func (s *MockGerritServer) OnListBuilders(builders ...bbBuilderItem) *MockGerritServer {
+	return s.OnListBuildersByProject(func(bbListBuildersRequest) (bbListBuildersResponse, int, string) {
+		if builders == nil {
+			return bbListBuildersResponse{Builders: []bbBuilderItem{}}, http.StatusOK, ""
+		}
+		return bbListBuildersResponse{Builders: builders}, http.StatusOK, ""
+	})
+}
+
+// OnListBuildersByProject registers a buildbucket.v2.Builders/ListBuilders handler supporting custom HTTP statuses.
+func (s *MockGerritServer) OnListBuildersByProject(fn func(req bbListBuildersRequest) (bbListBuildersResponse, int, string)) *MockGerritServer {
+	return s.On("POST", "/prpc/buildbucket.v2.Builders/ListBuilders", func(w http.ResponseWriter, r *http.Request) {
+		var req bbListBuildersRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			s.t.Errorf("OnListBuildersByProject: failed to decode request body: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		resp, statusCode, errMsg := fn(req)
+		if statusCode != 0 && statusCode != http.StatusOK {
+			w.WriteHeader(statusCode)
+			if errMsg != "" {
+				_, _ = w.Write([]byte(errMsg))
+			}
+			return
+		}
+		s.RespondJSON(w, http.StatusOK, resp)
+	})
 }
 
 // MockIssueTrackerServer provides an in-memory Google Issue Tracker v1 REST server for testing.
