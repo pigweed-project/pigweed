@@ -820,7 +820,7 @@ Use --web (-w) to open checks in the browser.`,
 			var reports []FailureReport
 			for _, fb := range failedBuilds {
 				rep, err := provider.FetchFailureReportWithOptions(ctx, fb, FailureReportOptions{
-					MaxLogLines:            100,
+					MaxLogLines:            defaultFailureLogWindowLines,
 					PreferredLogs:          projCfg.PreferredLogs(),
 					IncludeSummaryMarkdown: projCfg.IncludeSummaryMarkdown(),
 				})

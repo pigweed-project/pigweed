@@ -1647,10 +1647,28 @@ func TestChecks_InfraFailureAnnotationAndFailureClustering(t *testing.T) {
 func TestChecks_ExplicitLogFailedFlagWithoutWatch(t *testing.T) {
 	server := NewMockGerritServer(t)
 	server.OnDefaultChange(12345, WithSubject("Explicit Log Failed"))
+
+	var logLines []string
+	for i := range 80 {
+		switch i {
+		case 15:
+			logLines = append(logLines, "pw_status/status.cc:12:5: error: expected ';'")
+		case 79:
+			logLines = append(logLines, "Final summary: 1 target failed.")
+		default:
+			logLines = append(logLines, fmt.Sprintf("[%02d/80] compiling target_%02d.cc", i, i))
+		}
+	}
+	server.OnString("GET", "/logs/checks-window", http.StatusOK, "text/plain", strings.Join(logLines, "\n")+"\n")
 	server.OnSearchBuilds(
 		FakeBuild("200", "static-checks", "FAILURE", WithBucket("pigweed.try")),
 	)
-	server.OnGetBuild(FakeBuildDetails("200", "static-checks", "FAILURE", WithBuildSummary("clang-format diff detected")))
+	server.OnGetBuild(FakeBuildDetails("200", "static-checks", "FAILURE",
+		WithBuildSummary("clang-format diff detected"),
+		WithSteps(FakeStep("compile", "FAILURE",
+			WithStepLogs(FakeLog("stdout", server.URL+"/logs/checks-window")),
+		)),
+	))
 
 	output, err := executeCommand(RootCmd, "pr", "checks", "12345", "--log-failed", "--buildbucket-host", server.URL)
 	if got := ExitCodeFor(err); got != ExitCodeFailure {
@@ -1661,6 +1679,15 @@ func TestChecks_ExplicitLogFailedFlagWithoutWatch(t *testing.T) {
 	}
 	if !strings.Contains(output, "clang-format diff detected") {
 		t.Errorf("Expected failure summary with --log-failed, got:\n%s", output)
+	}
+	if !strings.Contains(output, "pw_status/status.cc:12:5: error: expected ';'") {
+		t.Errorf("Expected early compiler error in --log-failed output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Final summary: 1 target failed.") {
+		t.Errorf("Expected tail summary in --log-failed output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "lines omitted ...]") {
+		t.Errorf("Expected 60-line windowing omission marker for 80-line log, got:\n%s", output)
 	}
 }
 
