@@ -13,10 +13,28 @@
 # the License.
 """Tests for the bazel_driver."""
 
+import json
 import unittest
 
 from pw_build.workflows.bazel_driver import BazelBuildDriver
 from pw_build.proto import build_driver_pb2
+
+
+def _build_job_request(args: list[str]) -> str:
+    """Returns a request for one Bazel build that uses the given args."""
+    return json.dumps(
+        {
+            'jobs': [
+                {
+                    'build': {
+                        'build_config': {'build_type': 'bazel', 'args': args},
+                        'targets': ['//...'],
+                    }
+                }
+            ]
+        }
+    )
+
 
 _BAZEL_BUILD_JOB_REQUEST = """
 {
@@ -504,6 +522,45 @@ class TestBazelBuildDriver(unittest.TestCase):
                 action.project_working_subdir,
                 'examples/tool',
             )
+
+    def test_canonicalize_flags_uses_lockfile_mode_of_build(self):
+        """Checks that canonicalize-flags runs in the build's lockfile mode."""
+        cases = (
+            (
+                ['--lockfile_mode=off', '--config=rp2040'],
+                ['--lockfile_mode=off'],
+            ),
+            (
+                ['--lockfile_mode', 'error', '--config=rp2040'],
+                ['--lockfile_mode=error'],
+            ),
+            (
+                ['--lockfile_mode=error', '--lockfile_mode=off'],
+                ['--lockfile_mode=off'],
+            ),
+            (['--config=rp2040', '--lockfile_mode'], []),
+            (['--config=rp2040'], []),
+        )
+        for args, lockfile_mode_args in cases:
+            with self.subTest(args=args):
+                response = BazelBuildDriver().generate_jobs_from_json(
+                    _build_job_request(args)
+                )
+                actions = response.jobs[0].actions
+                self.assertEqual(
+                    list(actions[0].args),
+                    ['canonicalize-flags', *lockfile_mode_args, '--', *args],
+                )
+                self.assertEqual(
+                    list(actions[1].args),
+                    [
+                        'build',
+                        '--symlink_prefix=${BUILD_ROOT}/bazel-',
+                        *args,
+                        '--',
+                        '//...',
+                    ],
+                )
 
     def test_nop(self):
         driver = BazelBuildDriver()

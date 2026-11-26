@@ -242,6 +242,21 @@ class BazelBuildDriver(BuildDriver):
         return startup_args, other_args
 
     @staticmethod
+    def _lockfile_mode_args(args: Sequence[str]) -> list[str]:
+        """Returns the last --lockfile_mode flag in args, if any."""
+        flag = '--lockfile_mode'
+        lockfile_mode_args: list[str] = []
+        arg_iter = iter(args)
+        for arg in arg_iter:
+            if arg.startswith(f'{flag}='):
+                lockfile_mode_args = [arg]
+            elif arg == flag:
+                value = next(arg_iter, None)
+                if value is not None:
+                    lockfile_mode_args = [f'{flag}={value}']
+        return lockfile_mode_args
+
+    @staticmethod
     def _canonicalize_args(
         build_config: workflows_pb2.BuildConfig,
         project_working_subdir: str = '',
@@ -254,9 +269,19 @@ class BazelBuildDriver(BuildDriver):
         if project_working_subdir:
             run_from = build_driver_pb2.Action.InvocationLocation.PROJECT_SUBDIR
 
+        # canonicalize-flags resolves the module graph using options before
+        # `--`, so forward `--lockfile_mode` to match the subsequent command.
+        lockfile_mode_args = BazelBuildDriver._lockfile_mode_args(other_args)
+
         return build_driver_pb2.Action(
             executable='bazelisk',
-            args=[*startup_args, 'canonicalize-flags', '--', *other_args],
+            args=[
+                *startup_args,
+                'canonicalize-flags',
+                *lockfile_mode_args,
+                '--',
+                *other_args,
+            ],
             env=build_config.env,
             run_from=run_from,
             project_working_subdir=project_working_subdir,

@@ -65,6 +65,9 @@ When generating actions for a ``Tool``, it includes:
    into the list of build arguments.
 #. Running ``bazelisk run`` with the specified target and arguments.
 
+If ``args`` includes ``--lockfile_mode``, the driver also passes it before
+``--`` to ``canonicalize-flags``, since that step resolves the module graph.
+
 Bazel-specific options
 ======================
 See :cs:`pw_build/proto/pigweed_build_driver.proto`
